@@ -1,0 +1,95 @@
+{
+  "eras": ["Ancient", "Bronze Age", "Iron Age", "Medieval"],
+  "techs": [
+    {
+      "id": "agriculture", "name": "Agriculture", "era": 0, "prereqs": [],
+      "cost": {"science": 30, "food": 20},
+      "effects": {"yield_mult": {"food": 0.2}},
+      "description": "+20% food"
+    },
+    {
+      "id": "pottery", "name": "Pottery", "era": 0, "prereqs": [],
+      "cost": {"science": 30, "wood": 20},
+      "effects": {"storage": 100},
+      "description": "+100 storage; unlocks Storehouse"
+    },
+    {
+      "id": "mining", "name": "Mining", "era": 0, "prereqs": [],
+      "cost": {"science": 35, "wood": 25},
+      "effects": {"yield_mult": {"stone": 0.15}},
+      "description": "+15% stone; unlocks Quarry"
+    },
+    {
+      "id": "animal_husbandry", "name": "Animal Husbandry", "era": 0, "prereqs": ["agriculture"],
+      "cost": {"science": 45, "food": 40},
+      "effects": {"yield_mult": {"food": 0.1}, "growth": 0.15},
+      "description": "+10% food, +15% population growth"
+    },
+    {
+      "id": "writing", "name": "Writing", "era": 1, "prereqs": ["pottery"],
+      "cost": {"science": 90, "wood": 40},
+      "effects": {"science_mult": 0.15},
+      "description": "+15% science; unlocks Library"
+    },
+    {
+      "id": "bronze_working", "name": "Bronze Working", "era": 1, "prereqs": ["mining"],
+      "cost": {"science": 100, "wood": 30, "stone": 40},
+      "effects": {"yield_mult": {"ore": 0.25}},
+      "description": "+25% ore; unlocks Mine"
+    },
+    {
+      "id": "masonry", "name": "Masonry", "era": 1, "prereqs": ["mining"],
+      "cost": {"science": 90, "stone": 50},
+      "effects": {"build_speed": 0.25, "housing": 10},
+      "description": "+25% construction speed, +10 housing"
+    },
+    {
+      "id": "the_wheel", "name": "The Wheel", "era": 1, "prereqs": ["animal_husbandry"],
+      "cost": {"science": 100, "wood": 60},
+      "effects": {"yield_mult": {"wood": 0.15}, "expand_cost": -0.2},
+      "description": "+15% wood, -20% territory expansion cost"
+    },
+    {
+      "id": "currency", "name": "Currency", "era": 2, "prereqs": ["writing", "bronze_working"],
+      "cost": {"science": 300, "stone": 30, "ore": 20},
+      "effects": {"income": {"gold": 0.3}},
+      "description": "+0.3 gold per tick; unlocks Market"
+    },
+    {
+      "id": "iron_working", "name": "Iron Working", "era": 2, "prereqs": ["bronze_working"],
+      "cost": {"science": 330, "wood": 40, "ore": 40},
+      "effects": {"yield_mult": {"ore": 0.25, "stone": 0.15}},
+      "description": "+25% ore, +15% stone; unlocks Workshop"
+    },
+    {
+      "id": "mathematics", "name": "Mathematics", "era": 2, "prereqs": ["writing", "the_wheel"],
+      "cost": {"science": 330, "wood": 50, "gold": 15},
+      "effects": {"science_mult": 0.25},
+      "description": "+25% science"
+    },
+    {
+      "id": "engineering", "name": "Engineering", "era": 2, "prereqs": ["masonry", "the_wheel"],
+      "cost": {"science": 360, "stone": 80, "ore": 20},
+      "effects": {"build_slots": 1},
+      "description": "+1 simultaneous construction; unlocks Aqueduct"
+    },
+    {
+      "id": "education", "name": "Education", "era": 3, "prereqs": ["mathematics", "currency"],
+      "cost": {"science": 800, "wood": 80, "gold": 60},
+      "effects": {"science_mult": 0.2},
+      "description": "+20% science; unlocks University"
+    },
+    {
+      "id": "machinery", "name": "Machinery", "era": 3, "prereqs": ["engineering", "iron_working"],
+      "cost": {"science": 880, "wood": 80, "ore": 80},
+      "effects": {"yield_mult": {"all": 0.15}},
+      "description": "+15% to all resource yields"
+    },
+    {
+      "id": "guilds", "name": "Guilds", "era": 3, "prereqs": ["currency", "engineering"],
+      "cost": {"science": 840, "stone": 60, "gold": 80},
+      "effects": {"income": {"gold": 0.5}, "build_speed": 0.25},
+      "description": "+0.5 gold per tick, +25% construction speed"
+    }
+  ]
+}

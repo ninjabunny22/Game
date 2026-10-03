@@ -1,0 +1,68 @@
+{
+  "house": {
+    "name": "House", "category": "growth", "placement": "center",
+    "cost": {"wood": 20}, "build_time": 8,
+    "effects": {"housing": 8},
+    "color": "#c8a26b", "height": 0.5
+  },
+  "farm": {
+    "name": "Farm", "category": "food", "placement": "yield:food",
+    "cost": {"wood": 15}, "build_time": 10,
+    "effects": {"yield_mult": {"food": 0.12}},
+    "color": "#e6d36a", "height": 0.3
+  },
+  "lumber_camp": {
+    "name": "Lumber Camp", "category": "industry", "placement": "yield:wood", "need_resource": "wood",
+    "cost": {"wood": 12, "stone": 5}, "build_time": 10,
+    "effects": {"yield_mult": {"wood": 0.15}},
+    "color": "#7a5230", "height": 0.45
+  },
+  "storehouse": {
+    "name": "Storehouse", "category": "infrastructure", "placement": "center", "requires_tech": "pottery", "max_count": 8,
+    "cost": {"wood": 30, "stone": 15}, "build_time": 12,
+    "effects": {"storage": 200},
+    "color": "#a67c52", "height": 0.6
+  },
+  "quarry": {
+    "name": "Quarry", "category": "industry", "placement": "yield:stone", "need_resource": "stone", "requires_tech": "mining",
+    "cost": {"wood": 25}, "build_time": 12,
+    "effects": {"yield_mult": {"stone": 0.2}},
+    "color": "#d0d0d0", "height": 0.35
+  },
+  "mine": {
+    "name": "Mine", "category": "industry", "placement": "yield:ore", "need_resource": "ore", "requires_tech": "bronze_working",
+    "cost": {"wood": 30, "stone": 20}, "build_time": 14,
+    "effects": {"yield_mult": {"ore": 0.25}},
+    "color": "#5c4a42", "height": 0.5
+  },
+  "library": {
+    "name": "Library", "category": "science", "placement": "center", "requires_tech": "writing",
+    "cost": {"wood": 40, "stone": 30}, "build_time": 16,
+    "effects": {"science": 0.6},
+    "color": "#6fa8dc", "height": 0.8
+  },
+  "market": {
+    "name": "Market", "category": "wealth", "placement": "center", "requires_tech": "currency",
+    "cost": {"wood": 40, "stone": 30, "ore": 10}, "build_time": 16,
+    "effects": {"income": {"gold": 0.4}},
+    "color": "#f2a93b", "height": 0.6
+  },
+  "workshop": {
+    "name": "Workshop", "category": "industry", "placement": "center", "requires_tech": "iron_working",
+    "cost": {"wood": 40, "stone": 30, "ore": 25}, "build_time": 18,
+    "effects": {"build_speed": 0.2, "yield_mult": {"wood": 0.05, "stone": 0.05, "ore": 0.05}},
+    "color": "#8c5a5a", "height": 0.7
+  },
+  "aqueduct": {
+    "name": "Aqueduct", "category": "growth", "placement": "center", "requires_tech": "engineering", "max_count": 3,
+    "cost": {"stone": 80, "ore": 15}, "build_time": 24,
+    "effects": {"housing": 20, "growth": 0.15},
+    "color": "#b9d7e8", "height": 1.0
+  },
+  "university": {
+    "name": "University", "category": "science", "placement": "center", "requires_tech": "education",
+    "cost": {"wood": 60, "stone": 80, "gold": 40}, "build_time": 28,
+    "effects": {"science": 2.0},
+    "color": "#3d6fb3", "height": 1.1
+  }
+}

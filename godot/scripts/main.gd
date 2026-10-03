@@ -1,0 +1,98 @@
+extends Node3D
+## Viewer entry point. Builds the scene in code and wires the sim client to the
+## terrain, the civ view and the HUD. The viewer holds no game logic: it redraws
+## whatever the latest tick message says.
+
+const SimClient := preload("res://scripts/sim_client.gd")
+const Terrain := preload("res://scripts/terrain.gd")
+const CivView := preload("res://scripts/civ_view.gd")
+const CameraRig := preload("res://scripts/camera_rig.gd")
+const Hud := preload("res://scripts/hud.gd")
+
+var _client := SimClient.new()
+var _terrain := Terrain.new()
+var _civ_view := CivView.new()
+var _camera := CameraRig.new()
+var _hud := Hud.new()
+
+var _ready_for_ticks := false
+var _civ_colors: Array = []
+var _territory_rev := -1
+
+
+func _ready() -> void:
+	_add_lighting()
+	add_child(_terrain)
+	add_child(_civ_view)
+	add_child(_camera)
+	add_child(_hud)
+	add_child(_client)
+
+	_client.connection_changed.connect(_on_connection_changed)
+	_client.init_received.connect(_on_init)
+	_client.tick_received.connect(_on_tick)
+	_client.status_received.connect(_hud.set_status)
+	_hud.command_requested.connect(_client.send_command)
+
+
+func _unhandled_key_input(event: InputEvent) -> void:
+	if not event.pressed or event.echo:
+		return
+	match event.keycode:
+		KEY_SPACE:
+			_client.send_command("toggle_pause")
+		KEY_PERIOD:
+			_client.send_command("step")
+		KEY_EQUAL, KEY_PLUS:
+			_hud.request_speed(2.0)
+		KEY_MINUS:
+			_hud.request_speed(0.5)
+
+
+func _on_connection_changed(connected: bool) -> void:
+	_hud.set_connected(connected)
+	if not connected:
+		_ready_for_ticks = false
+
+
+func _on_init(data: Dictionary) -> void:
+	_civ_colors.clear()
+	for civ: Dictionary in data["civs"]:
+		_civ_colors.append(Color.html(civ["color"]))
+	_terrain.build(data["map"], data["biomes"])
+	_civ_view.setup(_terrain, data, _civ_colors)
+	_hud.setup(data)
+	_camera.focus(_terrain.center(), maxf(_terrain.map_width, _terrain.map_height) * 1.15)
+	_territory_rev = -1
+	_ready_for_ticks = true
+
+
+func _on_tick(tick: int, data: Dictionary) -> void:
+	if not _ready_for_ticks:
+		return
+	var rev := int(data["territory_rev"])
+	if rev != _territory_rev:
+		_territory_rev = rev
+		_terrain.apply_territory(data["territory"], _civ_colors)
+	_civ_view.update(data["civs"])
+	_hud.update(tick, data)
+
+
+func _add_lighting() -> void:
+	var sky := Sky.new()
+	sky.sky_material = ProceduralSkyMaterial.new()
+	var environment := Environment.new()
+	environment.background_mode = Environment.BG_SKY
+	environment.sky = sky
+	environment.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
+	environment.ambient_light_energy = 0.9
+	environment.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	var world_environment := WorldEnvironment.new()
+	world_environment.environment = environment
+	add_child(world_environment)
+
+	var sun := DirectionalLight3D.new()
+	sun.rotation_degrees = Vector3(-52.0, -35.0, 0.0)
+	sun.shadow_enabled = true
+	sun.directional_shadow_max_distance = 300.0
+	add_child(sun)

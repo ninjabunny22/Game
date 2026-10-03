@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "civsim"
+version = "0.1.0"
+description = "Four-civilization strategy simulation core (Python) with a Godot 4 viewer"
+requires-python = ">=3.11"
+dependencies = [
+    "opensimplex>=0.4.5",
+    "websockets>=13",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+civsim = "civsim.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+civsim = ["data/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
