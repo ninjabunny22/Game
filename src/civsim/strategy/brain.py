@@ -11,13 +11,10 @@ from typing import Protocol
 from ..economy.rules import RESOURCES
 from ..llm import LLMClient, LLMError
 from . import prompt
-from .checkin import CheckinRequest, default_offer
+from .checkin import WATER_PRIORITY, WATER_URGENT, CheckinRequest, default_offer
 from .context import BAND_RATIO
 
 log = logging.getLogger(__name__)
-
-ROMAN = ("I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X")
-
 
 class Brain(Protocol):
     name: str
@@ -47,15 +44,17 @@ class RuleBrain:
     name = "rules"
 
     def decide(self, request: CheckinRequest) -> dict | None:
-        if request.kind == "invent":
-            return self._invent(request.context)
         return self._stances(request.context)
 
     def _stances(self, context: dict) -> dict:
         you = context["you"]
         warlike = you["weights"]["military"] >= 1.15
         at_war = any(n["relation"] == "war" for n in context["neighbors"])
-        offer = default_offer(you)
+        thirst = you["water"]["urgency"]
+        can_declare = you["diplomacy_points"] >= context["diplomacy_costs"]["declare_war"]
+        # Is anyone with water to spare willing to deal? If so, there is no call to fight for it.
+        supplier = any(n["water_rich"] and n["their_stance_toward_you"] in ("trade", "ally")
+                       for n in context["neighbors"])
         stances = []
         for n in context["neighbors"]:
             # Exact for allies; for everyone else only the rough comparison is known.
@@ -65,36 +64,31 @@ class RuleBrain:
                 edge = 1 / BAND_RATIO[n["army_vs_yours"]]
             entry = {"civ": n["name"], "stance": "ignore", "give": "none", "give_per_tick": 0,
                      "want": "none", "want_per_tick": 0, "troop_commitment": 0}
+            offer = default_offer(you, n)
+            peaceable = not n["truce"] and n["relation"] != "alliance"
+            # Thirst changes who is worth courting and who is worth fighting.
+            courting = thirst >= WATER_PRIORITY and n["water_rich"]
+            desperate = (thirst >= WATER_URGENT and n["water_rich"] and not supplier and n["in_reach"]
+                         and peaceable and not at_war and edge >= 1.2 and can_declare)
             if n["relation"] == "war":
                 # Keep fighting while it is going well; otherwise seek peace.
                 if edge >= 0.9 and (n["war_ticks"] or 0) < 250:
                     entry.update(stance="aggression", troop_commitment=0.7)
-            elif (warlike and not at_war and not n["truce"] and n["relation"] != "alliance" and edge >= 1.4
-                  and you["resources"]["gold"]["stock"] >= 2 * context["gold_costs"]["declare_war"]):
+            elif desperate:
+                # Nobody will sell and the wells are failing: take the water.
+                entry.update(stance="aggression", troop_commitment=0.8)
+            elif warlike and not at_war and peaceable and edge >= 1.4 and can_declare and not courting:
                 entry.update(stance="aggression", troop_commitment=0.6)
             else:
                 threatened = at_war or n["their_stance_toward_you"] == "ally" or n["relation"] == "alliance"
-                entry.update(offer, stance="ally" if threatened else "trade")
+                # A civ in real need ties itself to whoever has water.
+                bind = courting and thirst >= WATER_URGENT
+                entry.update(offer, stance="ally" if threatened or bind else "trade")
             stances.append(entry)
-        return {"reason": "Rule-based policy.", "stances": stances}
-
-    def _invent(self, context: dict) -> dict:
-        you = context["you"]
-        caps = context["effect_caps"]
-        fill = {res: you["resources"][res] / max(you["storage"][res], 1) for res in RESOURCES}
-        scarce = min(RESOURCES, key=lambda res: (fill[res], res))
-        second = "military" if you["at_war"] else "science_mult"
-        materials = sorted((res for res in RESOURCES if res != "food"), key=lambda res: (-fill[res], res))[:2]
-        number = len(context["already_invented"])
-        return {
-            "name": f"{you['name']} {scarce.capitalize()} Methods {ROMAN[number % len(ROMAN)]}",
-            "description": f"Refined ways of working {scarce}.",
-            "effects": [
-                {"type": "yield_mult", "resource": scarce, "amount": 0.75 * caps["yield_mult"]},
-                {"type": second, "resource": "none", "amount": 0.5 * caps[second]},
-            ],
-            "materials": materials,
-        }
+        reason = "Rule-based policy."
+        if thirst >= WATER_PRIORITY:
+            reason = f"Rule-based policy; water is {you['water']['status']}."
+        return {"reason": reason, "stances": stances}
 
 
 def make_brain(provider: str, model: str | None = None, base_url: str | None = None) -> Brain:

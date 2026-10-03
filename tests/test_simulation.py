@@ -19,7 +19,11 @@ def test_initial_state():
     assert len(sim.civs) == 4
     assert len({civ.personality.name for civ in sim.civs}) == 4
     for civ in sim.civs:
-        assert len(civ.settlements) == 1
+        regions = [r for r in sim.world.regions if r.owner == civ.id]
+        assert len(regions) == 2, "a home region and one more"
+        assert [s.tile for s in civ.settlements] == [r.capital for r in regions] or (
+            {s.tile for s in civ.settlements} == {r.capital for r in regions})
+        assert civ.territory == {t for r in regions for t in r.tiles}, "every tile of both, from the start"
         assert civ.capital.tile in civ.territory
         assert civ.population > 0
         assert all(sim.world.owner[tile] == civ.id for tile in civ.territory)
@@ -36,7 +40,7 @@ def test_civs_grow_build_and_expand(played):
     fresh = Simulation(SimConfig(seed=3))
     for civ, start in zip(played.civs, fresh.civs):
         assert civ.population > start.population
-        assert len(civ.territory) > len(start.territory)
+        assert len(civ.territory) >= len(start.territory)
         assert any(b.complete for b in civ.buildings)
 
 

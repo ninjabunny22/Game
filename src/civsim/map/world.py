@@ -6,6 +6,8 @@ from .biomes import BIOME_INFO, Biome
 _ORTHOGONAL = ((1, 0), (-1, 0), (0, 1), (0, -1))
 _DIAGONAL = ((1, 1), (1, -1), (-1, 1), (-1, -1))
 
+RIVER_CROSSING_COST = 3.0  # fording a river without bridges
+BOAT_RANGE = 6  # tiles of open water boats can cross in one hop
 UNOWNED_BYTE = 255
 MAX_CIVS = UNOWNED_BYTE  # civ ids 0..254 fit the one-byte-per-tile territory encoding
 
@@ -22,8 +24,15 @@ class WorldMap:
         self.heights: list[float] = [0.0] * size
         self.biomes: list[Biome] = [Biome.OCEAN] * size
         self.deposits: dict[int, str] = {}
+        # Rivers run through land tiles: tile -> size (1 near the source, up to 3 downstream).
+        self.rivers: dict[int, int] = {}
         self.yields: list[dict[str, int]] = [{} for _ in range(size)]
         self.owner: list[int] = [-1] * size
+        # Regions (see regions.py): region id per tile (-1 for open sea), the regions
+        # themselves, and capital tile -> region id.
+        self.region_of: list[int] = [-1] * size
+        self.regions: list = []
+        self.capital_tiles: dict[int, int] = {}
         self.territory_rev = 0
 
     def idx(self, x: int, y: int) -> int:
@@ -44,6 +53,22 @@ class WorldMap:
 
     def is_water(self, i: int) -> bool:
         return BIOME_INFO[self.biomes[i]].water
+
+    def is_open_water(self, i: int) -> bool:
+        """Deep sea or lake: nothing can be claimed or built there, and it takes boats to cross."""
+        return self.biomes[i] in (Biome.OCEAN, Biome.LAKE)
+
+    def crossing_cost(self, i: int, bridges: bool, boats: bool) -> float | None:
+        """Cost of moving onto a tile, or None if it cannot be entered.
+
+        The one rule for how water affects movement: used for border expansion
+        and war reach now, and meant for unit pathfinding later.
+        """
+        if self.is_open_water(i):
+            return 1.0 if boats else None
+        if i in self.rivers and not bridges:
+            return RIVER_CROSSING_COST
+        return 1.0
 
     def claim(self, i: int, civ_id: int) -> None:
         if not 0 <= civ_id < MAX_CIVS:

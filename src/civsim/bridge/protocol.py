@@ -6,8 +6,8 @@ Server -> client
   init    sent once on connect: everything static (map, biome/building/tech
           definitions, civ identities).
   tick    sent after every sim tick, and once right after init: the full dynamic
-          state of every civ, the territory grid, relations between civs, trade
-          deals and invented techs. No deltas; any tick message alone is enough
+          state of every civ, the territory grid, armies and villagers on the
+          map, relations between civs, and trade deals. No deltas; any tick message alone is enough
           to redraw.
   status  sent when pause/speed changes (ticks stop while paused).
   error   reply to a malformed or unknown command.
@@ -20,10 +20,11 @@ Client -> server
 import json
 
 from ..economy.rules import RESOURCES
-from ..map import BIOME_INFO, DEPOSIT_TYPES, Biome
+from ..map import BIOME_INFO, DEPOSIT_TYPES, Biome, load_faction
+from ..military import UNIT_TYPES
 from ..simulation import Simulation
 
-PROTOCOL_VERSION = 2
+PROTOCOL_VERSION = 5
 COMMANDS = ("pause", "resume", "toggle_pause", "step", "set_speed")
 
 
@@ -66,6 +67,13 @@ def init_message(sim: Simulation) -> str:
             # Row-major. Heights: 0 = sea level, land (0, 1], sea floor [-0.5, 0).
             "heights": world.heights,
             "biomes": [int(b) for b in world.biomes],
+            # Region id per tile, row-major; -1 for open sea.
+            "region_ids": world.region_of,
+            # Rivers run through land tiles; size is 1 (stream) to 3 (wide river).
+            "rivers": [
+                {"x": tile % world.width, "y": tile // world.width, "size": size}
+                for tile, size in sorted(world.rivers.items())
+            ],
             "deposits": [
                 {"x": tile % world.width, "y": tile // world.width, "type": type_id}
                 for tile, type_id in sorted(world.deposits.items())
@@ -84,12 +92,24 @@ def init_message(sim: Simulation) -> str:
                       "requires_tech": bdef.requires_tech, "upkeep": bdef.upkeep}
             for bdef in sim.building_defs.values()
         },
+        # Regions never change shape; who holds each one is in every tick message.
+        "regions": [
+            {"id": region.id, "name": region.name, "capital": region.capital_name,
+             "x": region.capital % world.width, "y": region.capital // world.width}
+            for region in world.regions
+        ],
+        "native_faction": load_faction(),
+        "unit_types": {
+            unit.id: {"name": unit.name, "strength": unit.strength, "speed": unit.speed,
+                      "requires": list(unit.requires), "counters": list(unit.counters)}
+            for unit in UNIT_TYPES.values()
+        },
         "tech_tree": {
             "eras": sim.tech_tree.eras,
             "techs": [
                 {"id": tech.id, "name": tech.name, "era": tech.era, "prereqs": list(tech.prereqs),
                  "cost": tech.cost, "description": tech.description}
-                for tech in sim.tech_tree.techs.values() if tech.owner is None
+                for tech in sim.tech_tree.techs.values()
             ],
         },
         "civs": [
@@ -115,6 +135,8 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
             research = {"id": tech.id, "paid": civ.research.paid, "progress": round(progress, 3)}
         civs.append({
             "id": civ.id,
+            "alive": civ.alive,
+            "regions": [region.id for region in world.regions if region.owner == civ.id],
             "population": int(civ.population),
             "housing": int(mods.housing),
             "storage": {res: int(mods.storage[res]) for res in RESOURCES},  # hard cap per resource
@@ -139,9 +161,14 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
             "science_rate": round(civ.science_rate, 2),
             "demolition_refund": round(mods.demolition_refund, 2),
             "soldiers": int(civ.soldiers),
+            "units": {unit_id: round(count) for unit_id, count in civ.unit_counts().items() if round(count) > 0},
+            "commanders_in_reserve": [{"name": c.name, "level": c.level} for c in civ.commanders],
             "army_strength": round(diplomacy.strength(civ), 1),
             "unpaid": civ.unpaid,
             "unsupplied": civ.unsupplied,
+            "diplomacy_points": int(civ.diplomacy_points),
+            "thirsty": civ.thirsty,
+            "water_access": civ.water_access,
             # Ticks for which others still hold a betrayal against this civ (0 = in good standing).
             "distrusted_for": max(0, diplomacy.distrust_until.get(civ.id, 0) - sim.tick),
             # Strategic layer: stance toward each other civ (keyed by civ id), and why.
@@ -149,6 +176,27 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
             "reason": civ.last_reason,
             "thinking": civ.thinking,
         })
+    armies = []
+    villagers = []
+    for civ in sim.civs:
+        for army in civ.armies:
+            if army.size < 0.5:
+                continue  # an empty garrison is not drawn
+            commander = army.commander
+            armies.append({
+                "id": army.id, "civ": civ.id, "x": army.tile % world.width, "y": army.tile // world.width,
+                "role": army.role, "state": army.state, "target_civ": army.target_civ,
+                # Whole soldiers per unit type; types rounding to zero are left out.
+                "units": {unit_id: round(count) for unit_id, count in army.units.items() if round(count) > 0},
+                "size": round(army.size),
+                "dominant": army.dominant,
+                "strength": round(sim.military.army_strength(army), 1),
+                "commander": {"name": commander.name, "level": commander.level, "battles": commander.battles,
+                              "wins": commander.wins} if commander else None,
+            })
+        for villager in civ.villagers:
+            villagers.append({"id": villager.id, "civ": civ.id, "x": villager.tile % world.width,
+                              "y": villager.tile // world.width, "task": villager.task})
     relations = []
     for (a, b), relation in diplomacy.relations.items():
         war = relation.war
@@ -171,19 +219,19 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
         "territory": world.encode_territory(),
         "territory_rev": world.territory_rev,
         "civs": civs,
+        "armies": armies,
+        "villagers": villagers,
+        # owner is a civ id, or null while the native faction holds the region.
+        "regions": [
+            {"id": region.id, "owner": region.owner, "garrison": round(region.garrison)}
+            for region in world.regions
+        ],
         "relations": relations,
         "deals": [
             {"id": deal.id, "a": deal.a, "b": deal.b, "ends": deal.end,
              "a_gives": {"resource": deal.a_gives[0], "rate": deal.a_gives[1]},
              "b_gives": {"resource": deal.b_gives[0], "rate": deal.b_gives[1]}}
             for deal in diplomacy.deals
-        ],
-        # The era list grows when the first tech is invented.
-        "eras": tree.eras,
-        "invented_techs": [
-            {"id": tech.id, "name": tech.name, "era": tech.era, "owner": tech.owner,
-             "cost": tech.cost, "description": tech.description}
-            for tech in tree.techs.values() if tech.owner is not None
         ],
         "events": sim.events,
     }

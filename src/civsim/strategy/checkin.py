@@ -27,7 +27,6 @@ STANCE_ALIASES = {
 class CheckinRequest:
     civ_id: int
     tick: int
-    kind: str  # "stance" or "invent"
     context: dict  # the situation, as plain JSON-able data
 
 
@@ -59,9 +58,10 @@ def parse_stances(reply: object, context: dict, tick: int) -> tuple[dict[int, In
             intent.want_rate = _number(entry.get("want_per_tick"), 1.0, MIN_RATE, MAX_RATE)
             if intent.give is None or intent.give == intent.want:
                 # No usable offer: fall back to the obvious one.
-                fallback = default_offer(context["you"])
+                fallback = default_offer(context["you"], neighbor)
                 intent.give, intent.give_rate = fallback["give"], fallback["give_per_tick"]
                 intent.want = intent.want or fallback["want"]
+            _apply_water_priority(intent, context["you"], neighbor)
         elif stance is Stance.AGGRESSION:
             intent.commitment = _number(entry.get("troop_commitment"), 0.5, 0.1, 1.0)
         intents[neighbor["id"]] = intent
@@ -69,14 +69,50 @@ def parse_stances(reply: object, context: dict, tick: int) -> tuple[dict[int, In
     return intents, " ".join(reason.split())[:MAX_REASON_LENGTH] if isinstance(reason, str) else ""
 
 
-def default_offer(you: dict) -> dict:
-    """The plain trade a civ would propose: its fullest stockpile for its emptiest."""
+WATER_PRIORITY = 0.3  # urgency from which water is asked for ahead of anything else, and never given away
+WATER_URGENT = 0.7  # urgency from which every trade must be for water: as pressing as food
+
+
+def default_offer(you: dict, neighbor: dict | None = None) -> dict:
+    """The plain trade a civ would propose: its fullest stockpile for what it most needs.
+
+    Water takes over as it gets scarce. A civ short of it asks for water before
+    anything else, for more the worse off it is, and stops offering its own; a
+    civ with water to spare offers it to a neighbour who is asking for it.
+    """
     fill = {res: you["resources"][res]["stock"] / max(you["storage"][res], 1) for res in RESOURCES}
+    water = you["water"]
     lacking = [res for res in you["lacking"] if res in RESOURCES]
     want = lacking[0] if lacking else min(RESOURCES, key=lambda res: (fill[res], res))
-    give = max((res for res in RESOURCES if res != want), key=lambda res: (fill[res], res))
+    want_rate = 1.0
+    if water["urgency"] >= WATER_PRIORITY:
+        want = "water"
+        shortfall = max(0.0, water["use_per_tick"] - water["supply_per_tick"])
+        want_rate = max(MIN_RATE, min(MAX_RATE, round(max(0.5, 1.5 * shortfall) * (0.5 + water["urgency"]), 1)))
+    can_spare = [res for res in RESOURCES if res != want
+                 and not (res == "water" and (water["urgency"] >= 0.15 or not water["rich"]))]
+    give = max(can_spare, key=lambda res: (fill[res], res))
+    asked_for_water = neighbor is not None and (neighbor.get("their_trade_offer") or {}).get("wants") == "water"
+    if asked_for_water and "water" in can_spare:
+        give = "water"  # a neighbour is thirsty and there is plenty: sell it
     rate = max(MIN_RATE, min(MAX_RATE, round(you["resources"][give]["stock"] / 100, 1)))
-    return {"give": give, "give_per_tick": rate, "want": want, "want_per_tick": 1.0}
+    return {"give": give, "give_per_tick": rate, "want": want, "want_per_tick": want_rate}
+
+
+def _apply_water_priority(intent: Intent, you: dict, neighbor: dict) -> None:
+    """Hold any strategist, model or rules, to the water priorities above.
+
+    A civ whose water is tightening does not trade its water away; one in real
+    need turns every trade into a request for water.
+    """
+    urgency = you["water"]["urgency"]
+    if urgency < WATER_PRIORITY:
+        return
+    fallback = default_offer(you, neighbor)
+    if intent.give == "water":
+        intent.give, intent.give_rate = fallback["give"], fallback["give_per_tick"]
+    if urgency >= WATER_URGENT and intent.want != "water":
+        intent.want, intent.want_rate = "water", fallback["want_per_tick"]
 
 
 def _stance(value: object) -> Stance:

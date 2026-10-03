@@ -16,6 +16,9 @@ var _civ_colors: Array = []
 var _nodes := {}  # "civ:x:y" -> Node3D
 var _body_meshes := {}  # building type -> BoxMesh
 var _plinth_meshes := {}  # civ id -> BoxMesh
+var _regions := {}  # region id -> static info from init
+var _native_color := Color(0.6, 0.55, 0.48)
+var _native_name := ""
 var _links: ImmediateMesh
 var _link_material: StandardMaterial3D
 
@@ -30,6 +33,11 @@ func setup(terrain: Node3D, init: Dictionary, civ_colors: Array) -> void:
 	_building_defs = init["buildings"]
 	_civ_colors = civ_colors
 	_add_deposits(init["map"]["deposits"], init["deposit_types"])
+	_regions.clear()
+	for region: Dictionary in init["regions"]:
+		_regions[int(region["id"])] = region
+	_native_color = Color.html(init["native_faction"]["color"])
+	_native_name = init["native_faction"]["name"]
 
 	_link_material = StandardMaterial3D.new()
 	_link_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -43,15 +51,31 @@ func setup(terrain: Node3D, init: Dictionary, civ_colors: Array) -> void:
 	add_child(links_instance)
 
 
-func update(civs: Array) -> void:
+## `regions` is the tick's list of who holds each region (owner null = the native faction).
+func update(civs: Array, regions: Array) -> void:
 	var seen := {}
+	# Capitals still held by the native faction.
+	for region: Dictionary in regions:
+		if region["owner"] != null:
+			continue
+		var info: Dictionary = _regions[int(region["id"])]
+		var key := "n:%d" % int(region["id"])
+		seen[key] = true
+		if not _nodes.has(key):
+			var caption := "%s\n%s" % [info["capital"], info["name"]]
+			_nodes[key] = _make_capital(_native_color, caption, int(info["x"]), int(info["y"]), false)
 	for civ: Dictionary in civs:
 		var civ_id := int(civ["id"])
+		var index := 0
 		for settlement: Dictionary in civ["settlements"]:
-			var key := "%d:%d:%d" % [civ_id, int(settlement["x"]), int(settlement["y"])]
+			# The first capital in the list is the civ's own; it is marked with a star and a taller flag.
+			var is_main := index == 0
+			index += 1
+			var key := "%d:%d:%d:%s" % [civ_id, int(settlement["x"]), int(settlement["y"]), is_main]
 			seen[key] = true
 			if not _nodes.has(key):
-				_nodes[key] = _make_settlement(civ_id, settlement)
+				var caption := ("★ " if is_main else "") + str(settlement["name"])
+				_nodes[key] = _make_capital(_civ_colors[civ_id], caption, int(settlement["x"]), int(settlement["y"]), is_main)
 		for building: Dictionary in civ["buildings"]:
 			var key := "%d:%d:%d" % [civ_id, int(building["x"]), int(building["y"])]
 			seen[key] = true
@@ -124,46 +148,48 @@ func _make_building(civ_id: int, building: Dictionary) -> Node3D:
 	return root
 
 
-func _make_settlement(civ_id: int, settlement: Dictionary) -> Node3D:
-	var color: Color = _civ_colors[civ_id]
+## A region capital: a keep with a flag in its holder's colour and its name above.
+func _make_capital(color: Color, caption: String, x: int, y: int, is_main: bool) -> Node3D:
 	var root := Node3D.new()
-	root.position = _terrain.tile_position(int(settlement["x"]), int(settlement["y"]))
+	root.position = _terrain.tile_position(x, y)
+	var size := 1.0 if is_main else 0.8
 
 	var keep := MeshInstance3D.new()
 	var keep_mesh := BoxMesh.new()
-	keep_mesh.size = Vector3(0.9, 1.3, 0.9)
+	keep_mesh.size = Vector3(0.9 * size, 1.3 * size, 0.9 * size)
 	keep_mesh.material = _flat_material(color.lightened(0.35))
 	keep.mesh = keep_mesh
-	keep.position.y = 0.65
+	keep.position.y = 0.65 * size
 	root.add_child(keep)
 
+	var pole_height := 3.2 * size
 	var pole := MeshInstance3D.new()
 	var pole_mesh := CylinderMesh.new()
 	pole_mesh.top_radius = 0.05
 	pole_mesh.bottom_radius = 0.05
-	pole_mesh.height = 3.2
+	pole_mesh.height = pole_height
 	pole_mesh.material = _flat_material(Color(0.9, 0.9, 0.9))
 	pole.mesh = pole_mesh
-	pole.position.y = 1.3 + 1.6
+	pole.position.y = 1.3 * size + pole_height / 2.0
 	root.add_child(pole)
 
 	var flag := MeshInstance3D.new()
 	var flag_mesh := BoxMesh.new()
-	flag_mesh.size = Vector3(1.1, 0.7, 0.06)
+	flag_mesh.size = Vector3(1.1 * size, 0.7 * size, 0.06)
 	flag_mesh.material = _flat_material(color)
 	flag.mesh = flag_mesh
-	flag.position = Vector3(0.6, 4.1, 0.0)
+	flag.position = Vector3(0.6 * size, 1.3 * size + pole_height - 0.4, 0.0)
 	root.add_child(flag)
 
 	var label := Label3D.new()
-	label.text = settlement["name"]
-	label.font_size = 64
+	label.text = caption
+	label.font_size = 64 if is_main else 44
 	label.outline_size = 16
 	label.pixel_size = 0.02
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	label.no_depth_test = true
 	label.modulate = color.lightened(0.5)
-	label.position.y = 5.6
+	label.position.y = 1.3 * size + pole_height + 1.2
 	root.add_child(label)
 
 	add_child(root)

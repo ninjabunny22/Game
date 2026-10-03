@@ -10,7 +10,10 @@ from civsim.simulation import Simulation
 
 @pytest.fixture
 def sim() -> Simulation:
-    return Simulation(SimConfig(seed=3))
+    sim = Simulation(SimConfig(seed=3))
+    for civ in sim.civs:  # plenty of influence, so tests are about the rule in question
+        civ.diplomacy_points = 300.0
+    return sim
 
 
 def trade(give: str, rate: float, want: str | None = None) -> Intent:
@@ -27,12 +30,26 @@ def events_of(sim: Simulation, ticks: int) -> list[str]:
     return texts
 
 
-def make_neighbours(sim: Simulation, a, b) -> None:
-    """Give `a` a strip of land right up against `b`'s territory."""
+def make_neighbours(sim: Simulation, a, b) -> int:
+    """Give `a` a strip of land right up against `b`'s territory. Returns that tile."""
     world = sim.world
-    edge = next(n for t in sorted(b.territory) for n in world.neighbors(t) if world.owner[n] < 0)
+    edge = next(n for t in sorted(b.territory) for n in world.neighbors(t)
+                if world.owner[n] < 0 and not world.is_open_water(n))
     world.claim(edge, a.id)
     a.territory.add(edge)
+    return edge
+
+
+def set_soldiers(sim: Simulation, civ, soldiers: float) -> None:
+    """Set a civ's head count and bring its armies into line with it."""
+    civ.soldiers = soldiers
+    civ.unpaid = civ.unsupplied = False
+    sim.military._sync(civ)
+    sim.military._organise(civ, sim.tick)
+
+
+def field_army(civ, enemy):
+    return next(a for a in civ.armies if a.role == "field" and a.target_civ == enemy.id)
 
 
 # -- trade -------------------------------------------------------------------
@@ -41,6 +58,7 @@ def test_mutual_trade_opens_a_deal_that_moves_resources_every_tick(sim):
     a, b = sim.civs[0], sim.civs[1]
     a.resources.update(wood=200, ore=0, gold=50)
     b.resources.update(ore=200, wood=0, gold=50)
+    a.diplomacy_points = b.diplomacy_points = 50
     a.capacity["ore"] = 0  # no ore of its own
     sim.diplomacy.set_intents(a.id, {b.id: trade("wood", 1.0, want="ore")})
     assert not sim.diplomacy.deals, "one-sided interest is not a deal"
@@ -52,7 +70,8 @@ def test_mutual_trade_opens_a_deal_that_moves_resources_every_tick(sim):
     deal = sim.diplomacy.deal_between(a.id, b.id)
     assert deal and deal.a_gives == ("wood", 1.0) and deal.b_gives == ("ore", 0.5)
     assert any("trades" in t for t in texts)
-    assert a.resources["gold"] == b.resources["gold"] == 50 - rules.DEAL_FEE
+    assert a.diplomacy_points == b.diplomacy_points == 50 + 2 * rules.DIPLOMACY_GAIN - rules.DEAL_FEE
+    assert a.resources["gold"] == b.resources["gold"] == 50, "diplomacy is paid in influence, not gold"
     assert a.resources["ore"] == pytest.approx(0.5) and b.resources["wood"] == pytest.approx(1.0)
     assert a.imports["ore"] == 0.5 and a.exports["wood"] == 1.0
 
@@ -65,10 +84,14 @@ def test_deal_expires_after_its_duration(sim):
     a, b = sim.civs[0], sim.civs[1]
     a.resources.update(wood=250, gold=15)
     b.resources.update(stone=250, wood=0, gold=15)
+    a.diplomacy_points = b.diplomacy_points = rules.DEAL_FEE
     a.resources["stone"] = 0
     sim.diplomacy.set_intents(a.id, {b.id: trade("wood", 1.0)})
     sim.diplomacy.set_intents(b.id, {a.id: trade("stone", 1.0)})
-    texts = events_of(sim, rules.DEAL_DURATION + 2)
+    texts = []
+    for _ in range(rules.DEAL_DURATION + 2):
+        texts += events_of(sim, 1)
+        a.diplomacy_points = 0  # spent: nothing left for a second deal
     assert sum("trades" in t for t in texts) == 1, "they cannot afford the fee a second time"
     assert any("expires" in t for t in texts)
     assert not sim.diplomacy.deals
@@ -103,7 +126,8 @@ def test_no_deal_for_a_resource_the_receiver_is_full_of(sim):
 
 def test_alliance_needs_both_sides_and_lapses_when_one_walks_away(sim):
     a, b = sim.civs[0], sim.civs[1]
-    a.resources["gold"] = b.resources["gold"] = 100
+    a.diplomacy_points = b.diplomacy_points = 100
+    gold = a.resources["gold"]
     sim.diplomacy.set_intents(a.id, {b.id: Intent(Stance.ALLY)})
     events_of(sim, 2)
     assert sim.diplomacy.relation(a.id, b.id).status == "peace"
@@ -112,7 +136,8 @@ def test_alliance_needs_both_sides_and_lapses_when_one_walks_away(sim):
     texts = events_of(sim, 1)
     assert sim.diplomacy.relation(a.id, b.id).status == "alliance"
     assert any("form an alliance" in t for t in texts)
-    assert a.resources["gold"] == 100 - rules.ALLIANCE_COST
+    assert a.diplomacy_points == 100 + 3 * rules.DIPLOMACY_GAIN - rules.ALLIANCE_COST
+    assert a.resources["gold"] == gold
     assert sim.diplomacy.allies(a.id) == [b.id]
 
     sim.diplomacy.set_intents(b.id, {a.id: Intent(Stance.IGNORE)})
@@ -122,78 +147,139 @@ def test_alliance_needs_both_sides_and_lapses_when_one_walks_away(sim):
 
 # -- war ---------------------------------------------------------------------
 
-def test_war_needs_reach_and_gold(sim):
+def test_war_needs_reach_and_diplomacy_points(sim):
     a, b = sim.civs[0], sim.civs[1]
-    a.resources["gold"] = 100
     sim.diplomacy.set_intents(a.id, {b.id: Intent(Stance.AGGRESSION, commitment=1.0)})
     events_of(sim, 12)
     assert sim.diplomacy.relation(a.id, b.id).status == "peace", "too far apart to fight"
     assert a.march_target == b.id, "so the border is told to creep toward the target"
 
     make_neighbours(sim, a, b)
-    a.resources["gold"] = 0
+    a.diplomacy_points = 0
+    a.resources["gold"] = 250  # gold does not buy a war
     events_of(sim, 12)
-    assert sim.diplomacy.relation(a.id, b.id).status == "peace", "cannot afford to declare"
+    assert sim.diplomacy.relation(a.id, b.id).status == "peace", "not enough influence to declare"
 
-    a.resources["gold"] = 100
+    a.diplomacy_points = rules.WAR_COST
     texts = events_of(sim, 12)
     assert sim.diplomacy.relation(a.id, b.id).status == "war"
     assert any("declares war" in t for t in texts)
-    assert a.resources["gold"] == 100 - rules.WAR_COST
+    assert a.diplomacy_points < 20, "the declaration used it up"
+    assert a.resources["gold"] == 250
     assert a.soldier_target > 0.3 * a.population and b.military_need == 1.0
 
 
-def test_stronger_attacker_takes_land_until_the_defender_surrenders(sim):
+def test_stronger_attacker_marches_in_and_takes_a_region_by_its_capital(sim):
     a, b = sim.civs[0], sim.civs[1]
     make_neighbours(sim, a, b)
     a.population, a.soldiers = 400, 140
     b.population, b.soldiers = 20, 0
-    a.resources["gold"] = 100
-    b.resources.update(wood=100, gold=40)
-    farm_tiles = [t for t in sorted(b.territory) if t != b.capital.tile and BIOME_INFO[sim.world.biomes[t]].buildable]
-    b.buildings += [Building("farm", t, 1.0, True) for t in farm_tiles]
+    held = [r for r in sim.world.regions if r.owner == b.id]
     start_a, start_b = len(a.territory), len(b.territory)
     sim.diplomacy.set_intents(a.id, {b.id: Intent(Stance.AGGRESSION, commitment=1.0)})
 
     texts = []
-    for _ in range(400):
+    for _ in range(1500):
         texts += events_of(sim, 1)
         a.soldiers = 140  # keep the army topped up; recruitment is the economy's job
-        if any("surrenders" in t for t in texts):
+        a.unpaid = a.unsupplied = False
+        if any("falls with it" in t for t in texts):
             break
-    assert any("surrenders" in t for t in texts)
-    relation = sim.diplomacy.relation(a.id, b.id)
-    assert relation.status == "peace" and relation.truce_until > sim.tick
-    lost = start_b - len(b.territory)
-    assert lost > 0 and len(a.territory) == start_a + lost
-    assert b.capital.tile in b.territory, "the capital itself is never taken"
+    fallen = [r for r in held if r.owner == a.id]
+    assert fallen, "the army reached a capital and the region fell with it"
+    region = fallen[0]
+    assert all(sim.world.owner[t] == a.id for t in region.tiles), "every tile of the region changed hands"
+    assert region.capital in {s.tile for s in a.settlements}
+    assert region.capital not in {s.tile for s in b.settlements}
+    assert len(a.territory) + len(b.territory) == start_a + start_b, "nothing vanished"
     assert all(sim.world.owner[t] == a.id for t in a.territory)
     assert all(sim.world.owner[t] == b.id for t in b.territory)
-    assert all(sim.world.owner[bld.tile] == b.id for bld in b.buildings)
-    assert all(sim.world.owner[bld.tile] == a.id for bld in a.buildings)
-    captured = [t for t in farm_tiles if sim.world.owner[t] == a.id]
-    assert captured, "some farmland was taken"
-    assert sorted(bld.tile for bld in a.buildings if bld.type == "farm") == captured, "with the farms on it"
-    assert len(b.buildings) == len(farm_tiles) - len(captured), "nothing was destroyed"
-    assert b.resources["wood"] == pytest.approx(100 * (1 - rules.TRIBUTE))
 
-    # The truce holds even though the winner is still hostile.
-    events_of(sim, 20)
-    assert sim.diplomacy.relation(a.id, b.id).status == "peace"
+
+def test_capturing_a_capital_flips_the_region_with_its_buildings(sim):
+    a, b = sim.civs[0], sim.civs[1]
+    second = next(r for r in sim.world.regions if r.owner == b.id and r.capital != b.capital.tile)
+    tiles = [t for t in second.tiles if t != second.capital and BIOME_INFO[sim.world.biomes[t]].buildable][:5]
+    b.buildings += [Building("farm", t, 1.0, True) for t in tiles]
+    home_tiles = len([r for r in sim.world.regions if r.owner == b.id and r is not second][0].tiles)
+
+    events: list = []
+    sim.diplomacy.capture_region(a, second, sim.tick, events)
+    assert second.owner == a.id
+    assert all(sim.world.owner[t] == a.id for t in second.tiles)
+    assert sorted(bld.tile for bld in a.buildings if bld.type == "farm") == sorted(tiles), "buildings come with it"
+    assert not [bld for bld in b.buildings if bld.tile in tiles]
+    assert len(b.territory) == home_tiles, "the loser keeps its other region"
+    assert [s.tile for s in b.settlements] == [b.capital.tile] and b.alive
+    assert any("falls with it" in e["text"] for e in events)
+    assert not any("tribute" in e["text"] for e in events), "only losing your own capital costs tribute"
+
+
+def test_losing_the_main_capital_means_tribute_and_a_new_capital(sim):
+    a, b = sim.civs[0], sim.civs[1]
+    make_neighbours(sim, a, b)
+    sim.diplomacy.set_intents(a.id, {b.id: Intent(Stance.AGGRESSION, commitment=0.5)})
+    events_of(sim, 12)
+    assert sim.diplomacy.relation(a.id, b.id).war
+    home = next(r for r in sim.world.regions if r.capital == b.capital.tile)
+    other = next(r for r in sim.world.regions if r.owner == b.id and r is not home)
+    b.resources.update(wood=200, stone=100)
+    a.resources.update(wood=0, stone=0)
+
+    events: list = []
+    sim.diplomacy.capture_region(a, home, sim.tick, events)
+    assert b.alive and b.capital.tile == other.capital, "the court moves to the capital it still holds"
+    assert b.resources["wood"] == pytest.approx(100) and a.resources["wood"] == pytest.approx(100)
+    relation = sim.diplomacy.relation(a.id, b.id)
+    assert relation.status == "peace" and relation.truce_until >= sim.tick + rules.SURRENDER_TRUCE
+    assert any("moves its court" in e["text"] for e in events)
+
+
+def test_a_civ_with_no_capital_left_is_destroyed(sim):
+    a, b, c = sim.civs[0], sim.civs[1], sim.civs[2]
+    extra = next(n for t in sorted(b.territory) for n in sim.world.neighbors(t)
+                 if sim.world.owner[n] < 0 and n not in sim.world.capital_tiles)
+    sim.world.claim(extra, b.id)  # land outside its two regions
+    b.territory.add(extra)
+    b.resources["wood"] = 80
+    wood = a.resources["wood"]
+    villagers = len(a.villagers) + len(b.villagers)
+    sim.diplomacy.set_intents(c.id, {b.id: Intent(Stance.TRADE, give="wood", give_rate=1.0)})
+    for region in [r for r in sim.world.regions if r.owner == b.id]:
+        sim.diplomacy.capture_region(a, region, sim.tick, [])
+
+    assert not b.alive and not b.settlements and not b.territory
+    assert sim.world.owner[extra] == a.id, "what was left of it goes to the conqueror"
+    assert len(a.villagers) == villagers and not b.villagers, "its villagers are taken in, not lost"
+    assert a.resources["wood"] > wood
+    assert b.id not in sim.diplomacy.others(a.id)
+    assert all(sim.diplomacy.relation(b.id, o.id).status == "peace" for o in sim.civs if o is not b)
+
+    # The world goes on without it.
+    for _ in range(60):
+        sim.step()
+    assert not b.alive and not b.armies
 
 
 def test_weaker_attacker_gains_nothing_and_bleeds(sim):
     a, b = sim.civs[0], sim.civs[1]
     make_neighbours(sim, a, b)
+    edge = make_neighbours(sim, a, b)
     a.population, a.soldiers = 100, 10
     b.population, b.soldiers = 300, 60
     a.resources["gold"] = 100
     size = len(b.territory)
     sim.diplomacy.set_intents(a.id, {b.id: Intent(Stance.AGGRESSION, commitment=1.0)})
-    events_of(sim, 60)
+    events_of(sim, 12)
     war = sim.diplomacy.relation(a.id, b.id).war
-    assert war and war.tiles_taken[a.id] == 0 and len(b.territory) >= size
-    assert war.casualties[a.id] > war.casualties[b.id] > 0
+    assert war
+    army = field_army(a, b)
+    army.tile, army.path = edge, []  # the attacker's army arrives at the border
+    texts = events_of(sim, 60)
+    assert war.tiles_taken[a.id] == 0 and len(b.territory) >= size
+    assert war.casualties[a.id] > war.casualties[b.id] > 0, "the defender's army came out to meet it"
+    assert any("routs" in t for t in texts)
+    assert field_army(a, b).state in ("retreating", "idle"), "the beaten army falls back"
 
 
 def test_war_ends_when_nobody_wants_it_any_more(sim):
@@ -279,8 +365,7 @@ def joint_war(sim, strengths: dict[int, float]):
     assert sim.diplomacy.relation(a.id, enemy.id).war and sim.diplomacy.relation(ally.id, enemy.id).war
     for civ_id, soldiers in strengths.items():
         sim.civs[civ_id].population = 500
-        sim.civs[civ_id].soldiers = soldiers
-        sim.civs[civ_id].unpaid = sim.civs[civ_id].unsupplied = False
+        set_soldiers(sim, sim.civs[civ_id], soldiers)
     return a, enemy, ally
 
 
@@ -310,7 +395,7 @@ def test_a_capture_is_only_joint_with_allies_fighting_the_same_enemy(sim):
     events_of(sim, 12)
     assert sim.diplomacy.relation(a.id, bystander.id).status == "alliance"
     assert sim.diplomacy.relation(bystander.id, enemy.id).status == "peace"
-    bystander.soldiers = 500
+    set_soldiers(sim, bystander, 400)
     assert sim.diplomacy.spoils_shares(a, enemy) == {a.id: 1.0}, "an ally who is not in the war gets nothing"
 
 
@@ -336,18 +421,19 @@ def test_captured_stores_are_shared_but_the_building_goes_to_the_captor(sim):
     assert "shared by strength" in events[0]["text"]
 
     # Power shifts; the next capture uses the new balance.
-    a.soldiers, ally.soldiers = 90, 30
+    set_soldiers(sim, a, 90)
+    set_soldiers(sim, ally, 30)
     assert sim.diplomacy.spoils_shares(a, enemy)[a.id] == pytest.approx(0.75)
 
 
-def test_tribute_on_surrender_is_shared_the_same_way(sim):
+def test_tribute_for_a_fallen_capital_is_shared_the_same_way(sim):
     a, enemy, ally = joint_war(sim, {0: 80, 2: 20})
-    relation = sim.diplomacy.relation(a.id, enemy.id)
     for civ in (a, ally):
         for res in civ.resources:
             civ.resources[res] = 0
     enemy.resources.update(wood=200, stone=100)
-    sim.diplomacy._surrender(relation, a, enemy, sim.tick, [])
+    home = next(r for r in sim.world.regions if r.capital == enemy.capital.tile)
+    sim.diplomacy.capture_region(a, home, sim.tick, [])
     assert a.resources["wood"] == pytest.approx(0.8 * 100) and ally.resources["wood"] == pytest.approx(0.2 * 100)
     assert a.resources["stone"] == pytest.approx(0.8 * 50) and ally.resources["stone"] == pytest.approx(0.2 * 50)
     assert enemy.resources["wood"] == pytest.approx(100)
@@ -378,7 +464,7 @@ def test_an_attacked_civs_ally_is_drawn_into_the_war(sim):
     ally_up(sim, victim, guardian)
     make_neighbours(sim, attacker, victim)
     attacker.resources["gold"] = 100
-    gold = guardian.resources["gold"]
+    influence = guardian.diplomacy_points
     sim.diplomacy.set_intents(attacker.id, {victim.id: Intent(Stance.AGGRESSION, commitment=0.5)})
     texts = events_of(sim, 12)
 
@@ -387,7 +473,7 @@ def test_an_attacked_civs_ally_is_drawn_into_the_war(sim):
     assert relation.status == "war", "the ally has no say in a defensive war"
     assert (relation.war.declarer, relation.war.guardian, relation.war.defending) == (attacker.id, guardian.id, victim.id)
     assert any("in defence of its ally" in t for t in texts)
-    assert guardian.resources["gold"] >= gold - 12 * 0.2, "joining costs nothing beyond alliance upkeep"
+    assert guardian.diplomacy_points >= influence - 1, "joining a defensive war costs nothing"
     assert sim.diplomacy.relation(attacker.id, bystander.id).status == "peace"
     assert guardian.id in sim.diplomacy.spoils_shares(victim, attacker), "and it shares in what the defence wins"
 
@@ -466,3 +552,18 @@ def test_allying_with_a_civ_under_attack_means_joining_its_defence(sim):
     other = sim.civs[3]
     ally_up(sim, attacker, other)
     assert sim.diplomacy.relation(victim.id, other.id).status == "peace"
+
+
+# -- diplomacy points ----------------------------------------------------------
+
+def test_every_civ_earns_diplomacy_points_automatically_up_to_a_cap():
+    sim = Simulation(SimConfig(seed=3))
+    assert all(civ.diplomacy_points == rules.DIPLOMACY_START for civ in sim.civs)
+    for _ in range(40):
+        sim.step()
+    assert all(civ.diplomacy_points == rules.DIPLOMACY_START + 40 * rules.DIPLOMACY_GAIN for civ in sim.civs)
+    for _ in range(400):
+        sim.step()
+    assert all(civ.diplomacy_points == rules.DIPLOMACY_CAP for civ in sim.civs)
+    assert rules.WAR_COST == 100 and rules.WAR_COST > rules.ALLIANCE_COST > rules.DEAL_FEE
+    assert "diplomacy_points" not in sim.civs[0].resources, "not a tradeable resource"

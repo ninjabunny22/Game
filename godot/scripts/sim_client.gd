@@ -8,7 +8,7 @@ signal init_received(data: Dictionary)
 signal tick_received(tick: int, data: Dictionary)
 signal status_received(data: Dictionary)
 
-const PROTOCOL_VERSION := 2
+const PROTOCOL_VERSION := 5
 const RETRY_SECONDS := 1.5
 
 @export var url := "ws://127.0.0.1:8765"

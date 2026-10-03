@@ -12,7 +12,10 @@ from civsim.strategy.context import army_band
 
 @pytest.fixture
 def sim() -> Simulation:
-    return Simulation(SimConfig(seed=3))
+    sim = Simulation(SimConfig(seed=3))
+    for civ in sim.civs:  # plenty of influence, so tests are about the rule in question
+        civ.diplomacy_points = 300.0
+    return sim
 
 
 def tick(sim, ticks=1) -> list[str]:
@@ -114,7 +117,7 @@ def test_the_model_is_not_shown_what_the_civ_cannot_see(sim):
     stranger.soldiers = 4321
     stranger.population = 20000
     friend.soldiers = 1234
-    _, user, _ = prompt.build(CheckinRequest(me.id, sim.tick, "stance", stance_context(sim, me)))
+    _, user, _ = prompt.build(CheckinRequest(me.id, sim.tick, stance_context(sim, me)))
     assert "4321" not in user and "1234" in user
     shown = json.loads(user[user.index("{"): user.rindex("}") + 1])
     assert all("army_vs_yours" in n for n in shown["neighbors"])
@@ -123,7 +126,7 @@ def test_the_model_is_not_shown_what_the_civ_cannot_see(sim):
 def test_rule_brain_copes_with_rough_estimates(sim):
     brain = RuleBrain()
     for civ in sim.civs:
-        reply = brain.decide(CheckinRequest(civ.id, sim.tick, "stance", stance_context(sim, civ)))
+        reply = brain.decide(CheckinRequest(civ.id, sim.tick, stance_context(sim, civ)))
         assert len(reply["stances"]) == 3
 
 
@@ -148,16 +151,25 @@ def test_a_war_between_civs_that_were_never_allied_is_not_betrayal(sim):
     assert not sim.diplomacy.distrusted(a.id, sim.tick)
 
 
-def fight(sim, attacker, defender, ticks):
-    """Fight with the attacker's army 10% larger: enough to matter only if the defender has no home advantage."""
-    relation = sim.diplomacy.relation(attacker.id, defender.id)
+def siege(sim, attacker, defender, ticks) -> float:
+    """Capture progress a small army makes against the tile in front of it, over `ticks`."""
+    army = next(a for a in attacker.armies if a.role == "field" and a.target_civ == defender.id)
+    target = next(t for t in sorted(defender.territory) if t != defender.capital.tile
+                  and t not in set(sim.world.neighbors(defender.capital.tile, diagonal=True)))
+    army.units = {"spearman": 8.0}
+    attacker.soldiers = 8.0 + attacker.garrison.size
+    attacker.unpaid = attacker.unsupplied = False
+    defender.population = 300  # its militia outweighs eight spearmen, if it has time to muster
+    army.siege_progress = 0.0
+    taken = sim.diplomacy.relation(attacker.id, defender.id).war.tiles_taken[attacker.id]
     for _ in range(ticks):
-        attacker.population = defender.population = 300
-        attacker.soldiers, defender.soldiers = 66, 60
-        attacker.unpaid = attacker.unsupplied = defender.unpaid = defender.unsupplied = False
         sim.tick += 1
-        if relation.war:
-            sim.diplomacy._fight(relation, sim.tick, [])
+        army.state, army.path = "marching", [target]
+        if sim.diplomacy.relation(attacker.id, defender.id).war is None:
+            break
+        sim.military._besiege(attacker, army, sim.tick, [])
+    war = sim.diplomacy.relation(attacker.id, defender.id).war
+    return army.siege_progress + ((war.tiles_taken[attacker.id] - taken) if war else 1.0)
 
 
 def test_the_betrayed_civ_is_off_guard_only_for_the_opening(sim):
@@ -170,27 +182,18 @@ def test_the_betrayed_civ_is_off_guard_only_for_the_opening(sim):
     war = sim.diplomacy.relation(traitor.id, victim.id).war
     assert war.betrayer == traitor.id
 
-    war.progress[traitor.id] = 0.0
-    fight(sim, traitor, victim, 3)
+    assert siege(sim, traitor, victim, 3) > 0, "off guard, the defender gives ground"
     assert sim.tick < war.surprise_until
-    assert war.progress[traitor.id] > 0 or war.tiles_taken[traitor.id] > 0, "off guard, the defender gives ground"
 
-    # Once the surprise has passed, the same armies are held by home ground and militia.
+    # Once the surprise has passed, the same army is held off by the militia on home ground.
     sim.tick = war.surprise_until
-    war.progress[traitor.id] = 0.0
-    taken = war.tiles_taken[traitor.id]
-    fight(sim, traitor, victim, 10)
-    assert war.progress[traitor.id] == 0 and war.tiles_taken[traitor.id] == taken
+    assert siege(sim, traitor, victim, 10) == 0
 
 
 def test_without_betrayal_the_same_attacker_makes_no_headway(sim):
     a, b = sim.civs[0], sim.civs[1]
     betray(sim, a, b)  # never allied: an ordinary war
-    war = sim.diplomacy.relation(a.id, b.id).war
-    war.progress[a.id] = 0.0
-    taken = war.tiles_taken[a.id]
-    fight(sim, a, b, 10)
-    assert war.progress[a.id] == 0 and war.tiles_taken[a.id] == taken
+    assert siege(sim, a, b, 10) == 0
 
 
 def test_walking_away_then_attacking_soon_after_still_counts(sim):
@@ -261,7 +264,8 @@ def test_a_betrayer_pays_more_and_gets_less_in_trade(sim):
     sim.diplomacy.set_intents(fourth.id, {third.id: Intent(Stance.TRADE, give="wood", give_rate=1.0)})
     sim.diplomacy.set_intents(third.id, {traitor.id: Intent(Stance.TRADE, give="stone", give_rate=1.0),
                                          fourth.id: Intent(Stance.TRADE, give="stone", give_rate=1.0)})
-    gold = {civ.id: civ.resources["gold"] for civ in (traitor, third, fourth)}
+    for civ in (traitor, third, fourth):
+        civ.diplomacy_points = 200
     tick(sim)
 
     shunned = sim.diplomacy.deal_between(traitor.id, third.id)
@@ -272,8 +276,9 @@ def test_a_betrayer_pays_more_and_gets_less_in_trade(sim):
     assert to_traitor == ("stone", 0.5), "the partner sends half of what it offered"
     assert from_traitor == ("wood", 1.0), "while the betrayer still sends in full"
     assert honest.a_gives[1] == honest.b_gives[1] == 1.0
-    assert gold[traitor.id] - traitor.resources["gold"] >= 4 * rules.DEAL_FEE
-    assert gold[fourth.id] - fourth.resources["gold"] == pytest.approx(rules.DEAL_FEE)
+    gain = rules.DIPLOMACY_GAIN
+    assert traitor.diplomacy_points == pytest.approx(200 + gain - 4 * rules.DEAL_FEE)
+    assert fourth.diplomacy_points == pytest.approx(200 + gain - rules.DEAL_FEE)
 
 
 def test_a_second_betrayal_while_distrusted_adds_to_the_sentence(sim):

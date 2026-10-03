@@ -28,6 +28,9 @@ DEPOSIT_TYPES: dict[str, DepositType] = {
 }
 
 
+RIVERSIDE_FARMLAND = (Biome.PLAINS, Biome.FOREST, Biome.DESERT)  # a river makes these more fertile
+
+
 def place_deposits(world: WorldMap, rng: random.Random) -> None:
     """Seed cluster centres on eligible biomes, then grow each into a contiguous vein."""
     area_scale = (world.width * world.height) / (96 * 96)
@@ -51,6 +54,8 @@ def compute_yields(world: WorldMap) -> None:
         if deposit:
             for res, amount in DEPOSIT_TYPES[deposit].bonus.items():
                 yields[res] = yields.get(res, 0) + amount
+        if i in world.rivers and biome in RIVERSIDE_FARMLAND:
+            yields["food"] = yields.get("food", 0) + 1
         world.yields[i] = yields
 
 

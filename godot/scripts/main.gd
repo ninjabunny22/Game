@@ -6,12 +6,14 @@ extends Node3D
 const SimClient := preload("res://scripts/sim_client.gd")
 const Terrain := preload("res://scripts/terrain.gd")
 const CivView := preload("res://scripts/civ_view.gd")
+const UnitView := preload("res://scripts/unit_view.gd")
 const CameraRig := preload("res://scripts/camera_rig.gd")
 const Hud := preload("res://scripts/hud.gd")
 
 var _client := SimClient.new()
 var _terrain := Terrain.new()
 var _civ_view := CivView.new()
+var _unit_view := UnitView.new()
 var _camera := CameraRig.new()
 var _hud := Hud.new()
 
@@ -24,6 +26,7 @@ func _ready() -> void:
 	_add_lighting()
 	add_child(_terrain)
 	add_child(_civ_view)
+	add_child(_unit_view)
 	add_child(_camera)
 	add_child(_hud)
 	add_child(_client)
@@ -59,10 +62,15 @@ func _on_init(data: Dictionary) -> void:
 	_civ_colors.clear()
 	for civ: Dictionary in data["civs"]:
 		_civ_colors.append(Color.html(civ["color"]))
-	_terrain.build(data["map"], data["biomes"])
+	_terrain.build(data["map"], data["biomes"], Color.html(data["native_faction"]["color"]))
 	_civ_view.setup(_terrain, data, _civ_colors)
+	_unit_view.setup(_terrain, data, _civ_colors)
 	_hud.setup(data)
 	_camera.focus(_terrain.center(), maxf(_terrain.map_width, _terrain.map_height) * 1.15)
+	# CIVSIM_VIEW="x,y,distance" starts the camera on a tile instead of the whole map.
+	var view := OS.get_environment("CIVSIM_VIEW").split_floats(",", false)
+	if view.size() == 3:
+		_camera.focus(_terrain.tile_position(int(view[0]), int(view[1])), view[2])
 	_territory_rev = -1
 	_ready_for_ticks = true
 
@@ -74,8 +82,9 @@ func _on_tick(tick: int, data: Dictionary) -> void:
 	if rev != _territory_rev:
 		_territory_rev = rev
 		_terrain.apply_territory(data["territory"], _civ_colors)
-	_civ_view.update(data["civs"])
+	_civ_view.update(data["civs"], data["regions"])
 	_civ_view.update_links(data["civs"], data["relations"], data["deals"])
+	_unit_view.update(data["armies"], data["villagers"])
 	_hud.update(tick, data)
 
 

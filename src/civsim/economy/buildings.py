@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 
 from ..datafiles import load_json
 from ..map import BIOME_INFO, WorldMap
+from .villagers import builders_on_site
 
 COST_GROWTH_PER_COPY = 0.2
 
@@ -12,7 +13,7 @@ class BuildingDef:
     id: str
     name: str
     category: str  # which personality weight / need drives it
-    placement: str  # "center" or "yield:<resource>"
+    placement: str  # "center", "coast" or "yield:<resource>"
     cost: dict[str, float]
     build_time: int
     effects: dict = field(default_factory=dict)
@@ -49,6 +50,8 @@ def find_site(civ, world: WorldMap, bdef: BuildingDef) -> int | None:
             continue
         x, y = world.xy(tile)
         distance = math.hypot(x - cx, y - cy)
+        if bdef.placement == "coast" and not any(world.is_water(n) for n in world.neighbors(tile)):
+            continue  # a harbour has to be on the water
         if resource:
             tile_yield = world.yields[tile].get(resource, 0)
             if tile_yield <= 0:
@@ -76,8 +79,12 @@ def demolish(civ, building, mods, building_defs, events: list) -> None:
 
 
 def advance_construction(civ, mods, building_defs, events: list) -> None:
+    """Buildings under way advance, but only those with a villager on site building them."""
+    staffed = builders_on_site(civ)
     active = [b for b in civ.buildings if not b.complete][: mods.build_slots]
     for building in active:
+        if building.tile not in staffed:
+            continue
         bdef = building_defs[building.type]
         building.progress += (1 + mods.build_speed) / bdef.build_time
         if building.progress >= 1:

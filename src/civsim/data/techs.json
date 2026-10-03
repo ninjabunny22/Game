@@ -1,5 +1,5 @@
 {
-  "eras": ["Ancient", "Bronze Age", "Iron Age", "Medieval"],
+  "eras": ["Ancient", "Bronze Age", "Iron Age", "Medieval", "Renaissance", "Age of Reason", "Industrial"],
   "techs": [
     {
       "id": "agriculture", "name": "Agriculture", "era": 0, "prereqs": [],
@@ -50,6 +50,24 @@
       "description": "+15% wood, -20% territory expansion cost"
     },
     {
+      "id": "water_purification", "name": "Water Purification", "era": 1, "prereqs": ["pottery"],
+      "cost": {"science": 95, "wood": 40, "stone": 30},
+      "effects": {"purification": 0.15},
+      "description": "Coast tiles you own supply 0.15 water per tick each"
+    },
+    {
+      "id": "bridge_building", "name": "Bridge Building", "era": 1, "prereqs": ["masonry"],
+      "cost": {"science": 95, "wood": 50, "stone": 30},
+      "effects": {"bridges": 1},
+      "description": "Rivers no longer slow expansion or attacks"
+    },
+    {
+      "id": "boatbuilding", "name": "Boatbuilding", "era": 1, "prereqs": ["the_wheel"],
+      "cost": {"science": 100, "wood": 70},
+      "effects": {"boats": 1},
+      "description": "Transport boats: expand and wage war across lakes and up to 6 tiles of open sea"
+    },
+    {
       "id": "currency", "name": "Currency", "era": 2, "prereqs": ["writing", "bronze_working"],
       "cost": {"science": 300, "stone": 30, "ore": 20},
       "effects": {"income": {"gold": 0.3}},
@@ -71,7 +89,7 @@
       "id": "engineering", "name": "Engineering", "era": 2, "prereqs": ["masonry", "the_wheel"],
       "cost": {"science": 360, "stone": 80, "ore": 20},
       "effects": {"build_slots": 1, "demolition_refund": 0.04},
-      "description": "+1 simultaneous construction, demolition refund up to 21%; unlocks Aqueduct"
+      "description": "+1 simultaneous construction, demolition refund up to 21%; unlocks Aqueduct (+20% water)"
     },
     {
       "id": "education", "name": "Education", "era": 3, "prereqs": ["mathematics", "currency"],
@@ -90,6 +108,114 @@
       "cost": {"science": 840, "stone": 60, "gold": 80},
       "effects": {"income": {"gold": 0.5}, "build_speed": 0.25, "demolition_refund": 0.04},
       "description": "+0.5 gold per tick, +25% construction speed, demolition refund up to 25%"
+    },
+    {
+      "id": "printing_press", "name": "Printing Press", "era": 4, "prereqs": ["education"],
+      "cost": {"science": 3500, "wood": 150, "gold": 100},
+      "effects": {"science_mult": 0.25},
+      "description": "+25% science"
+    },
+    {
+      "id": "banking", "name": "Banking", "era": 4, "prereqs": ["guilds"],
+      "cost": {"science": 3500, "stone": 150, "gold": 150},
+      "effects": {"income": {"gold": 1.0}, "deal_fee": -0.5},
+      "description": "+1 gold per tick, trade deals cost half to open; unlocks Bank"
+    },
+    {
+      "id": "fortification", "name": "Fortification", "era": 4, "prereqs": ["engineering", "machinery"],
+      "cost": {"science": 3700, "stone": 200, "ore": 100},
+      "effects": {"defense": 0.25},
+      "description": "+25% defence; unlocks Fortress"
+    },
+    {
+      "id": "military_academy", "name": "Military Academy", "era": 4, "prereqs": ["education", "iron_working"],
+      "cost": {"science": 3700, "wood": 150, "gold": 120},
+      "effects": {"commander_xp": 0.5, "commander_start": 1},
+      "description": "Commanders gain experience 50% faster and new ones start at level 2; unlocks Academy"
+    },
+    {
+      "id": "navigation", "name": "Navigation", "era": 4, "prereqs": ["boatbuilding", "mathematics"],
+      "cost": {"science": 3500, "wood": 200, "gold": 80},
+      "effects": {"boat_range": 4, "yield_mult": {"food": 0.15}},
+      "description": "Boats cross 10 tiles of open water instead of 6, +15% food; unlocks Harbour"
+    },
+    {
+      "id": "waterworks", "name": "Waterworks", "era": 4, "prereqs": ["water_purification", "engineering"],
+      "cost": {"science": 3500, "stone": 200, "wood": 100},
+      "effects": {"water_mult": 0.25, "store": {"water": 200}},
+      "description": "+25% water supply, +200 water storage; unlocks Reservoir"
+    },
+    {
+      "id": "scientific_method", "name": "Scientific Method", "era": 5, "prereqs": ["printing_press"],
+      "cost": {"science": 9200, "wood": 250, "gold": 250},
+      "effects": {"science_mult": 0.3},
+      "description": "+30% science"
+    },
+    {
+      "id": "gunpowder", "name": "Gunpowder", "era": 5, "prereqs": ["military_academy", "machinery"],
+      "cost": {"science": 9800, "ore": 300, "wood": 200},
+      "effects": {"military": 0.25},
+      "description": "+25% army strength"
+    },
+    {
+      "id": "siegecraft", "name": "Siegecraft", "era": 5, "prereqs": ["fortification", "gunpowder"],
+      "cost": {"science": 9800, "ore": 250, "stone": 250},
+      "effects": {"capture_speed": 0.5},
+      "description": "Armies capture tiles 50% faster"
+    },
+    {
+      "id": "economics", "name": "Economics", "era": 5, "prereqs": ["banking"],
+      "cost": {"science": 9200, "gold": 400, "wood": 150},
+      "effects": {"income": {"gold": 1.5}, "yield_mult": {"all": 0.1}},
+      "description": "+1.5 gold per tick, +10% to all resource yields"
+    },
+    {
+      "id": "civil_engineering", "name": "Civil Engineering", "era": 5, "prereqs": ["waterworks", "bridge_building", "guilds"],
+      "cost": {"science": 9800, "stone": 350, "wood": 250},
+      "effects": {"build_slots": 1, "build_speed": 0.25, "demolition_refund": 0.1, "villager_speed": 1},
+      "description": "+1 simultaneous construction, +25% construction speed, demolition refund up to 35%, villagers walk twice as fast"
+    },
+    {
+      "id": "crop_rotation", "name": "Crop Rotation", "era": 5, "prereqs": ["waterworks"],
+      "cost": {"science": 9200, "food": 300, "wood": 200},
+      "effects": {"yield_mult": {"food": 0.25}, "growth": 0.2},
+      "description": "+25% food, +20% population growth"
+    },
+    {
+      "id": "steam_power", "name": "Steam Power", "era": 6, "prereqs": ["scientific_method", "civil_engineering"],
+      "cost": {"science": 20500, "ore": 450, "wood": 400},
+      "effects": {"yield_mult": {"all": 0.25}},
+      "description": "+25% to all resource yields; unlocks Factory"
+    },
+    {
+      "id": "railways", "name": "Railways", "era": 6, "prereqs": ["steam_power"],
+      "cost": {"science": 20500, "ore": 500, "wood": 400},
+      "effects": {"expand_cost": -0.3, "home_speed": 1, "reinforce": 1.0},
+      "description": "-30% territory expansion cost, armies move one tile faster on home land, reinforcements arrive twice as fast"
+    },
+    {
+      "id": "rifling", "name": "Rifling", "era": 6, "prereqs": ["gunpowder", "steam_power"],
+      "cost": {"science": 21500, "ore": 500, "gold": 300},
+      "effects": {"military": 0.25, "casualties": -0.1},
+      "description": "+25% army strength, 10% fewer casualties"
+    },
+    {
+      "id": "general_staff", "name": "General Staff", "era": 6, "prereqs": ["military_academy", "rifling"],
+      "cost": {"science": 21500, "gold": 500, "wood": 250},
+      "effects": {"commander_start": 1, "mobilization": 0.1},
+      "description": "New commanders start at level 3, up to 45% of the population can be mobilised"
+    },
+    {
+      "id": "sanitation", "name": "Sanitation", "era": 6, "prereqs": ["civil_engineering", "crop_rotation"],
+      "cost": {"science": 20500, "stone": 500, "wood": 300},
+      "effects": {"housing": 40, "growth": 0.25, "water_use": -0.2},
+      "description": "+40 housing, +25% population growth, people drink 20% less water"
+    },
+    {
+      "id": "desalination", "name": "Desalination", "era": 6, "prereqs": ["navigation", "steam_power"],
+      "cost": {"science": 20500, "ore": 400, "stone": 350},
+      "effects": {"purification": 0.25},
+      "description": "Coast tiles you own supply 0.4 water per tick each instead of 0.15"
     }
   ]
 }

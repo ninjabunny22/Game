@@ -1,0 +1,19 @@
+{
+  "_comment": "Army unit types. strength multiplies the base soldier strength; upkeep gold/ore multiply the base soldier upkeep, wood is per soldier per tick; share is the mix a civ recruits toward; counters get +25% against the listed types.",
+  "spearman": {
+    "name": "Spearmen", "strength": 1.0, "speed": 1.0, "requires": [],
+    "upkeep": {"gold": 1.0, "ore": 0.5, "wood": 0.0}, "counters": ["cavalry"], "share": 0.3
+  },
+  "archer": {
+    "name": "Archers", "strength": 1.1, "speed": 1.0, "requires": ["the_wheel"],
+    "upkeep": {"gold": 1.0, "ore": 0.25, "wood": 0.01}, "counters": ["spearman", "swordsman"], "share": 0.25
+  },
+  "swordsman": {
+    "name": "Swordsmen", "strength": 1.5, "speed": 1.0, "requires": ["bronze_working"],
+    "upkeep": {"gold": 1.25, "ore": 2.0, "wood": 0.0}, "counters": [], "share": 0.3
+  },
+  "cavalry": {
+    "name": "Cavalry", "strength": 2.0, "speed": 2.0, "requires": ["animal_husbandry", "iron_working"],
+    "upkeep": {"gold": 2.0, "ore": 1.5, "wood": 0.0}, "counters": ["archer"], "share": 0.15
+  }
+}

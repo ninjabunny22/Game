@@ -20,14 +20,23 @@ import random
 from collections import deque
 from collections.abc import Callable
 
-from ..economy import BuildingDef, Modifiers, demolish, find_site, food_need, recompute_capacity
-from ..economy.rules import RESOURCES, WORK_RATE
-from ..map import BIOME_INFO, Biome, WorldMap
+from ..economy import (
+    BuildingDef,
+    Modifiers,
+    demolish,
+    find_site,
+    food_need,
+    recompute_capacity,
+    water_growth_factor,
+)
+from ..economy.rules import LAKE_WATER, RESOURCES, RIVER_WATER, SETTLEMENT_YIELDS, WORK_RATE
+from ..map import BIOME_INFO, BOAT_RANGE, Biome, WorldMap
 from ..tech import Tech, TechTree
 from .civilization import Building, Civilization, Goal, Research
 
 CATEGORY_OF_RESOURCE = {
     "food": "food", "wood": "industry", "stone": "industry", "ore": "industry", "gold": "wealth",
+    "water": "growth",
 }
 MATERIALS = ("wood", "stone", "ore", "gold")
 
@@ -37,11 +46,13 @@ COUNT_FALLOFF = 0.35  # each existing copy of a building makes another less attr
 FALLOFF_POWER = 0.6  # ... but gently: rising costs and upkeep are what really limit a civ
 STORE_NEED = 0.4  # how much a completely full store makes the civ want more room for it
 UPKEEP_CAUTION = 0.2  # don't add upkeep in a resource that is below this share of storage and not growing
-TILES_PER_EXPANSION = 4
+TILES_PER_EXPANSION = 4  # claiming budget per expansion; a river tile without bridges uses more of it
+NO_FOREST = 6  # wood work slots on the land (capitals aside) below which expansion stops costing wood
+WATER_MARGIN = 1.15  # look for more water once supply is below this multiple of consumption
 SEEK_RANGE = 35  # how far (in tiles) a civ will stretch its border to reach a missing resource
 MARCH_RANGE = 60  # ... or to reach a civ it intends to attack
 RESERVE_TICKS = 40  # stock kept on hand to cover upkeep, food and trade exports
-MATERIAL_RESERVE = {"wood": 30.0, "stone": 15.0, "ore": 0.0, "gold": 0.0}
+MATERIAL_RESERVE = {"wood": 30.0, "stone": 15.0, "ore": 0.0, "gold": 0.0, "water": 0.0}
 ABANDON_AFTER = 60  # ticks of unpaid upkeep after which a building is torn down
 REPLACE_ADVANTAGE = 2.0  # a new building must score this many times its victim to displace it
 DEMOLITION_COOLDOWN = 25  # ticks between demolitions, so a civ never churns its buildings
@@ -76,10 +87,17 @@ class CivAI:
         farming_share = eaten / max(civ.population, 1.0) / (WORK_RATE * (1 + mods.yield_mult["food"]))
         reserve_ticks = civ.resources["food"] / max(eaten, 1e-9)
         # Resources the territory barely provides: a reason to expand toward them.
-        wanted = [res for res in ("wood", "stone", "ore") if civ.capacity[res] < 4]
+        # (Every capital offers a few slots of its own; it is the land that counts here.)
+        capitals = len(civ.settlements)
+        wanted = [res for res in ("wood", "stone", "ore")
+                  if civ.capacity[res] - SETTLEMENT_YIELDS[res] * capitals < 4]
+        # Water is not gathered, so "barely provided" means supply is not keeping up with use.
+        if mods.income["water"] < WATER_MARGIN * civ.upkeep["water"] or fill["water"] < 0.3:
+            wanted.insert(0, "water")
         idle_share = civ.idle / max(civ.workforce, 1.0)
         return {
-            "growth": _clamp((civ.population / mods.housing - 0.6) / 0.4, 0, 1.2),
+            # No point housing people there is no water for.
+            "growth": _clamp((civ.population / mods.housing - 0.6) / 0.4, 0, 1.2) * water_growth_factor(civ, mods),
             "food": 2 * farming_share + (0.5 if reserve_ticks < 25 else 0.0),
             "industry": 0.2 + 0.6 * sum(scarcity[r] for r in ("wood", "stone", "ore")) / 3,
             "infrastructure": 0.6 * max(fill.values()) ** 3,
@@ -100,11 +118,10 @@ class CivAI:
     def _choose_research(self, civ: Civilization, mods: Modifiers, needs: dict, tick: int) -> None:
         if civ.research is not None:
             stuck = not civ.research.paid and tick % RESEARCH_RETHINK_TICKS == 0
-            # An invented tech is the only thing left to research; never drop it.
-            if not stuck or self.tech_tree.techs[civ.research.tech_id].owner is not None:
+            if not stuck:
                 return
         best, best_score = None, 0.0
-        for tech in self.tech_tree.available(civ.known_techs, civ.id):
+        for tech in self.tech_tree.available(civ.known_techs):
             if not self._feasible(civ, tech.materials, mods):
                 continue
             score = self._tech_value(civ, tech, needs)
@@ -132,6 +149,21 @@ class CivAI:
         value += 0.6 * effects.get("build_slots", 0) * weights["industry"]
         value += 3.0 * effects.get("demolition_refund", 0) * weights["infrastructure"]
         value -= 2.0 * effects.get("expand_cost", 0) * weights["expansion"]
+        value += 0.4 * (effects.get("bridges", 0) + effects.get("boats", 0)) * weights["expansion"]
+        value += (0.05 * effects.get("boat_range", 0) + 0.3 * effects.get("home_speed", 0)
+                  + 0.2 * effects.get("reinforce", 0)) * weights["expansion"]
+        warfare = (effects.get("commander_xp", 0) + 0.5 * effects.get("commander_start", 0)
+                   + effects.get("capture_speed", 0) - 2 * effects.get("casualties", 0)
+                   + 3 * effects.get("mobilization", 0))
+        value += warfare * weights["military"] * (0.3 + needs["military"])
+        value -= 0.6 * effects.get("deal_fee", 0) * weights["wealth"]
+        value += 0.3 * effects.get("villager_speed", 0) * weights["industry"]
+        value -= 2.0 * effects.get("water_use", 0) * weights["growth"] * (1 + 3 * needs["scarcity"]["water"])
+        # Purification is worth what the coast it would tap is worth, and far more when water is short.
+        coast_water = effects.get("purification", 0) * civ.water_access["coast"]
+        value += (0.1 + 0.15 * coast_water) * weights["growth"] * (1 + 3 * needs["scarcity"]["water"]) * (
+            1 if "purification" in effects else 0)
+        value += 1.5 * effects.get("water_mult", 0) * weights["growth"] * (1 + 3 * needs["scarcity"]["water"])
         value += 2.0 * (effects.get("military", 0) + effects.get("defense", 0)) * weights["military"] * (
             0.3 + needs["military"])
         for bdef in self.building_defs.values():
@@ -165,7 +197,8 @@ class CivAI:
 
         expand_cost = self.expansion_cost(civ, mods)
         if self._feasible(civ, expand_cost, mods):
-            score = weights["expansion"] * needs["expansion"] / (1 + len(civ.territory) / 250)
+            added = max(0, len(civ.territory) - civ.base_territory)
+            score = weights["expansion"] * needs["expansion"] / (1 + added / 250)
             options.append((score, "expand", "", expand_cost))
 
         previous = civ.goal
@@ -193,13 +226,13 @@ class CivAI:
                     civ.buildings.append(Building(target, site))
                     civ.goal = None
             else:
-                border = self._border(civ)
+                border = self._border(civ, mods)
                 if not border:
                     continue
                 civ.goal = Goal("expand", None, cost)
                 if civ.can_afford(cost):
                     civ.pay(cost)
-                    self._expand(civ, border, needs)
+                    self._expand(civ, mods, border, needs)
                     civ.goal = None
             return
 
@@ -273,10 +306,17 @@ class CivAI:
 
     def _sustainable(self, civ: Civilization, bdef: BuildingDef, mods: Modifiers) -> bool:
         """False if the civ has no supply of a resource the building's upkeep needs, or is already short of it."""
-        for res in bdef.upkeep:
+        # Materials a tech is still waiting for: nothing new may eat into those.
+        waiting = {}
+        if civ.research and not civ.research.paid:
+            waiting = self.tech_tree.techs[civ.research.tech_id].materials
+        for res, amount in bdef.upkeep.items():
             if not self._obtainable(civ, res, mods):
                 return False
-            if civ.resources[res] < UPKEEP_CAUTION * mods.storage[res] and civ.income[res] <= 0:
+            if civ.resources[res] < waiting.get(res, 0):
+                return False
+            # While stock is low, only take on upkeep that leaves the resource still clearly growing.
+            if civ.resources[res] < UPKEEP_CAUTION * mods.storage[res] and civ.income[res] < 2 * amount:
                 return False
         return True
 
@@ -286,24 +326,60 @@ class CivAI:
     # -- territory -----------------------------------------------------------
 
     def expansion_cost(self, civ: Civilization, mods: Modifiers) -> dict[str, float]:
-        size = len(civ.territory)
+        # Priced on land added since the start: the two home regions come free.
+        size = max(0, len(civ.territory) - civ.base_territory)
         factor = max(0.3, 1 + mods.expand_cost)
-        return {"food": round((15 + 0.4 * size) * factor), "wood": round((10 + 0.25 * size) * factor)}
+        food, wood = (15 + 0.4 * size) * factor, (10 + 0.25 * size) * factor
+        woodland = civ.capacity["wood"] - SETTLEMENT_YIELDS["wood"] * len(civ.settlements)
+        if woodland < NO_FOREST:
+            # A civ with next to no woodland could never save the timber, and so never reach
+            # any: it expands on food alone, at twice the price.
+            return {"food": round(2 * food)}
+        return {"food": round(food), "wood": round(wood)}
 
-    def _border(self, civ: Civilization) -> list[int]:
-        """Unowned, claimable tiles next to the civ's territory."""
+    def _border(self, civ: Civilization, mods: Modifiers) -> list[int]:
+        """Unowned, claimable tiles next to the civ's territory, or a boat trip away from it."""
         world = self.world
-        border = {
-            n
-            for tile in civ.territory
-            for n in world.neighbors(tile)
-            if world.owner[n] < 0 and world.biomes[n] != Biome.OCEAN
-        }
+        border: set[int] = set()
+        water: list[int] = []
+        seen: set[int] = set()
+        for tile in civ.territory:
+            for n in world.neighbors(tile):
+                if world.is_open_water(n):
+                    if n not in seen:
+                        seen.add(n)
+                        water.append(n)
+                elif world.owner[n] < 0 and n not in world.capital_tiles:
+                    border.add(n)  # native land can be settled; a capital has to defect or be taken
+        if mods.boats:
+            # Boats: sail up to BOAT_RANGE tiles of open water and land on whatever lies beyond.
+            for _ in range(BOAT_RANGE + mods.boat_range):
+                further = []
+                for tile in water:
+                    for n in world.neighbors(tile):
+                        if n in seen:
+                            continue
+                        seen.add(n)
+                        if world.is_open_water(n):
+                            further.append(n)
+                        elif world.owner[n] < 0 and n not in world.capital_tiles:
+                            border.add(n)
+                water = further
         return sorted(border)
 
-    def _expand(self, civ: Civilization, border: list[int], needs: dict) -> None:
+    def _water_value(self, tile: int, mods: Modifiers) -> float:
+        """Water per tick that owning this tile would add."""
+        world = self.world
+        value = RIVER_WATER * world.rivers.get(tile, 0)
+        value += LAKE_WATER * sum(1 for n in world.neighbors(tile) if world.biomes[n] == Biome.LAKE)
+        if world.biomes[tile] == Biome.SHALLOWS:
+            value += mods.purification
+        return value
+
+    def _expand(self, civ: Civilization, mods: Modifiers, border: list[int], needs: dict) -> None:
         world = self.world
         cx, cy = world.xy(civ.capital.tile)
+        thirst = 2 + 6 * needs["scarcity"]["water"] + (6 if "water" in needs["wanted"] else 0)
 
         def appeal(tile: int) -> float:
             x, y = world.xy(tile)
@@ -311,47 +387,74 @@ class CivAI:
                 amount * (1 + needs["scarcity"][res] + (2 if res in needs["wanted"] else 0))
                 for res, amount in world.yields[tile].items()
             )
+            value += thirst * self._water_value(tile, mods)
             return value - 0.08 * math.hypot(x - cx, y - cy) + 0.3 * self.rng.random()
+
+        def provides(res: str):
+            if res == "water":
+                return lambda t: self._water_value(t, mods) > 0
+            return lambda t: world.yields[t].get(res, 0) > 0
 
         # Head for a civ marked for attack or a resource the territory lacks,
         # then fill up with the most appealing tiles.
-        picks: list[int] = []
+        route: list[int] = []
         if civ.march_target is not None:
             enemy = civ.march_target
-            path = self._path_to(border, lambda t: any(world.owner[n] == enemy for n in world.neighbors(t)))
+            path = self._path_to(border, mods, lambda t: any(world.owner[n] == enemy for n in world.neighbors(t)))
             if 0 < len(path) <= MARCH_RANGE:
-                picks = path[:TILES_PER_EXPANSION]
-        if not picks:
+                route = path
+        if not route:
             for res in needs["wanted"]:
-                path = self._path_to(border, lambda t, res=res: world.yields[t].get(res, 0) > 0)
+                path = self._path_to(border, mods, provides(res))
                 if 0 < len(path) <= SEEK_RANGE:
-                    picks = path[:TILES_PER_EXPANSION]
+                    route = path
                     break
-        ranked = sorted((tile for tile in border if tile not in picks), key=appeal, reverse=True)
-        picks += ranked[: TILES_PER_EXPANSION - len(picks)]
-        for tile in picks:
+        ranked = sorted((tile for tile in border if tile not in route), key=appeal, reverse=True)
+
+        # Spend the claiming budget along the route first, then on the most appealing tiles.
+        # Fording a river without bridges uses up most of an expansion.
+        budget = float(TILES_PER_EXPANSION)
+        claimed = 0
+        for tile in route + ranked:
+            cost = world.crossing_cost(tile, bool(mods.bridges), bool(mods.boats)) or 1.0
+            if cost > budget and claimed:
+                if tile in route:
+                    break  # a route is claimed in order; wait for the next expansion
+                continue
+            budget -= cost
+            claimed += 1
             world.claim(tile, civ.id)
             civ.territory.add(tile)
+            if budget <= 0:
+                break
         recompute_capacity(civ, world)
 
-    def _path_to(self, border: list[int], is_goal: Callable[[int], bool]) -> list[int]:
-        """Shortest chain of claimable tiles from the border to the nearest goal tile."""
+    def _path_to(self, border: list[int], mods: Modifiers, is_goal: Callable[[int], bool]) -> list[int]:
+        """Shortest chain of claimable tiles from the border to the nearest goal tile.
+
+        With boats the search may cross open water; the water tiles are left out
+        of the result, since only the land on either side can be claimed.
+        """
         world = self.world
         parent: dict[int, int | None] = dict.fromkeys(border)
         queue = deque(border)
         while queue:
             tile = queue.popleft()
-            if is_goal(tile):
+            if not world.is_open_water(tile) and is_goal(tile):
                 path = []
                 step: int | None = tile
                 while step is not None:
-                    path.append(step)
+                    if not world.is_open_water(step):
+                        path.append(step)
                     step = parent[step]
                 return path[::-1]
             for n in world.neighbors(tile):
-                if n not in parent and world.owner[n] < 0 and world.biomes[n] != Biome.OCEAN:
-                    parent[n] = tile
-                    queue.append(n)
+                if n in parent or world.owner[n] >= 0 or n in world.capital_tiles:
+                    continue
+                if world.is_open_water(n) and not mods.boats:
+                    continue
+                parent[n] = tile
+                queue.append(n)
         return []
 
     # -- workers -------------------------------------------------------------

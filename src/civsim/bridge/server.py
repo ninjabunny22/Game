@@ -89,12 +89,12 @@ class SimServer:
             async with self._one_at_a_time:
                 reply = await asyncio.to_thread(self.brain.decide, request)
         except Exception:
-            log.exception("strategy brain failed on a %s check-in for civ %d", request.kind, request.civ_id)
+            log.exception("strategy brain failed on the check-in for civ %d", request.civ_id)
         finally:
             self.sim.submit(request, reply)
         if reply is not None:
-            log.info("tick %d: %s check-in for %s answered: %s", request.tick, request.kind,
-                     self.sim.civs[request.civ_id].name, reply.get("reason") or reply.get("name") or "")
+            log.info("tick %d: check-in for %s answered: %s", request.tick,
+                     self.sim.civs[request.civ_id].name, reply.get("reason") or "")
 
     # -- clients -------------------------------------------------------------
 

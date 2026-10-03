@@ -1,9 +1,8 @@
 import base64
-import random
 
 import pytest
 
-from civsim.map import BIOME_INFO, DEPOSIT_TYPES, Biome, find_start_positions, generate_map
+from civsim.map import BIOME_INFO, DEPOSIT_TYPES, Biome, generate_map
 
 
 def test_same_seed_gives_same_map():
@@ -21,7 +20,9 @@ def test_map_has_every_biome_and_matching_heights():
     world = generate_map(5)
     assert set(world.biomes) == set(Biome)
     for i, biome in enumerate(world.biomes):
-        if BIOME_INFO[biome].water:
+        if biome == Biome.LAKE:
+            assert 0 < world.heights[i] <= 1, "lakes sit up on the land"
+        elif BIOME_INFO[biome].water:
             assert world.heights[i] <= 0
         else:
             assert 0 < world.heights[i] <= 1
@@ -37,18 +38,6 @@ def test_deposits_sit_on_allowed_biomes_and_form_clusters():
             touching += 1
     # Scattered at random almost no deposit would touch another of its kind.
     assert touching / len(world.deposits) > 0.8
-
-
-def test_start_positions_are_on_land_and_spread_out():
-    world = generate_map(5)
-    starts = find_start_positions(world, 4, random.Random(5))
-    assert len(set(starts)) == 4
-    for tile in starts:
-        assert BIOME_INFO[world.biomes[tile]].buildable
-    points = [world.xy(t) for t in starts]
-    for i, (ax, ay) in enumerate(points):
-        for bx, by in points[i + 1:]:
-            assert abs(ax - bx) + abs(ay - by) >= 15
 
 
 def test_territory_encoding_is_one_byte_per_tile_for_any_civ_id():

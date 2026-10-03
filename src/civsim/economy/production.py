@@ -1,4 +1,5 @@
-from ..map import WorldMap
+from ..map import Biome, WorldMap
+from ..military.units import upkeep_per_soldier
 from .modifiers import Modifiers
 from .rules import (
     DESERTION_RATE,
@@ -14,6 +15,10 @@ from .rules import (
     SOLDIER_GOLD,
     SOLDIER_ORE,
     STARVE_RATE,
+    THIRST_RATE,
+    WATER_GROWTH_MARGIN,
+    WATER_PER_POP,
+    WATER_RESERVE_TICKS,
     TAX_PER_POP,
     WOOD_PER_POP,
     WORK_RATE,
@@ -28,6 +33,13 @@ def recompute_capacity(civ, world: WorldMap) -> None:
             capacity[res] += amount
     civ.capacity = capacity
 
+    lakes = {n for tile in civ.territory for n in world.neighbors(tile) if world.biomes[n] == Biome.LAKE}
+    civ.water_access = {
+        "river": sum(world.rivers.get(tile, 0) for tile in civ.territory),
+        "lake": len(lakes),
+        "coast": sum(1 for tile in civ.territory if world.biomes[tile] == Biome.SHALLOWS),
+    }
+
 
 def food_need(civ) -> float:
     """Food eaten per tick. More advanced societies eat more per head; soldiers eat extra."""
@@ -36,6 +48,35 @@ def food_need(civ) -> float:
 
 def _living_standard(civ) -> float:
     return 1 + CONSUMPTION_PER_TECH * len(civ.known_techs)
+
+
+def water_balance(civ, mods: Modifiers) -> tuple[float, float]:
+    """(supply, use) of water per tick, counting trade deals on both sides."""
+    return mods.income["water"] + civ.imports["water"], civ.upkeep["water"] + civ.exports["water"]
+
+
+def water_growth_factor(civ, mods: Modifiers) -> float:
+    """How freely the population may grow given its water: 1 with a comfortable margin,
+    falling to 0 as use catches up with supply, so growth eases off before the wells run dry."""
+    supply, use = water_balance(civ, mods)
+    if supply <= 0:
+        return 0.0
+    headroom = (supply - use) / supply
+    return max(0.0, min(1.0, headroom / WATER_GROWTH_MARGIN))
+
+
+def water_urgency(civ, mods: Modifiers) -> float:
+    """How pressing water is for this civ, 0 (comfortable) to 1 (dry or about to be).
+
+    Up to 0.5 while supply still covers use but the margin is thin; above that
+    once the civ is living off its stores, rising as they run down.
+    """
+    supply, use = water_balance(civ, mods)
+    tightness = 1 - water_growth_factor(civ, mods)
+    if use <= supply:
+        return 0.5 * tightness
+    ticks_left = civ.resources["water"] / (use - supply)
+    return 0.5 + 0.5 * max(0.0, min(1.0, 1 - ticks_left / WATER_RESERVE_TICKS))
 
 
 def produce(civ, mods: Modifiers, building_defs) -> None:
@@ -70,13 +111,23 @@ def produce(civ, mods: Modifiers, building_defs) -> None:
 
     _maintain_army(civ, upkeep)
 
+    # Thirst: the population shrinks slowly, in proportion to how much water is missing.
+    thirst = WATER_PER_POP * civ.population * max(0.2, 1 + mods.water_use)
+    available = civ.resources["water"]
+    civ.thirsty = not _charge(civ, upkeep, "water", thirst)
+    if civ.thirsty:
+        shortfall = 1 - available / thirst
+        civ.population = max(MIN_POPULATION, civ.population * (1 - THIRST_RATE * shortfall))
+
     food = food_need(civ)
     fed = _charge(civ, upkeep, "food", food)
     if not fed:
         civ.population = max(MIN_POPULATION, civ.population * (1 - STARVE_RATE))
-    elif warm and civ.population < mods.housing:
+    elif warm and not civ.thirsty and civ.population < mods.housing:
         crowding = 1 - civ.population / mods.housing
         growth = max(0.02, GROWTH_RATE * civ.population * crowding) * (1 + mods.growth)
+        # No growing blindly into a drought: growth eases off as water use nears supply.
+        growth *= water_growth_factor(civ, mods)
         civ.population = min(mods.housing, civ.population + growth)
     civ.soldiers = min(civ.soldiers, civ.population)
 
@@ -91,8 +142,11 @@ def _maintain_army(civ, upkeep: dict[str, float]) -> None:
     target = min(civ.soldier_target, max(0.0, civ.population - MIN_POPULATION))
     step = RECRUIT_RATE * civ.population + 0.2
     civ.soldiers = max(0.0, civ.soldiers + max(-step, min(step, target - civ.soldiers)))
-    civ.unpaid = not _charge(civ, upkeep, "gold", civ.soldiers * SOLDIER_GOLD)
-    civ.unsupplied = not _charge(civ, upkeep, "ore", civ.soldiers * SOLDIER_ORE)
+    # What the army costs depends on what it is made of: swordsmen need ore, archers wood, cavalry gold.
+    factors = upkeep_per_soldier(civ.unit_counts())
+    civ.unpaid = not _charge(civ, upkeep, "gold", civ.soldiers * SOLDIER_GOLD * factors["gold"])
+    civ.unsupplied = not _charge(civ, upkeep, "ore", civ.soldiers * SOLDIER_ORE * factors["ore"])
+    _charge(civ, upkeep, "wood", civ.soldiers * factors["wood"])
     if civ.unpaid:
         civ.soldiers *= 1 - DESERTION_RATE
 

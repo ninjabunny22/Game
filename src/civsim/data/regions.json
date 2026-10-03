@@ -1,0 +1,16 @@
+{
+  "_comment": "Fixed names, assigned to regions by the map seed. More than a map needs, so different seeds pick different ones.",
+  "faction": {"name": "the Hinterfolk", "color": "#9c8f7a"},
+  "regions": [
+    "Ashmoor", "Brackenfell", "Caldwick", "Dunmarrow", "Eastreach", "Fenwold", "Glasswater", "Harrowdale",
+    "Ironvale", "Jadewood", "Kestrel Heights", "Lowmere", "Mistral Coast", "Northgard", "Oakhaven", "Pinecrest",
+    "Quillon Marches", "Redstone", "Saltmarsh", "Thornfield", "Umberland", "Vintner's Rest", "Westfold",
+    "Yarrow Downs", "Zephyr Plains", "Amberlea", "Greyfen", "Stormwatch"
+  ],
+  "capitals": [
+    "Aldermoot", "Brightwell", "Cinderford", "Dawnharbour", "Elmstead", "Farrowgate", "Goldhollow", "Highcairn",
+    "Ivybridge", "Jasper Hold", "Kingsmere", "Larkspur", "Millbrook", "Nettleby", "Orchard Cross", "Penhallow",
+    "Queensferry", "Ravenscar", "Silverford", "Tidewell", "Underhill", "Valewatch", "Wyndham", "Yewbury",
+    "Zennor", "Applewick", "Garrowby", "Starfall"
+  ]
+}

@@ -12,7 +12,6 @@ class Tech:
     cost: dict[str, float]  # "science" plus material resources
     effects: dict = field(default_factory=dict)
     description: str = ""
-    owner: int | None = None  # set on invented techs: only this civ may research it
 
     @property
     def science_cost(self) -> float:
@@ -35,24 +34,10 @@ class TechTree:
         techs = [Tech(**{**entry, "prereqs": tuple(entry["prereqs"])}) for entry in raw["techs"]]
         return cls(raw["eras"], techs)
 
-    def available(self, known: list[str], civ_id: int | None = None) -> list[Tech]:
-        """Techs not yet known whose prerequisites are all known, including the civ's own inventions."""
+    def available(self, known: list[str]) -> list[Tech]:
+        """Techs not yet known whose prerequisites are all known."""
         have = set(known)
-        return [
-            t for t in self.techs.values()
-            if t.id not in have and have.issuperset(t.prereqs) and t.owner in (None, civ_id)
-        ]
-
-    def add_invented(self, tech: Tech, era_name: str) -> None:
-        """Register a validated invented tech. All inventions share one era after the base tree."""
-        if tech.id in self.techs:
-            raise ValueError(f"duplicate tech id {tech.id}")
-        if tech.era == len(self.eras):
-            self.eras.append(era_name)
-        self.techs[tech.id] = tech
-
-    def invented_by(self, civ_id: int) -> list[Tech]:
-        return [t for t in self.techs.values() if t.owner == civ_id]
+        return [t for t in self.techs.values() if t.id not in have and have.issuperset(t.prereqs)]
 
     def era_of(self, known: list[str]) -> int:
         return max((self.techs[tech_id].era for tech_id in known), default=0)

@@ -52,13 +52,16 @@ def test_soldiers_cost_gold_and_desert_when_unpaid():
     assert civ.unpaid and civ.soldiers < before
 
 
-def test_science_never_piles_up_after_the_base_tree():
+def test_science_never_piles_up_once_the_tree_is_finished():
     sim = Simulation(SimConfig(seed=3))
     brain = RuleBrain()
     for civ in sim.civs:
         civ.known_techs = list(sim.tech_tree.techs)
         civ.population = 200
+    raised = 0
     for _ in range(400):
         sim.step_with(brain)
+        raised += len(sim._outbox)
         assert all(civ.science <= SCIENCE_BANK_CAP for civ in sim.civs)
-    assert any(sim.tech_tree.invented_by(civ.id) for civ in sim.civs), "excess science goes into inventions"
+    assert all(civ.research is None for civ in sim.civs), "nothing is left to research"
+    assert len(sim.tech_tree.techs) == 36, "and nobody adds to the tree"

@@ -7,6 +7,7 @@ intel: exact army numbers, where the army is committed, and what is in store.
 """
 
 from ..diplomacy.rules import ALLIANCE_COST, DEAL_FEE, SURPLUS_FILL, WAR_COST
+from ..economy import water_balance, water_urgency
 from ..economy.rules import RESOURCES
 
 HISTORY_LENGTH = 8
@@ -48,6 +49,9 @@ def stance_context(sim, civ) -> dict:
             "era": tree.eras[tree.era_of(other.known_techs)],
             "population": int(other.population),
             "territory": len(other.territory),
+            "capitals": [s.name for s in other.settlements],
+            # Rivers, lakes and coast are plain to see: whether a neighbour has water to spare is public.
+            "water_rich": _water_rich(other, sim.modifiers[other_id]),
             "army_vs_yours": army_band(diplomacy.power(other), diplomacy.power(civ)),
             # Exact numbers are shared between allies only.
             "intel": _intel(sim, other) if relation.status == "alliance" else None,
@@ -75,8 +79,13 @@ def stance_context(sim, civ) -> dict:
             "era": tree.eras[tree.era_of(civ.known_techs)],
             "population": int(civ.population),
             "territory": len(civ.territory),
+            "capitals": [s.name for s in civ.settlements],
             "soldiers": int(civ.soldiers),
+            "army": {unit_id: int(count) for unit_id, count in civ.unit_counts().items() if count >= 1},
+            "commanders": [{"name": c.name, "level": c.level}
+                           for c in civ.commanders + [a.commander for a in civ.armies if a.commander]],
             "military_power": round(diplomacy.power(civ)),
+            "diplomacy_points": int(civ.diplomacy_points),
             "distrusted_ticks_left": max(0, diplomacy.distrust_until.get(civ.id, 0) - sim.tick),
             "storage": {res: int(mods.storage[res]) for res in RESOURCES},
             "resources": {
@@ -84,35 +93,45 @@ def stance_context(sim, civ) -> dict:
             },
             "surplus": surplus,
             "lacking": lacking,
+            "water": _water_report(civ, mods),
         },
         "neighbors": neighbors,
+        "neutral_regions": sum(1 for region in sim.world.regions if region.neutral),
         "recent_events": [f"tick {e['tick']}: {e['text']}" for e in diplomacy.recent_history(civ.id, HISTORY_LENGTH)],
-        "gold_costs": {"open_trade": DEAL_FEE, "form_alliance": ALLIANCE_COST, "declare_war": WAR_COST},
+        "diplomacy_costs": {"open_trade": DEAL_FEE, "form_alliance": ALLIANCE_COST, "declare_war": WAR_COST},
     }
 
 
-def invention_context(sim, civ) -> dict:
-    tree = sim.tech_tree
-    mods = sim.modifiers[civ.id]
-    rules = sim.invention_rules
-    surplus, lacking = _surplus_and_lacking(civ, mods)
+WATER_RICH_RATIO = 1.5  # supply at least this multiple of use counts as water to spare
+
+
+def _water_rich(civ, mods) -> bool:
+    supply, use = water_balance(civ, mods)
+    return supply >= WATER_RICH_RATIO * max(use, 0.1)
+
+
+def water_status(urgency: float) -> str:
+    if urgency >= 0.7:
+        return "critical"
+    if urgency >= 0.5:
+        return "short"
+    if urgency >= 0.3:
+        return "tightening"
+    return "comfortable"
+
+
+def _water_report(civ, mods) -> dict:
+    """Where the civ stands on water: the one resource it cannot simply put more workers on."""
+    supply, use = water_balance(civ, mods)
+    urgency = water_urgency(civ, mods)
+    ticks_left = int(civ.resources["water"] / (use - supply)) if use > supply else None
     return {
-        "tick": sim.tick,
-        "you": {
-            "id": civ.id,
-            "name": civ.name,
-            "personality": civ.personality.name,
-            "population": int(civ.population),
-            "at_war": bool(sim.diplomacy.enemies(civ.id)),
-            "resources": {res: int(civ.resources[res]) for res in RESOURCES},
-            "storage": {res: int(mods.storage[res]) for res in RESOURCES},
-            "surplus": surplus,
-            "lacking": lacking,
-        },
-        "known_techs": [tree.techs[t].name for t in civ.known_techs],
-        "already_invented": [t.name for t in tree.invented_by(civ.id)],
-        "effect_caps": rules.caps,
-        "max_effects": rules.max_effects,
+        "supply_per_tick": round(supply, 1),
+        "use_per_tick": round(use, 1),
+        "ticks_until_dry": ticks_left,  # None while supply covers use
+        "urgency": round(urgency, 2),  # 0 comfortable .. 1 dry or about to be
+        "status": water_status(urgency),
+        "rich": _water_rich(civ, mods),
     }
 
 
@@ -124,6 +143,7 @@ def _intel(sim, other) -> dict:
     surplus, lacking = _surplus_and_lacking(other, mods)
     return {
         "soldiers": int(other.soldiers),
+        "army": {unit_id: int(count) for unit_id, count in other.unit_counts().items() if count >= 1},
         "army_strength": round(diplomacy.strength(other)),
         "military_power": round(diplomacy.power(other)),
         # No units on the map: "positions" are how the army is divided between its wars.
@@ -140,6 +160,8 @@ def _surplus_and_lacking(civ, mods) -> tuple[list[str], list[str]]:
     lacking = [
         res for res in RESOURCES
         if res not in surplus and (
-            (civ.capacity[res] < 4 and res not in ("gold", "food")) or civ.resources[res] < 0.1 * mods.storage[res])
+            (civ.capacity[res] < 4 and res not in ("gold", "food", "water"))
+            or civ.resources[res] < 0.1 * mods.storage[res]
+            or (res == "water" and mods.income["water"] < civ.upkeep["water"]))
     ]
     return surplus, lacking

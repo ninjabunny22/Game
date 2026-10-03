@@ -6,7 +6,7 @@ signal command_requested(action: String, value: Variant)
 
 const MAX_LOG_LINES := 9
 const MAX_TECHS_LISTED := 6  # the most recent ones; the full list no longer fits a card
-const RESOURCE_LABELS := {"food": "Food", "wood": "Wood", "stone": "Stone", "ore": "Ore", "gold": "Gold"}
+const RESOURCE_LABELS := {"food": "Food", "wood": "Wood", "stone": "Stone", "ore": "Ore", "gold": "Gold", "water": "Water"}
 const STANCE_COLORS := {"trade": "#7ccf7c", "ally": "#6fb7ff", "ignore": "#8a93a0", "aggression": "#e07a6a"}
 
 var _status: Label
@@ -23,6 +23,8 @@ var _speed := 2.0
 var _civ_info := {}  # civ id -> static info from init
 var _tech_names := {}
 var _building_names := {}
+var _unit_names := {}
+var _region_names := {}
 var _resources: Array = []
 var _log_lines: Array[String] = []
 var _relations := {}  # "a:b" with a < b -> relation from the latest tick
@@ -100,6 +102,12 @@ func setup(init: Dictionary) -> void:
 	_tech_names.clear()
 	for tech: Dictionary in init["tech_tree"]["techs"]:
 		_tech_names[tech["id"]] = tech["name"]
+	_region_names.clear()
+	for region: Dictionary in init["regions"]:
+		_region_names[int(region["id"])] = region["name"]
+	_unit_names.clear()
+	for unit_id: String in init["unit_types"]:
+		_unit_names[unit_id] = init["unit_types"][unit_id]["name"]
 	_building_names.clear()
 	for building_id: String in init["buildings"]:
 		_building_names[building_id] = init["buildings"][building_id]["name"]
@@ -133,8 +141,6 @@ func set_status(status: Dictionary) -> void:
 func update(tick: int, data: Dictionary) -> void:
 	_tick = tick
 	set_status(data["status"])
-	for tech: Dictionary in data["invented_techs"]:
-		_tech_names[tech["id"]] = tech["name"]
 	_relations.clear()
 	for relation: Dictionary in data["relations"]:
 		_relations["%d:%d" % [int(relation["a"]), int(relation["b"])]] = relation
@@ -173,6 +179,13 @@ func _card_text(info: Dictionary, civ: Dictionary) -> String:
 	var lines: Array[String] = []
 	lines.append("[font_size=17][b][color=%s]%s[/color][/b][/font_size]  [color=#8a93a0]%s[/color]"
 			% [info["color"], info["name"], info["personality"]])
+	if not civ["alive"]:
+		lines.append("[color=#e07a6a]Destroyed: its last capital has fallen[/color]")
+		return "\n".join(lines)
+	var regions_held: Array[String] = []
+	for region_id: Variant in civ["regions"]:
+		regions_held.append(_region_names.get(int(region_id), "?"))
+	lines.append("[color=#8a93a0]Regions (%d):[/color] %s" % [regions_held.size(), ", ".join(regions_held)])
 	lines.append("[b]%s[/b] era   Pop %d/%d   Land %d   Buildings %d" % [
 		civ["era_name"], int(civ["population"]), int(civ["housing"]),
 		int(civ["territory_size"]), civ["buildings"].size(),
@@ -188,8 +201,10 @@ func _card_text(info: Dictionary, civ: Dictionary) -> String:
 		var amount := "[color=#e8b04a]%d/%d[/color]" % [held, cap] if held >= cap else "%d/%d" % [held, cap]
 		stock.append("%s %s [color=%s]%+.1f[/color]" % [RESOURCE_LABELS.get(res, res), amount, trend, income])
 	lines.append("   ".join(stock))
+	if civ["thirsty"]:
+		lines.append("[color=#e07a6a]Out of water: the population is shrinking[/color]")
 	lines.append(_army_text(civ))
-	lines.append(_diplomacy_text(int(civ["id"]), civ))
+	lines.append("[color=#8a93a0]Diplomacy points[/color] %d   %s" % [int(civ["diplomacy_points"]), _diplomacy_text(int(civ["id"]), civ)])
 	if civ["thinking"]:
 		lines.append("[color=#8a93a0]Strategist is thinking ...[/color]")
 	elif civ["reason"] != "":
@@ -220,6 +235,11 @@ func _card_text(info: Dictionary, civ: Dictionary) -> String:
 
 func _army_text(civ: Dictionary) -> String:
 	var text := "Army %d   strength %d" % [int(civ["soldiers"]), int(civ["army_strength"])]
+	var mix: Array[String] = []
+	for unit_id: String in civ["units"]:
+		mix.append("%d %s" % [int(civ["units"][unit_id]), _unit_names.get(unit_id, unit_id).to_lower()])
+	if not mix.is_empty():
+		text += "\n[color=#8a93a0]%s[/color]" % ", ".join(mix)
 	var problems: Array[String] = []
 	if civ["unpaid"]:
 		problems.append("unpaid")

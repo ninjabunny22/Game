@@ -6,7 +6,9 @@ import random
 from opensimplex import OpenSimplex
 
 from .biomes import Biome
+from .regions import generate_regions
 from .resources import compute_yields, place_deposits
+from .water import add_lakes, add_rivers
 from .world import WorldMap
 
 WATER_FRACTION = 0.42
@@ -69,8 +71,11 @@ def generate_map(seed: int, width: int = 96, height: int = 96) -> WorldMap:
             world.biomes[i] = Biome.SHALLOWS
             world.heights[i] = max(world.heights[i], -0.06)
 
+    add_lakes(world, rng)
+    add_rivers(world, rng)
     place_deposits(world, rng)
     compute_yields(world)
+    generate_regions(world, rng)
     return world
 
 

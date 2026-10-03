@@ -1,7 +1,8 @@
 from .buildings import BuildingDef, advance_construction, demolish, find_site, load_building_defs
 from .modifiers import Modifiers, compute_modifiers
-from .production import food_need, produce, recompute_capacity
+from .production import food_need, produce, recompute_capacity, water_balance, water_growth_factor, water_urgency
 from .rules import RESOURCES
+from .villagers import manage_villagers
 
 __all__ = [
     "RESOURCES",
@@ -13,6 +14,10 @@ __all__ = [
     "find_site",
     "food_need",
     "load_building_defs",
+    "manage_villagers",
     "produce",
     "recompute_capacity",
+    "water_balance",
+    "water_growth_factor",
+    "water_urgency",
 ]

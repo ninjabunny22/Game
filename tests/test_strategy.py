@@ -73,7 +73,7 @@ def test_garbage_replies_change_nothing(sim, reply):
 
 def test_out_of_range_values_are_clamped_and_gaps_filled(sim):
     civ = sim.civs[0]
-    civ.resources.update(food=100, wood=240, stone=100, ore=0, gold=100)
+    civ.resources.update(food=100, wood=240, stone=100, ore=0, gold=100, water=100)
     civ.capacity.update(wood=10, stone=10, ore=0)
     context = stance_context(sim, civ)
     a, b, c = (n["name"] for n in context["neighbors"])
@@ -109,7 +109,6 @@ def test_each_civ_checks_in_once_per_interval_and_never_piles_up(sim):
     for _ in range(3 * CHECKIN_INTERVAL):
         sim.step()
         for request in sim.take_requests():
-            assert request.kind == "stance"
             seen[request.civ_id].append(request.tick)
             held.append(request)
     assert all(len(ticks) == 1 for ticks in seen.values()), "unanswered check-ins are not repeated"
@@ -127,7 +126,7 @@ def test_no_answer_keeps_previous_stances(sim):
     civ = sim.civs[0]
     context = stance_context(sim, civ)
     target = context["neighbors"][0]
-    request = CheckinRequest(civ.id, sim.tick, "stance", context)
+    request = CheckinRequest(civ.id, sim.tick, context)
     sim.submit(request, {"reason": "x", "stances": [entry(target["name"], "aggression", troop_commitment=0.5)]})
     sim.step()
     assert sim.diplomacy.intent(civ.id, target["id"]).stance is Stance.AGGRESSION
@@ -143,7 +142,7 @@ def test_no_answer_keeps_previous_stances(sim):
 
 def test_llm_brain_sends_the_situation_and_returns_the_models_reply(sim):
     civ = sim.civs[0]
-    request = CheckinRequest(civ.id, sim.tick, "stance", stance_context(sim, civ))
+    request = CheckinRequest(civ.id, sim.tick, stance_context(sim, civ))
     client = ScriptedClient({"reason": "ok", "stances": []})
     assert LLMBrain(client).decide(request) == {"reason": "ok", "stances": []}
 
@@ -158,7 +157,7 @@ def test_llm_brain_sends_the_situation_and_returns_the_models_reply(sim):
 
 def test_llm_brain_swallows_model_failures(sim):
     civ = sim.civs[0]
-    request = CheckinRequest(civ.id, sim.tick, "stance", stance_context(sim, civ))
+    request = CheckinRequest(civ.id, sim.tick, stance_context(sim, civ))
     assert LLMBrain(ScriptedClient(LLMError("down"))).decide(request) is None
 
 
@@ -170,9 +169,6 @@ def test_llm_driven_run_forms_a_deal_and_fights_a_war():
     def reply(user: str) -> dict:
         context = json.loads(user[user.index("{"): user.rindex("}") + 1])
         me = context["you"]["name"]
-        if "neighbors" not in context:  # an invention check-in
-            return {"name": f"{me} Steelmaking", "description": "", "materials": ["wood"],
-                    "effects": [{"type": "military", "resource": "none", "amount": 0.2}]}
         stances = []
         for n in context["neighbors"]:
             if me == villain and n == context["neighbors"][0]:

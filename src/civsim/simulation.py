@@ -8,23 +8,27 @@ tick. Given the same config and the same answers on the same ticks, a run is
 deterministic.
 """
 
-import math
+import itertools
 import random
 
-from .civ import CivAI, Civilization, Research, Settlement, assign_personalities
+from .civ import CivAI, Civilization, Settlement, assign_personalities
 from .config import SimConfig
-from .diplomacy import Diplomacy
-from .economy import advance_construction, compute_modifiers, load_building_defs, produce, recompute_capacity
-from .economy.rules import START_POPULATION, START_RESOURCES, START_TERRITORY_RADIUS
-from .map import Biome, find_start_positions, generate_map
-from .strategy import CHECKIN_INTERVAL, Brain, CheckinRequest, invention_context, parse_stances, stance_context
-from .tech import InventionRules, TechTree, advance_research, build_invented_tech
+from .diplomacy import Diplomacy, Natives
+from .economy import (
+    advance_construction,
+    compute_modifiers,
+    load_building_defs,
+    manage_villagers,
+    produce,
+    recompute_capacity,
+)
+from .economy.rules import START_POPULATION, START_RESOURCES
+from .map import generate_map, region_neighbours
+from .military.warfare import Military
+from .strategy import CHECKIN_INTERVAL, Brain, CheckinRequest, parse_stances, stance_context
+from .tech import TechTree, advance_research
 
-# (civ name, capital name)
-CIV_NAMES = [
-    ("Aurelia", "Solmere"), ("Kheshet", "Ankara-Tel"), ("Norvald", "Hrafnby"), ("Zhanlu", "Baiyun"),
-    ("Tamari", "Oshiro"), ("Ossyria", "Calden"), ("Valmere", "Port Liss"), ("Iskandar", "Samara"),
-]
+CIV_NAMES = ["Aurelia", "Kheshet", "Norvald", "Zhanlu", "Tamari", "Ossyria", "Valmere", "Iskandar"]
 CIV_COLORS = ["#d9433b", "#3b7dd9", "#e8c33a", "#a04fd6", "#3bbf9a", "#e07b2e", "#e86fb0", "#f0f0f0"]
 
 
@@ -38,15 +42,24 @@ class Simulation:
         self.world = generate_map(config.seed, config.width, config.height)
         self.civs = self._create_civs()
         self.ai = CivAI(self.world, self.building_defs, self.tech_tree, self.rng)
-        self.invention_rules = InventionRules.load()
         self.modifiers = {
             civ.id: compute_modifiers(civ, self.building_defs, self.tech_tree) for civ in self.civs
         }
+        for civ in self.civs:  # everyone starts with full water stores
+            civ.resources["water"] = self.modifiers[civ.id].storage["water"]
         self.diplomacy = Diplomacy(self.world, self.civs, self.modifiers, self.building_defs)
+        self._ids = itertools.count(1)  # ids for armies and villagers
+        self.military = Military(self.world, self.civs, self.modifiers, self.diplomacy, self.rng,
+                                 lambda: next(self._ids))
+        self.diplomacy.military = self.military
+        self.natives = Natives(self.world, self.civs, self.diplomacy, self.rng)
+        self.diplomacy.natives = self.natives
+        for civ in self.civs:
+            manage_villagers(civ, self.world, self.modifiers[civ.id], lambda: next(self._ids))
         self.events: list[dict] = []  # what happened during the latest tick
         self._outbox: list[CheckinRequest] = []
         self._inbox: list[tuple[CheckinRequest, dict | None]] = []
-        self._awaiting: set[tuple[str, int]] = set()  # (kind, civ id) of unanswered check-ins
+        self._awaiting: set[int] = set()  # civs whose check-in is still unanswered
 
     def step(self) -> list[dict]:
         self.tick += 1
@@ -55,10 +68,13 @@ class Simulation:
         # Rotate who acts first so no civ always wins the race for a contested tile.
         for offset in range(len(self.civs)):
             civ = self.civs[(self.tick + offset) % len(self.civs)]
+            if not civ.alive:
+                continue
             mods = compute_modifiers(civ, self.building_defs, self.tech_tree)
             self.diplomacy.apply_modifiers(civ, mods)
             self.modifiers[civ.id] = mods
             self.ai.plan(civ, mods, self.tick, events)
+            manage_villagers(civ, self.world, mods, lambda: next(self._ids))
             produce(civ, mods, self.building_defs)
             advance_construction(civ, mods, self.building_defs, events)
             advance_research(civ, self.tech_tree, events)
@@ -91,73 +107,83 @@ class Simulation:
         for civ in self.civs:
             if (self.tick - civ.id * spacing) % CHECKIN_INTERVAL != 0:
                 continue
-            self._raise("stance", civ, stance_context)
-            exhausted = not self.tech_tree.available(civ.known_techs, civ.id)
-            if exhausted and civ.research is None:
-                self._raise("invent", civ, invention_context)
-
-    def _raise(self, kind: str, civ: Civilization, build_context) -> None:
-        if (kind, civ.id) in self._awaiting:
-            return  # the previous one is still unanswered; don't pile up
-        self._awaiting.add((kind, civ.id))
-        civ.thinking = True
-        self._outbox.append(CheckinRequest(civ.id, self.tick, kind, build_context(self, civ)))
+            if civ.id in self._awaiting or not civ.alive:
+                continue  # the previous one is still unanswered (don't pile up), or the civ is gone
+            self._awaiting.add(civ.id)
+            civ.thinking = True
+            self._outbox.append(CheckinRequest(civ.id, self.tick, stance_context(self, civ)))
 
     def _apply_answers(self, events: list[dict]) -> None:
         answers, self._inbox = self._inbox, []
         for request, reply in answers:
             civ = self.civs[request.civ_id]
-            self._awaiting.discard((request.kind, civ.id))
-            civ.thinking = any(civ_id == civ.id for _, civ_id in self._awaiting)
+            self._awaiting.discard(civ.id)
+            civ.thinking = False
             if reply is None:
-                continue  # no answer: previous stances stand, invention waits for the next check-in
-            if request.kind == "stance":
-                intents, reason = parse_stances(reply, request.context, self.tick)
-                self.diplomacy.set_intents(civ.id, intents)
-                civ.last_reason = reason
-            elif civ.research is None:
-                tech = build_invented_tech(reply, civ, self.tech_tree, self.invention_rules,
-                                           self.modifiers[civ.id].storage)
-                if tech:
-                    self.tech_tree.add_invented(tech, self.invention_rules.era_name)
-                    civ.research = Research(tech.id)
-                    events.append({"civ": civ.id, "kind": "tech",
-                                   "text": f"{civ.name}'s scholars begin work on {tech.name}"})
+                continue  # no answer: previous stances stand
+            intents, reason = parse_stances(reply, request.context, self.tick)
+            self.diplomacy.set_intents(civ.id, intents)
+            civ.last_reason = reason
 
     def _create_civs(self) -> list[Civilization]:
+        """Each civ starts holding two whole regions: a home region, whose capital is its
+        own, and one next to it. Every other region stays with the native faction."""
         count = self.config.num_civs
         if count > len(CIV_NAMES):
             raise ValueError(f"at most {len(CIV_NAMES)} civilizations are supported")
         world = self.world
-        starts = find_start_positions(world, count, self.rng)
+        if len(world.regions) < 2 * count:
+            raise ValueError("map has too few regions for the requested number of civilizations")
         names = self.rng.sample(CIV_NAMES, count)
         personalities = assign_personalities(count, self.rng)
+        homes = self._pick_home_regions(count)
+        touching = region_neighbours(world)
+        taken = {region.id for region in homes}
 
         civs = []
-        for civ_id, start in enumerate(starts):
-            civ_name, capital_name = names[civ_id]
+        for civ_id, home in enumerate(homes):
             civ = Civilization(
                 id=civ_id,
-                name=civ_name,
+                name=names[civ_id],
                 color=CIV_COLORS[civ_id],
                 personality=personalities[civ_id],
                 population=START_POPULATION,
                 resources=dict(START_RESOURCES),
-                settlements=[Settlement(capital_name, start)],
+                settlements=[Settlement(home.capital_name, home.capital)],
             )
             civs.append(civ)
 
-        for civ in civs:
-            sx, sy = world.xy(civ.capital.tile)
-            reach = math.ceil(START_TERRITORY_RADIUS)
-            for dy in range(-reach, reach + 1):
-                for dx in range(-reach, reach + 1):
-                    x, y = sx + dx, sy + dy
-                    if not world.in_bounds(x, y) or math.hypot(dx, dy) > START_TERRITORY_RADIUS:
-                        continue
-                    tile = world.idx(x, y)
-                    if world.owner[tile] < 0 and world.biomes[tile] != Biome.OCEAN:
-                        world.claim(tile, civ.id)
-                        civ.territory.add(tile)
+        for civ, home in zip(civs, homes):
+            # The second region: one that touches home if any is free, else the nearest free one.
+            free = sorted(r for r in touching[home.id] if r not in taken)
+            if free:
+                second = world.regions[self.rng.choice(free)]
+            else:
+                second = min((r for r in world.regions if r.id not in taken),
+                             key=lambda r: (self._capital_distance(home, r), r.id))
+            taken.add(second.id)
+            civ.settlements.append(Settlement(second.capital_name, second.capital))
+            for region in (home, second):
+                region.owner = civ.id
+                for tile in region.tiles:
+                    world.claim(tile, civ.id)
+                    civ.territory.add(tile)
+            civ.base_territory = len(civ.territory)
             recompute_capacity(civ, world)
         return civs
+
+    def _pick_home_regions(self, count: int) -> list:
+        """Home regions chosen at random but far apart, so no civ starts on top of another."""
+        regions = self.world.regions
+        homes = [self.rng.choice(regions)]
+        while len(homes) < count:
+            homes.append(max(
+                (r for r in regions if r not in homes),
+                key=lambda r: (min(self._capital_distance(r, h) for h in homes) + 3 * self.rng.random(), r.id)))
+        self.rng.shuffle(homes)
+        return homes
+
+    def _capital_distance(self, a, b) -> int:
+        ax, ay = self.world.xy(a.capital)
+        bx, by = self.world.xy(b.capital)
+        return abs(ax - bx) + abs(ay - by)

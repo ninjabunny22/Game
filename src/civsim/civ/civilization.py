@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 
 from ..economy.rules import RESOURCES
+from ..military.army import Army, Commander, Villager
 from .personality import Personality
 
 
@@ -46,6 +47,8 @@ class Civilization:
     resources: dict[str, float]
     settlements: list[Settlement] = field(default_factory=list)
     territory: set[int] = field(default_factory=set)
+    base_territory: int = 0  # tiles held at the start; expansion is priced on what was added since
+    alive: bool = True  # False once the civ has lost its last region capital
     buildings: list[Building] = field(default_factory=list)
 
     # Economy state, refreshed every tick.
@@ -54,6 +57,9 @@ class Civilization:
     capacity: dict[str, float] = field(default_factory=lambda: dict.fromkeys(RESOURCES, 0.0))
     income: dict[str, float] = field(default_factory=lambda: dict.fromkeys(RESOURCES, 0.0))
     upkeep: dict[str, float] = field(default_factory=lambda: dict.fromkeys(RESOURCES, 0.0))
+    # Fresh-water access of the territory: river size points, shore lake tiles, coast tiles.
+    water_access: dict[str, int] = field(default_factory=lambda: {"river": 0, "lake": 0, "coast": 0})
+    thirsty: bool = False
     goal: Goal | None = None
 
     # Army. Soldiers are counted in `population`.
@@ -61,10 +67,20 @@ class Civilization:
     unpaid: bool = False
     unsupplied: bool = False
 
+    # The army on the map. `soldiers` is the head count; the armies say what they are and where.
+    armies: list[Army] = field(default_factory=list)
+    commanders: list[Commander] = field(default_factory=list)  # not currently leading an army
+    villagers: list[Villager] = field(default_factory=list)
+
     # Standing orders from the diplomacy layer, executed by the economy and the AI.
     soldier_target: float = 0.0
     military_need: float = 0.0  # 0 = at peace and unthreatened, 1 = at war
     march_target: int | None = None  # civ to expand toward, to bring it within reach
+    campaign_muster: float = 0.0  # share of the population wanted under arms for a campaign against natives
+    campaign_cooldown: int = 0  # tick before which no new campaign is launched
+
+    # Influence: earned every tick, spent on trade deals, alliances and declarations of war.
+    diplomacy_points: float = 0.0
     exports: dict[str, float] = field(default_factory=lambda: dict.fromkeys(RESOURCES, 0.0))  # per tick, via deals
     imports: dict[str, float] = field(default_factory=lambda: dict.fromkeys(RESOURCES, 0.0))
 
@@ -82,6 +98,18 @@ class Civilization:
     @property
     def capital(self) -> Settlement:
         return self.settlements[0]
+
+    @property
+    def garrison(self) -> Army | None:
+        return next((army for army in self.armies if army.role == "garrison"), None)
+
+    def unit_counts(self) -> dict[str, float]:
+        """Soldiers by unit type across all armies."""
+        counts: dict[str, float] = {}
+        for army in self.armies:
+            for unit_id, count in army.units.items():
+                counts[unit_id] = counts.get(unit_id, 0.0) + count
+        return counts
 
     @property
     def workforce(self) -> float:

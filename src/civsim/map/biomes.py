@@ -11,6 +11,7 @@ class Biome(IntEnum):
     TUNDRA = 5
     HILLS = 6
     MOUNTAIN = 7
+    LAKE = 8
 
 
 @dataclass(frozen=True)
@@ -32,4 +33,5 @@ BIOME_INFO: dict[Biome, BiomeInfo] = {
     Biome.TUNDRA: BiomeInfo("Tundra", "#c9d6d3", {}),
     Biome.HILLS: BiomeInfo("Hills", "#9a8f62", {"stone": 2}),
     Biome.MOUNTAIN: BiomeInfo("Mountain", "#8a8a8f", {"stone": 1, "ore": 1}, buildable=False),
+    Biome.LAKE: BiomeInfo("Lake", "#4aa3df", {}, water=True, buildable=False),
 }

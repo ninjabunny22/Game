@@ -2,10 +2,14 @@
 
 The strategic layer only sets an Intent per neighbour at its check-ins. Everything
 mechanical happens here: opening and running trade deals, forming and dissolving
-alliances, declaring wars, resolving combat and moving borders.
+alliances and declaring wars. Fighting itself is done by the armies in
+military/warfare.py; this module owns what a capture or a surrender means.
 """
 
+from ..civ.civilization import Settlement
 from ..economy import recompute_capacity
+from ..economy.villagers import convert_villagers
+from ..military.units import unit_strength
 from ..economy.rules import (
     GARRISON,
     MAX_MOBILIZATION,
@@ -14,7 +18,7 @@ from ..economy.rules import (
     UNPAID_QUALITY,
     UNSUPPLIED_QUALITY,
 )
-from ..map import Biome, WorldMap
+from ..map import BOAT_RANGE, WorldMap, load_faction
 from . import rules
 from .model import FRIENDLY, Deal, Intent, Relation, Stance, War
 
@@ -37,6 +41,11 @@ class Diplomacy:
         self._reach_cache: dict[tuple[int, int], tuple[int, bool]] = {}
         self._alliance_breaks: dict[tuple[int, int], int] = {}  # (breaker, former ally) -> tick it broke the alliance
         self.distrust_until: dict[int, int] = {}  # betrayer -> tick until which others hold it against them
+        self.military = None  # set by the simulation; moves and fights the armies each tick
+        self.natives = None  # set by the simulation; the native faction holding the neutral regions
+        self.faction = load_faction()["name"]
+        for civ in civs:
+            civ.diplomacy_points = rules.DIPLOMACY_START
 
     # -- queries -------------------------------------------------------------
 
@@ -48,7 +57,7 @@ class Diplomacy:
         return self.intents[(a, b)]
 
     def others(self, civ_id: int) -> list[int]:
-        return [other for other in self.civs if other != civ_id]
+        return [other for other, civ in self.civs.items() if other != civ_id and civ.alive]
 
     def allies(self, civ_id: int) -> list[int]:
         return [o for o in self.others(civ_id) if self.relation(civ_id, o).status == "alliance"]
@@ -69,19 +78,27 @@ class Diplomacy:
         return quality
 
     def strength(self, civ) -> float:
-        """Strength of the army as it stands."""
-        return civ.soldiers * self.quality(civ)
+        """Strength of the army as it stands: soldiers x unit type x quality x commander skill."""
+        if not civ.armies:
+            return civ.soldiers * self.quality(civ)
+        return self.quality(civ) * sum(
+            unit_strength(army.units) * (1 + (army.commander.strength_bonus if army.commander else 0.0))
+            for army in civ.armies)
 
     def power(self, civ) -> float:
         """Strength the civ could field if it mobilised fully."""
-        return civ.population * MAX_MOBILIZATION * (1 + self.mods[civ.id].military)
+        return civ.population * self.mobilization_cap(civ) * (1 + self.mods[civ.id].military)
+
+    def mobilization_cap(self, civ) -> float:
+        """Largest share of the population the civ can put under arms."""
+        return MAX_MOBILIZATION + self.mods[civ.id].mobilization
 
     def in_reach(self, a: int, b: int, tick: int) -> bool:
-        """True if the two territories are close enough to fight over."""
-        key = (a, b) if a < b else (b, a)
+        """True if `a` can get at `b`'s territory: close enough overland, or across water with boats."""
+        key = (a, b)
         cached = self._reach_cache.get(key)
         if cached is None or tick - cached[0] >= REACH_CACHE_TICKS:
-            cached = (tick, bool(self._nearest_tiles(self.civs[a], self.civs[b], rules.REACH)))
+            cached = (tick, bool(self._nearest_tiles(self.civs[a], self.civs[b])))
             self._reach_cache[key] = cached
         return cached[1]
 
@@ -95,8 +112,10 @@ class Diplomacy:
     # -- input from the strategic layer --------------------------------------
 
     def set_intents(self, civ_id: int, intents: dict[int, Intent]) -> None:
+        if not self.civs[civ_id].alive:
+            return
         for other, intent in intents.items():
-            if other != civ_id and (civ_id, other) in self.intents:
+            if other != civ_id and (civ_id, other) in self.intents and self.civs[other].alive:
                 self.intents[(civ_id, other)] = intent
 
     def apply_modifiers(self, civ, mods) -> None:
@@ -107,12 +126,17 @@ class Diplomacy:
     # -- per-tick execution --------------------------------------------------
 
     def update(self, tick: int, events: list) -> None:
+        for civ in self.civs.values():
+            if civ.alive:
+                civ.diplomacy_points = min(rules.DIPLOMACY_CAP, civ.diplomacy_points + rules.DIPLOMACY_GAIN)
         for a, b in self.relations:
-            self._resolve_pair(a, b, tick, events)
+            if self.civs[a].alive and self.civs[b].alive:
+                self._resolve_pair(a, b, tick, events)
         self._run_deals(tick, events)
-        for relation in self.relations.values():
-            if relation.war:
-                self._fight(relation, tick, events)
+        if self.military:
+            self.military.update(tick, events)
+        if self.natives:
+            self.natives.update(tick, events)
         self._issue_orders(tick)
 
     def _resolve_pair(self, a: int, b: int, tick: int, events: list) -> None:
@@ -150,10 +174,10 @@ class Diplomacy:
                 self._alliance_breaks[(hostile[0].id, other.id)] = tick
                 self._log(tick, events, "diplomacy", [hostile[0], other],
                           f"{hostile[0].name} breaks its alliance with {other.name}")
-            declarer = next((civ for civ in hostile if civ.resources["gold"] >= rules.WAR_COST), None)
-            if declarer and tick >= relation.truce_until and self.in_reach(a, b, tick):
-                target = civ_b if declarer is civ_a else civ_a
-                declarer.resources["gold"] -= rules.WAR_COST
+            declarer = next((civ for civ in hostile if civ.diplomacy_points >= rules.WAR_COST), None)
+            target = civ_b if declarer is civ_a else civ_a
+            if declarer and tick >= relation.truce_until and self.in_reach(declarer.id, target.id, tick):
+                declarer.diplomacy_points -= rules.WAR_COST
                 self._start_war(declarer, target, tick, aggressors={civ.id for civ in hostile})
                 self._log(tick, events, "war", [declarer, target], f"{declarer.name} declares war on {target.name}")
                 broke = self._alliance_breaks.pop((declarer.id, target.id), None)
@@ -175,12 +199,12 @@ class Diplomacy:
                           f"The alliance between {civ_a.name} and {civ_b.name} lapses")
             else:
                 for civ in (civ_a, civ_b):
-                    civ.resources["gold"] = max(0.0, civ.resources["gold"] - rules.ALLIANCE_UPKEEP)
+                    civ.diplomacy_points = max(0.0, civ.diplomacy_points - rules.ALLIANCE_UPKEEP)
         elif (to_b.stance is Stance.ALLY and to_a.stance is Stance.ALLY
               and not self.distrusted(a, tick) and not self.distrusted(b, tick)  # nobody allies with a betrayer
-              and min(civ_a.resources["gold"], civ_b.resources["gold"]) >= rules.ALLIANCE_COST):
+              and min(civ_a.diplomacy_points, civ_b.diplomacy_points) >= rules.ALLIANCE_COST):
             for civ in (civ_a, civ_b):
-                civ.resources["gold"] -= rules.ALLIANCE_COST
+                civ.diplomacy_points -= rules.ALLIANCE_COST
             self._set_status(relation, "alliance", tick)
             self._log(tick, events, "diplomacy", [civ_a, civ_b], f"{civ_a.name} and {civ_b.name} form an alliance")
             # The new ally takes on any war in which its partner is the one under attack.
@@ -251,10 +275,12 @@ class Diplomacy:
         base_fee = 0 if relation.status == "alliance" else rules.DEAL_FEE
         fees = {civ.id: base_fee if not shunned[civ.id] else rules.DISTRUST_FEE_FACTOR * rules.DEAL_FEE
                 for civ in (civ_a, civ_b)}
-        if any(civ.resources["gold"] < fees[civ.id] for civ in (civ_a, civ_b)):
+        for civ in (civ_a, civ_b):  # Banking and the like make deals cheaper to open
+            fees[civ.id] *= max(0.1, 1 + self.mods[civ.id].deal_fee)
+        if any(civ.diplomacy_points < fees[civ.id] for civ in (civ_a, civ_b)):
             return
         for civ in (civ_a, civ_b):
-            civ.resources["gold"] -= fees[civ.id]
+            civ.diplomacy_points -= fees[civ.id]
         deal = Deal(self._next_deal_id, civ_a.id, civ_b.id, (a_offer.give, a_rate), (b_offer.give, b_rate), tick)
         self._next_deal_id += 1
         self.deals.append(deal)
@@ -295,89 +321,124 @@ class Diplomacy:
 
     # -- war -----------------------------------------------------------------
 
-    def _fight(self, relation: Relation, tick: int, events: list) -> None:
-        war = relation.war
-        sides = (self.civs[war.a], self.civs[war.b])
-        troops = {civ.id: civ.soldiers / max(1, len(self.enemies(civ.id))) for civ in sides}
-        strength = {civ.id: troops[civ.id] * self.quality(civ) for civ in sides}
-
-        # Each side pushes into the other when its attack beats the other's defence.
-        for attacker, defender in (sides, sides[::-1]):
-            attack = strength[attacker.id] * (1.0 if attacker.id in war.aggressors else rules.COUNTER_ATTACK)
-            # A betrayed civ is caught off guard at first: no militia has mustered and its
-            # home ground is no help, because the attacker knows the defences.
-            surprised = attacker.id == war.betrayer and tick < war.surprise_until
-            militia = 0.0 if surprised else rules.MILITIA * defender.population * (1 + self.mods[defender.id].military)
-            home = 0.0 if surprised else rules.HOME_BONUS
-            defence = (strength[defender.id] + militia) * (1 + home + self.mods[defender.id].defense)
-            if attack > defence:
-                gain = rules.CAPTURE_RATE * (attack - defence) / (attack + defence)
-                if surprised:
-                    gain *= rules.SURPRISE_CAPTURE
-                war.progress[attacker.id] = min(war.progress[attacker.id] + gain, 2 * max(rules.TILE_DEFENSE.values()))
-
-        # Both sides lose troops; the weaker side loses more.
-        engaged = min(troops.values())
-        total = sum(strength.values())
-        if engaged > 0 and total > 0:
-            for civ, enemy in (sides, sides[::-1]):
-                loss = min(civ.soldiers, 2 * rules.CASUALTY_RATE * engaged * strength[enemy.id] / total)
-                civ.soldiers -= loss
-                civ.population = max(MIN_POPULATION, civ.population - loss)
-                war.casualties[civ.id] += loss
-
-        for attacker, defender in (sides, sides[::-1]):
-            if relation.war is war:  # the other side may just have surrendered
-                self._advance(relation, attacker, defender, tick, events)
-
-    def _advance(self, relation: Relation, attacker, defender, tick: int, events: list) -> None:
-        """Spend capture progress on the cheapest defender tile within reach."""
-        war = relation.war
-        if war.progress[attacker.id] < min(1.0, *rules.TILE_DEFENSE.values()):
+    def _transfer_tile(self, tile: int, captor, loser, tick: int, events: list, announce: bool = True) -> None:
+        """Move a tile and everything standing on it to `captor`. `loser` is None for native land."""
+        self.world.claim(tile, captor.id)
+        captor.territory.add(tile)
+        if loser is None:
             return
-        world = self.world
-        capital = defender.capital.tile
-        cx, cy = world.xy(capital)
-
-        def price(tile: int) -> float:
-            return rules.TILE_DEFENSE.get(world.biomes[tile], 1.0)
-
-        def order(tile: int) -> tuple[float, int]:
-            x, y = world.xy(tile)
-            return price(tile) + 0.3 * (abs(x - cx) + abs(y - cy)), tile
-
-        candidates = [t for t in self._nearest_tiles(attacker, defender, rules.REACH) if t != capital]
-        if not candidates:
-            return
-        tile = min(candidates, key=order)
-        if war.progress[attacker.id] < price(tile):
-            return
-        war.progress[attacker.id] -= price(tile)
-        self._capture_tile(relation, attacker, defender, tile, tick, events)
+        loser.territory.discard(tile)
+        # Whatever stands on the tile now belongs to the captor, finished or not.
+        for building in [b for b in loser.buildings if b.tile == tile]:
+            loser.buildings.remove(building)
+            captor.buildings.append(building)
+            bdef = self.building_defs[building.type]
+            text = f"{captor.name} captures a {bdef.name} from {loser.name}"
+            if building.complete:
+                text += self._seize_stores(bdef, captor, loser)
+            if announce:
+                self._log(tick, events, "war", [captor, loser], text)
+        # Villagers are never harmed: those on the tile now work for the captor, once given a task.
+        convert_villagers(tile, loser, captor)
 
     def _capture_tile(self, relation: Relation, attacker, defender, tile: int, tick: int, events: list) -> None:
-        """Move a tile, and everything standing on it, from the defender to the attacker."""
+        """An army takes one tile in a war. Taking a region's capital takes the whole region."""
         world = self.world
-        war = relation.war
-        world.claim(tile, attacker.id)
-        defender.territory.discard(tile)
-        attacker.territory.add(tile)
-        # Whatever stands on the tile now belongs to the captor, finished or not.
-        for building in [b for b in defender.buildings if b.tile == tile]:
-            defender.buildings.remove(building)
-            attacker.buildings.append(building)
-            bdef = self.building_defs[building.type]
-            text = f"{attacker.name} captures a {bdef.name} from {defender.name}"
-            if building.complete:
-                text += self._seize_stores(bdef, attacker, defender)
-            self._log(tick, events, "war", [attacker, defender], text)
+        self._transfer_tile(tile, attacker, defender, tick, events)
         recompute_capacity(attacker, world)
         recompute_capacity(defender, world)
-        war.tiles_taken[attacker.id] += 1
+        relation.war.tiles_taken[attacker.id] += 1
         self._reach_cache.clear()
+        region_id = world.capital_tiles.get(tile)
+        if region_id is not None and world.regions[region_id].owner == defender.id:
+            self.capture_region(attacker, world.regions[region_id], tick, events)
 
-        if tile in set(world.neighbors(defender.capital.tile, diagonal=True)):
-            self._surrender(relation, attacker, defender, tick, events)
+    def capture_region(self, captor, region, tick: int, events: list, peaceful: bool = False) -> None:
+        """Whoever takes a region's capital takes the region: every tile its previous holder had there.
+
+        Land that other civs hold inside the region stays theirs. A civ that loses
+        its own capital this way pays tribute and moves its court to another
+        capital it holds; one with no capital left is finished.
+        """
+        world = self.world
+        loser = self.civs.get(region.owner) if region.owner is not None else None
+        was_main = loser is not None and loser.capital.tile == region.capital
+        shares = self.spoils_shares(captor, loser) if loser else {captor.id: 1.0}
+        for tile in region.tiles:
+            owner = world.owner[tile]
+            if owner == captor.id or (owner >= 0 and (loser is None or owner != loser.id)):
+                continue
+            self._transfer_tile(tile, captor, loser if owner >= 0 else None, tick, events, announce=False)
+        region.owner = captor.id
+        region.garrison = 0.0
+        captor.settlements.append(Settlement(region.capital_name, region.capital))
+        recompute_capacity(captor, world)
+        self._reach_cache.clear()
+        if peaceful:
+            self._log(tick, events, "region", [captor],
+                      f"{region.capital_name} opens its gates: {region.name} joins {captor.name} without a fight")
+        elif loser is None:
+            self._log(tick, events, "region", [captor],
+                      f"{captor.name} takes {region.capital_name} from {self.faction}; all of {region.name} falls with it")
+        else:
+            self._log(tick, events, "war", [captor, loser],
+                      f"{captor.name} takes {region.capital_name}; all of {region.name} falls with it")
+        if loser is None:
+            return
+        loser.settlements = [s for s in loser.settlements if s.tile != region.capital]
+        recompute_capacity(loser, world)
+        if not loser.settlements:
+            self._eliminate(loser, captor, tick, events)
+        elif was_main:
+            self._capital_lost(captor, loser, shares, tick, events)
+
+    def _capital_lost(self, winner, loser, shares: dict[int, float], tick: int, events: list) -> None:
+        """A civ whose own capital falls pays tribute, moves its court, and is granted a truce."""
+        for res in RESOURCES:
+            taken = rules.TRIBUTE * loser.resources[res]
+            loser.resources[res] -= taken
+            for civ_id, share in shares.items():
+                civ = self.civs[civ_id]
+                room = self.mods[civ_id].storage[res] - civ.resources[res]
+                civ.resources[res] += max(0.0, min(share * taken, room))
+        text = (f"{loser.name} loses its capital to {winner.name}, pays tribute and moves its court to "
+                f"{loser.capital.name}" + self._split_note(shares))
+        relation = self.relation(winner.id, loser.id)
+        if relation.war:
+            self._end_war(relation, tick, events, rules.SURRENDER_TRUCE, text)
+        else:
+            self._log(tick, events, "war", [winner, loser], text)
+        self.intents[(loser.id, winner.id)] = Intent(tick=tick)
+
+    def _eliminate(self, loser, captor, tick: int, events: list) -> None:
+        """A civ with no capital left is finished: what remains of it goes to its conqueror."""
+        world = self.world
+        for tile in sorted(loser.territory):
+            self._transfer_tile(tile, captor, loser, tick, events, announce=False)
+        for villager in list(loser.villagers):
+            loser.villagers.remove(villager)
+            villager.task, villager.target, villager.path = "idle", None, []
+            captor.villagers.append(villager)
+        for res in RESOURCES:
+            captor.resources[res] += loser.resources[res]
+            loser.resources[res] = 0.0
+        loser.alive = False
+        loser.soldiers = 0.0
+        loser.armies, loser.commanders = [], []
+        loser.population = 0.0
+        self.deals = [d for d in self.deals if loser.id not in (d.a, d.b)]
+        for other in self.civs:
+            if other == loser.id:
+                continue
+            relation = self.relation(loser.id, other)
+            relation.war = None
+            self._set_status(relation, "peace", tick)
+            self.intents[(loser.id, other)] = Intent(tick=tick)
+            self.intents[(other, loser.id)] = Intent(tick=tick)
+        recompute_capacity(captor, world)
+        self._reach_cache.clear()
+        self._log(tick, events, "war", [captor, loser],
+                  f"{loser.name} is no more: its last capital has fallen to {captor.name}")
 
     def _seize_stores(self, bdef, attacker, defender) -> str:
         """What a captured storage building holds goes with it. Returns a note for the log.
@@ -427,21 +488,6 @@ class Diplomacy:
         parts = ", ".join(f"{self.civs[civ_id].name} {share:.0%}" for civ_id, share in shares.items())
         return f" (shared by strength: {parts})"
 
-    def _surrender(self, relation: Relation, winner, loser, tick: int, events: list) -> None:
-        shares = self.spoils_shares(winner, loser)
-        for res in RESOURCES:
-            taken = rules.TRIBUTE * loser.resources[res]
-            loser.resources[res] -= taken
-            for civ_id, share in shares.items():
-                civ = self.civs[civ_id]
-                room = self.mods[civ_id].storage[res] - civ.resources[res]
-                civ.resources[res] += max(0.0, min(share * taken, room))
-        taken = relation.war.tiles_taken[winner.id]
-        self._end_war(relation, tick, events, rules.SURRENDER_TRUCE,
-                      f"{loser.name} surrenders to {winner.name}, having lost {taken} tiles, and pays tribute"
-                      + self._split_note(shares))
-        self.intents[(loser.id, winner.id)] = Intent(tick=tick)
-
     def _end_war(self, relation: Relation, tick: int, events: list, truce: int, text: str) -> None:
         war = relation.war
         relation.war = None
@@ -449,12 +495,17 @@ class Diplomacy:
         self._set_status(relation, "peace", tick)
         self._log(tick, events, "war", [self.civs[war.a], self.civs[war.b]], text)
 
-    def _nearest_tiles(self, attacker, defender, limit: int) -> list[int]:
-        """The defender's tiles closest to the attacker's territory, if within `limit` steps."""
+    def _nearest_tiles(self, attacker, defender) -> list[int]:
+        """The defender's tiles closest to the attacker's territory, if it can reach them.
+
+        Overland the gap may be up to REACH tiles. Open water (lakes, deep sea)
+        cannot be crossed at all without boats; with them the gap may be wider.
+        """
         world = self.world
+        boats = bool(self.mods[attacker.id].boats)
         seen = set(attacker.territory)
         frontier = sorted(seen)
-        for _ in range(limit):
+        for _ in range(rules.REACH + BOAT_RANGE + self.mods[attacker.id].boat_range if boats else rules.REACH):
             found, reached = [], []
             for tile in frontier:
                 for n in world.neighbors(tile):
@@ -463,7 +514,7 @@ class Diplomacy:
                     seen.add(n)
                     if world.owner[n] == defender.id:
                         found.append(n)
-                    elif world.biomes[n] != Biome.OCEAN:
+                    elif boats or not world.is_open_water(n):
                         reached.append(n)
             if found:
                 return found
@@ -474,7 +525,10 @@ class Diplomacy:
 
     def _issue_orders(self, tick: int) -> None:
         for civ in self.civs.values():
-            mobilisation = GARRISON
+            if not civ.alive:
+                continue
+            cap = self.mobilization_cap(civ)
+            mobilisation = max(GARRISON, min(cap, civ.campaign_muster))  # a campaign against natives needs troops
             threat = 0.0
             civ.march_target = None
             for other_id in self.others(civ.id):
@@ -483,12 +537,14 @@ class Diplomacy:
                 if self.relation(civ.id, other_id).status == "war":
                     threat = 1.0
                     if mine.stance is Stance.AGGRESSION:
-                        mobilisation = max(mobilisation, mine.commitment * MAX_MOBILIZATION)
+                        mobilisation = max(mobilisation, mine.commitment * cap)
                     # Always raise enough to answer the army actually in the field.
-                    mobilisation = max(mobilisation, min(MAX_MOBILIZATION, 0.05 + other.soldiers / civ.population))
+                    mobilisation = max(mobilisation, min(cap, 0.05 + other.soldiers / civ.population))
                 elif Stance.AGGRESSION in (mine.stance, theirs.stance):
                     threat = max(threat, 0.6)
-                    mobilisation = max(mobilisation, rules.MUSTER * MAX_MOBILIZATION)
+                    # Muster ahead of a war once the declaration itself is affordable, or if threatened.
+                    if theirs.stance is Stance.AGGRESSION or civ.diplomacy_points >= rules.WAR_COST:
+                        mobilisation = max(mobilisation, rules.MUSTER * cap)
                     if (mine.stance is Stance.AGGRESSION and civ.march_target is None
                             and not self.in_reach(civ.id, other_id, tick)):
                         civ.march_target = other_id

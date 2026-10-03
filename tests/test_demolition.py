@@ -111,7 +111,7 @@ def test_nothing_is_demolished_for_a_marginal_gain(sim):
 
 
 # The construction techs each make demolition a little less wasteful, one per era.
-REFUND_TECHS = ["mining", "masonry", "engineering", "guilds"]
+REFUND_TECHS = ["mining", "masonry", "engineering", "guilds", "civil_engineering"]
 
 
 def test_base_refund_is_ten_percent(sim):
@@ -133,17 +133,17 @@ def test_construction_techs_raise_the_refund_step_by_step_to_a_quarter(sim):
         civ.resources["wood"] = 0
         demolish(civ, library, mods, sim.building_defs, [])
         assert civ.resources["wood"] == pytest.approx(mods.demolition_refund * sim.building_defs["library"].cost["wood"])
-    assert rates == [0.10, 0.13, 0.17, 0.21, 0.25]
+    assert rates == [0.10, 0.13, 0.17, 0.21, 0.25, 0.35]
 
 
 def test_refund_comes_from_ordinary_techs_not_a_dedicated_path(sim):
     tree = sim.tech_tree
-    assert [tree.techs[t].era for t in REFUND_TECHS] == [0, 1, 2, 3]
+    assert [tree.techs[t].era for t in REFUND_TECHS] == [0, 1, 2, 3, 5]
     with_refund = [t.id for t in tree.techs.values() if "demolition_refund" in t.effects]
     assert with_refund == REFUND_TECHS
     assert all(len(tree.techs[t].effects) > 1 for t in REFUND_TECHS), "each also does something else"
     full = compute_modifiers_for_all(sim)
-    assert full == pytest.approx(0.25)
+    assert full == pytest.approx(0.35)
 
 
 def compute_modifiers_for_all(sim) -> float:
