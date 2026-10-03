@@ -47,7 +47,8 @@ class Simulation:
         }
         for civ in self.civs:  # everyone starts with full water stores
             civ.resources["water"] = self.modifiers[civ.id].storage["water"]
-        self.diplomacy = Diplomacy(self.world, self.civs, self.modifiers, self.building_defs)
+        self.diplomacy = Diplomacy(self.world, self.civs, self.modifiers, self.building_defs,
+                                   random.Random(self.config.seed + 7919))
         self._ids = itertools.count(1)  # ids for armies and villagers
         self.military = Military(self.world, self.civs, self.modifiers, self.diplomacy, self.rng,
                                  lambda: next(self._ids))

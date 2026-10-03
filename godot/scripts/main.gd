@@ -50,6 +50,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			_hud.request_speed(2.0)
 		KEY_MINUS:
 			_hud.request_speed(0.5)
+		KEY_TAB:
+			_hud.toggle_diplomacy()
 
 
 func _on_connection_changed(connected: bool) -> void:
@@ -71,6 +73,8 @@ func _on_init(data: Dictionary) -> void:
 	var view := OS.get_environment("CIVSIM_VIEW").split_floats(",", false)
 	if view.size() == 3:
 		_camera.focus(_terrain.tile_position(int(view[0]), int(view[1])), view[2])
+	if OS.get_environment("CIVSIM_DIPLOMACY") == "1":  # start with the diplomacy panel open
+		_hud.toggle_diplomacy()
 	_territory_rev = -1
 	_ready_for_ticks = true
 

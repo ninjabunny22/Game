@@ -24,7 +24,7 @@ from ..map import BIOME_INFO, DEPOSIT_TYPES, Biome, load_faction
 from ..military import UNIT_TYPES
 from ..simulation import Simulation
 
-PROTOCOL_VERSION = 5
+PROTOCOL_VERSION = 6
 COMMANDS = ("pause", "resume", "toggle_pause", "step", "set_speed")
 
 
@@ -202,8 +202,11 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
         war = relation.war
         relations.append({
             "a": a, "b": b, "status": relation.status, "since": relation.since,
+            # What history calls it: the war's name, or the alliance's; null at peace.
+            "name": (war.name if war else relation.alliance_name) or None,
             "truce": sim.tick < relation.truce_until,
             "war": {
+                "started": war.start,
                 "aggressors": sorted(war.aggressors),
                 "declarer": war.declarer,
                 "defending": war.defending,  # set if one side was drawn in by an alliance

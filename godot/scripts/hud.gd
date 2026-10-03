@@ -4,6 +4,8 @@ extends CanvasLayer
 
 signal command_requested(action: String, value: Variant)
 
+const LINK_LEGEND := "[color=#ff4033]━[/color] war   [color=#59a6ff]━[/color] alliance   [color=#59e666]━[/color] trade   [color=#aaaaaa]━[/color] neutral"
+
 const MAX_LOG_LINES := 9
 const MAX_TECHS_LISTED := 6  # the most recent ones; the full list no longer fits a card
 const RESOURCE_LABELS := {"food": "Food", "wood": "Wood", "stone": "Stone", "ore": "Ore", "gold": "Gold", "water": "Water"}
@@ -13,6 +15,8 @@ var _status: Label
 var _pause_button: Button
 var _log: RichTextLabel
 var _cards_box: VBoxContainer
+var _diplomacy_panel: PanelContainer
+var _diplomacy: RichTextLabel
 var _cards := {}  # civ id -> RichTextLabel
 
 var _connected := false
@@ -50,11 +54,36 @@ func _ready() -> void:
 	_button(buttons, "Step", func() -> void: command_requested.emit("step", null))
 	_button(buttons, "Slower", func() -> void: request_speed(0.5))
 	_button(buttons, "Faster", func() -> void: request_speed(2.0))
+	_button(buttons, "Diplomacy", toggle_diplomacy)
 	var help := Label.new()
-	help.text = "Drag: pan   Right-drag: orbit   Wheel: zoom\nSpace: pause   . : step   - / = : speed"
+	help.text = "Drag: pan   Right-drag: orbit   Wheel: zoom\nSpace: pause   . : step   - / = : speed   Tab: diplomacy"
 	help.add_theme_font_size_override("font_size", 12)
 	help.modulate = Color(1, 1, 1, 0.6)
 	column.add_child(help)
+	var legend := RichTextLabel.new()
+	legend.bbcode_enabled = true
+	legend.fit_content = true
+	legend.scroll_active = false
+	legend.autowrap_mode = TextServer.AUTOWRAP_OFF
+	legend.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	legend.add_theme_font_size_override("normal_font_size", 12)
+	legend.text = LINK_LEGEND
+	column.add_child(legend)
+
+	# Diplomacy: every war, alliance and trade deal in force. Toggled with the button or Tab.
+	_diplomacy_panel = _panel(root)
+	_diplomacy_panel.position = Vector2(10, 178)
+	_diplomacy_panel.custom_minimum_size = Vector2(430, 0)
+	_diplomacy_panel.visible = false
+	_diplomacy = RichTextLabel.new()
+	_diplomacy.bbcode_enabled = true
+	_diplomacy.fit_content = true
+	_diplomacy.scroll_active = false
+	_diplomacy.custom_minimum_size = Vector2(410, 0)
+	_diplomacy.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_diplomacy.add_theme_font_size_override("normal_font_size", 13)
+	_diplomacy.add_theme_font_size_override("bold_font_size", 13)
+	_diplomacy_panel.add_child(_diplomacy)
 
 	# Event log.
 	var log_panel := _panel(root)
@@ -151,6 +180,8 @@ func update(tick: int, data: Dictionary) -> void:
 		var civ_id := int(civ["id"])
 		if _cards.has(civ_id):
 			_cards[civ_id].text = _card_text(_civ_info[civ_id], civ)
+	if _diplomacy_panel.visible:
+		_diplomacy.text = _diplomacy_text_panel(data)
 	for event: Dictionary in data["events"]:
 		if event["kind"] in ["building", "demolition"]:
 			continue  # too frequent to be worth a log line
@@ -159,6 +190,78 @@ func update(tick: int, data: Dictionary) -> void:
 	if _log_lines.size() > MAX_LOG_LINES:
 		_log_lines = _log_lines.slice(_log_lines.size() - MAX_LOG_LINES)
 	_log.text = "\n".join(_log_lines)
+
+
+func toggle_diplomacy() -> void:
+	_diplomacy_panel.visible = not _diplomacy_panel.visible
+
+
+func _civ_name(civ_id: int) -> String:
+	var info: Dictionary = _civ_info[civ_id]
+	return "[color=%s]%s[/color]" % [info["color"], info["name"]]
+
+
+## Wars (grouped by name, since allies join the same war), alliances and trade deals.
+func _diplomacy_text_panel(data: Dictionary) -> String:
+	var lines: Array[String] = []
+	var wars := {}  # name -> list of relations
+	var alliances: Array = []
+	for relation: Dictionary in data["relations"]:
+		if relation["status"] == "war":
+			var name: String = str(relation["name"]) if relation["name"] != null else "Unnamed war"
+			if not wars.has(name):
+				wars[name] = []
+			wars[name].append(relation)
+		elif relation["status"] == "alliance":
+			alliances.append(relation)
+
+	lines.append("[b][color=#ff6a5a]WARS[/color][/b]")
+	if wars.is_empty():
+		lines.append("[color=#8a93a0]  The world is at peace.[/color]")
+	for name: String in wars:
+		var fronts: Array = wars[name]
+		var started := _tick
+		for front: Dictionary in fronts:
+			started = mini(started, int(front["war"]["started"]))
+		lines.append("[b]%s[/b]  [color=#8a93a0]%d ticks[/color]" % [name, _tick - started])
+		for front: Dictionary in fronts:
+			var war: Dictionary = front["war"]
+			# The side that declared is named first.
+			var attacker := int(war["declarer"]) if war["declarer"] != null else int(front["a"])
+			var defender := int(front["b"]) if attacker == int(front["a"]) else int(front["a"])
+			var note := ""
+			if war["defending"] != null:
+				note = "  [color=#8a93a0](defending %s)[/color]" % _civ_info[int(war["defending"])]["name"]
+			elif war["betrayer"] != null:
+				note = "  [color=#e07a6a](betrayal)[/color]"
+			lines.append("  %s attacks %s%s" % [_civ_name(attacker), _civ_name(defender), note])
+			lines.append("  [color=#8a93a0]tiles taken %d / %d   losses %d / %d[/color]" % [
+				int(war["tiles_taken"][str(attacker)]), int(war["tiles_taken"][str(defender)]),
+				int(war["casualties"][str(attacker)]), int(war["casualties"][str(defender)]),
+			])
+
+	lines.append("")
+	lines.append("[b][color=#6fb7ff]ALLIANCES[/color][/b]")
+	if alliances.is_empty():
+		lines.append("[color=#8a93a0]  None.[/color]")
+	for alliance: Dictionary in alliances:
+		var name: String = str(alliance["name"]) if alliance["name"] != null else "Alliance"
+		lines.append("[b]%s[/b]" % name)
+		lines.append("  %s and %s  [color=#8a93a0]formed tick %d (%d ticks ago)[/color]" % [
+			_civ_name(int(alliance["a"])), _civ_name(int(alliance["b"])), int(alliance["since"]), _tick - int(alliance["since"]),
+		])
+
+	lines.append("")
+	lines.append("[b][color=#7ccf7c]TRADE DEALS[/color][/b]")
+	if data["deals"].is_empty():
+		lines.append("[color=#8a93a0]  None.[/color]")
+	for deal: Dictionary in data["deals"]:
+		lines.append("  %s sends %s %s/tick,  %s sends %s %s/tick  [color=#8a93a0]%d ticks left[/color]" % [
+			_civ_name(int(deal["a"])), String.num(float(deal["a_gives"]["rate"]), 2), deal["a_gives"]["resource"],
+			_civ_name(int(deal["b"])), String.num(float(deal["b_gives"]["rate"]), 2), deal["b_gives"]["resource"],
+			int(deal["ends"]) - _tick,
+		])
+	return "\n".join(lines)
 
 
 ## Multiplies the sim speed; the server clamps it to its allowed range.

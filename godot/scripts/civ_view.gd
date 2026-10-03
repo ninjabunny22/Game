@@ -6,7 +6,8 @@ extends Node3D
 
 const BUILDING_WIDTH := 0.62
 const PLINTH_HEIGHT := 0.12
-const LINK_COLORS := {"deal": Color(0.35, 0.9, 0.4), "alliance": Color(0.35, 0.65, 1.0), "war": Color(1.0, 0.25, 0.2)}
+const LINK_COLORS := {"deal": Color(0.35, 0.9, 0.4), "alliance": Color(0.35, 0.65, 1.0), "war": Color(1.0, 0.25, 0.2),
+	"neutral": Color(0.75, 0.75, 0.78, 0.45)}
 const LINK_WIDTH := 0.45
 const LINK_SEGMENTS := 24
 
@@ -20,6 +21,7 @@ var _regions := {}  # region id -> static info from init
 var _native_color := Color(0.6, 0.55, 0.48)
 var _native_name := ""
 var _links: ImmediateMesh
+var _link_labels := {}  # "a:b" -> Label3D naming the war or alliance
 var _link_material: StandardMaterial3D
 
 
@@ -27,6 +29,7 @@ func setup(terrain: Node3D, init: Dictionary, civ_colors: Array) -> void:
 	for child in get_children():
 		child.queue_free()
 	_nodes.clear()
+	_link_labels.clear()
 	_body_meshes.clear()
 	_plinth_meshes.clear()
 	_terrain = terrain
@@ -44,6 +47,7 @@ func setup(terrain: Node3D, init: Dictionary, civ_colors: Array) -> void:
 	_link_material.vertex_color_use_as_albedo = true
 	_link_material.vertex_color_is_srgb = true
 	_link_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_link_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	_links = ImmediateMesh.new()
 	var links_instance := MeshInstance3D.new()
 	links_instance.mesh = _links
@@ -89,23 +93,48 @@ func update(civs: Array, regions: Array) -> void:
 			_nodes.erase(key)
 
 
-## Redraws the arcs between capitals from the tick's relations and deals.
+## Redraws the arcs between civ capitals. Every pair of living civs has one, coloured
+## by what holds between them: red for war, blue for alliance, green for a trade
+## deal, thin grey for nothing in particular. Wars and alliances carry their name.
 func update_links(civs: Array, relations: Array, deals: Array) -> void:
 	var capitals := {}
 	for civ: Dictionary in civs:
-		var capital: Dictionary = civ["settlements"][0]
-		capitals[int(civ["id"])] = _terrain.tile_position(int(capital["x"]), int(capital["y"])) + Vector3(0, 4.4, 0)
-	_links.clear_surfaces()
-	for relation: Dictionary in relations:
-		if relation["status"] != "peace":
-			_add_link(capitals[int(relation["a"])], capitals[int(relation["b"])], LINK_COLORS[relation["status"]], 1.0)
+		if civ["alive"] and not civ["settlements"].is_empty():
+			var capital: Dictionary = civ["settlements"][0]
+			capitals[int(civ["id"])] = _terrain.tile_position(int(capital["x"]), int(capital["y"])) + Vector3(0, 4.4, 0)
+	var trading := {}
 	for deal: Dictionary in deals:
-		_add_link(capitals[int(deal["a"])], capitals[int(deal["b"])], LINK_COLORS["deal"], 0.6)
+		trading["%d:%d" % [mini(int(deal["a"]), int(deal["b"])), maxi(int(deal["a"]), int(deal["b"]))]] = true
+
+	_links.clear_surfaces()
+	var named := {}
+	for relation: Dictionary in relations:
+		var a := int(relation["a"])
+		var b := int(relation["b"])
+		if not capitals.has(a) or not capitals.has(b):
+			continue
+		var key := "%d:%d" % [a, b]
+		var status: String = relation["status"]
+		if status == "war":
+			named[key] = _add_link(capitals[a], capitals[b], LINK_COLORS["war"], 1.0, LINK_WIDTH * 1.5)
+		elif status == "alliance":
+			named[key] = _add_link(capitals[a], capitals[b], LINK_COLORS["alliance"], 1.0, LINK_WIDTH)
+		if trading.has(key):
+			_add_link(capitals[a], capitals[b], LINK_COLORS["deal"], 0.6, LINK_WIDTH)
+		elif status == "peace":
+			_add_link(capitals[a], capitals[b], LINK_COLORS["neutral"], 0.35, LINK_WIDTH * 0.45)
+		if named.has(key):
+			_name_link(key, str(relation["name"]) if relation["name"] != null else "", named[key], LINK_COLORS[status])
+	for key: String in _link_labels.keys():
+		if not named.has(key):
+			_link_labels[key].queue_free()
+			_link_labels.erase(key)
 
 
 ## A ribbon arcing from one point to another; `lift` scales how high it rises.
-func _add_link(from: Vector3, to: Vector3, color: Color, lift: float) -> void:
-	var side := (to - from).cross(Vector3.UP).normalized() * LINK_WIDTH / 2.0
+## Returns the top of the arc, where a name can go.
+func _add_link(from: Vector3, to: Vector3, color: Color, lift: float, width: float) -> Vector3:
+	var side := (to - from).cross(Vector3.UP).normalized() * width / 2.0
 	var height := lift * (5.0 + 0.15 * from.distance_to(to))
 	_links.surface_begin(Mesh.PRIMITIVE_TRIANGLE_STRIP, _link_material)
 	for i in LINK_SEGMENTS + 1:
@@ -116,6 +145,24 @@ func _add_link(from: Vector3, to: Vector3, color: Color, lift: float) -> void:
 		_links.surface_set_color(color)
 		_links.surface_add_vertex(point + side)
 	_links.surface_end()
+	return from.lerp(to, 0.5) + Vector3.UP * (height + 1.2)
+
+
+## The name of a war or alliance, floating at the top of its arc.
+func _name_link(key: String, text: String, at: Vector3, color: Color) -> void:
+	if not _link_labels.has(key):
+		var label := Label3D.new()
+		label.font_size = 40
+		label.outline_size = 12
+		label.pixel_size = 0.018
+		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		label.no_depth_test = true
+		add_child(label)
+		_link_labels[key] = label
+	var node: Label3D = _link_labels[key]
+	node.text = text
+	node.modulate = color.lightened(0.45)
+	node.position = at
 
 
 func _make_building(civ_id: int, building: Dictionary) -> Node3D:

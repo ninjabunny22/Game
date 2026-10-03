@@ -40,7 +40,17 @@ Then open `godot/` in Godot 4.3 or newer and press Play (or
 viewer reconnects on its own.
 
 Viewer controls: drag to pan, right-drag to orbit, wheel to zoom, `Space` to
-pause, `.` to step one tick, `-` / `=` to change speed.
+pause, `.` to step one tick, `-` / `=` to change speed, `Tab` (or the Diplomacy
+button) for the diplomacy panel: every war with its name, sides, duration,
+land taken and losses; every alliance with its name and when it formed; every
+trade deal with its terms. Arcs between capitals are colour-coded: red for
+war, blue for alliance, green for a trade deal, thin grey for neither.
+
+Wars and alliances are named when they begin (`diplomacy/naming.py`) from the
+world itself: the region being fought over, its capital, the kind of land it
+is, or the resource the attacker lacks ("The Brackenfell Iron War", "The War
+of Valewatch", "The Cinderford Accord"). Allies drawn into a war fight under
+its name. A name used before returns as "The Second ..."
 
 ## Layout
 

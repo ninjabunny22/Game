@@ -6,6 +6,8 @@ alliances and declaring wars. Fighting itself is done by the armies in
 military/warfare.py; this module owns what a capture or a surrender means.
 """
 
+import random
+
 from ..civ.civilization import Settlement
 from ..economy import recompute_capacity
 from ..economy.villagers import convert_villagers
@@ -21,14 +23,18 @@ from ..economy.rules import (
 from ..map import BOAT_RANGE, WorldMap, load_faction
 from . import rules
 from .model import FRIENDLY, Deal, Intent, Relation, Stance, War
+from .naming import alliance_name, war_name
 
 REACH_CACHE_TICKS = 10
 HISTORY_LIMIT = 200
 
 
 class Diplomacy:
-    def __init__(self, world: WorldMap, civs: list, modifiers: dict, building_defs: dict):
+    def __init__(self, world: WorldMap, civs: list, modifiers: dict, building_defs: dict,
+                 rng: random.Random | None = None):
         self.world = world
+        self.rng = rng or random.Random(0)  # only used to pick names
+        self.names_used: set[str] = set()
         self.building_defs = building_defs
         self.civs = {civ.id: civ for civ in civs}
         self.mods = modifiers  # civ id -> Modifiers; the simulation keeps this current
@@ -178,10 +184,13 @@ class Diplomacy:
             target = civ_b if declarer is civ_a else civ_a
             if declarer and tick >= relation.truce_until and self.in_reach(declarer.id, target.id, tick):
                 declarer.diplomacy_points -= rules.WAR_COST
-                self._start_war(declarer, target, tick, aggressors={civ.id for civ in hostile})
-                self._log(tick, events, "war", [declarer, target], f"{declarer.name} declares war on {target.name}")
                 broke = self._alliance_breaks.pop((declarer.id, target.id), None)
-                if broke is not None and tick - broke <= rules.BETRAYAL_WINDOW:
+                betrayal = broke is not None and tick - broke <= rules.BETRAYAL_WINDOW
+                name = war_name(self.world, declarer, target, self.rng, self.names_used, betrayal)
+                self._start_war(declarer, target, tick, aggressors={civ.id for civ in hostile}, name=name)
+                self._log(tick, events, "war", [declarer, target],
+                          f"{declarer.name} declares war on {target.name}: {name} begins")
+                if betrayal:
                     self._betray(relation.war, declarer, target, tick, events)
                 for ally in self.allies(target.id):
                     self._join_defence(self.civs[ally], target, declarer, tick, events)
@@ -206,7 +215,11 @@ class Diplomacy:
             for civ in (civ_a, civ_b):
                 civ.diplomacy_points -= rules.ALLIANCE_COST
             self._set_status(relation, "alliance", tick)
-            self._log(tick, events, "diplomacy", [civ_a, civ_b], f"{civ_a.name} and {civ_b.name} form an alliance")
+            deal = self.deal_between(a, b)
+            relation.alliance_name = alliance_name(self.world, civ_a, civ_b, deal.a_gives[0] if deal else None,
+                                                   self.rng, self.names_used)
+            self._log(tick, events, "diplomacy", [civ_a, civ_b],
+                      f"{civ_a.name} and {civ_b.name} form an alliance: {relation.alliance_name}")
             # The new ally takes on any war in which its partner is the one under attack.
             for partner, newcomer in ((civ_a, civ_b), (civ_b, civ_a)):
                 for enemy in self.enemies(partner.id):
@@ -217,13 +230,14 @@ class Diplomacy:
             self._try_deal(civ_a, civ_b, to_b, to_a, relation, tick, events)
 
     def _start_war(self, declarer, target, tick: int, aggressors: set[int],
-                   guardian: int | None = None, defending: int | None = None) -> None:
+                   guardian: int | None = None, defending: int | None = None, name: str = "") -> None:
         a, b = sorted((declarer.id, target.id))
         relation = self.relations[(a, b)]
         self.deals = [d for d in self.deals if {d.a, d.b} != {a, b}]
         self._set_status(relation, "war", tick)
         relation.war = War(a, b, tick, aggressors=aggressors, progress={a: 0.0, b: 0.0}, tiles_taken={a: 0, b: 0},
-                           casualties={a: 0.0, b: 0.0}, declarer=declarer.id, guardian=guardian, defending=defending)
+                           casualties={a: 0.0, b: 0.0}, declarer=declarer.id, guardian=guardian, defending=defending,
+                           name=name)
 
     def _join_defence(self, guardian, victim, aggressor, tick: int, events: list) -> None:
         """An ally of a civ that was attacked is at war with the attacker, whether it likes it or not.
@@ -236,10 +250,12 @@ class Diplomacy:
         relation = self.relation(guardian.id, aggressor.id)
         if relation.status != "peace":
             return  # already fighting, or allied to both sides and so staying out
+        main = self.relation(victim.id, aggressor.id).war
+        name = main.name if main else ""
         self._start_war(aggressor, guardian, tick, aggressors={aggressor.id},
-                        guardian=guardian.id, defending=victim.id)
+                        guardian=guardian.id, defending=victim.id, name=name)
         self._log(tick, events, "war", [guardian, aggressor, victim],
-                  f"{guardian.name} joins the war against {aggressor.name} in defence of its ally {victim.name}")
+                  f"{guardian.name} joins {name or 'the war'} against {aggressor.name} in defence of its ally {victim.name}")
 
     def _betray(self, war: War, betrayer, victim, tick: int, events: list) -> None:
         """The declarer broke an alliance to start this war: it gets a surprise opening and a bad name."""
@@ -254,6 +270,8 @@ class Diplomacy:
     def _set_status(self, relation: Relation, status: str, tick: int) -> None:
         relation.status = status
         relation.since = tick
+        if status != "alliance":
+            relation.alliance_name = ""
 
     # -- trade ---------------------------------------------------------------
 
