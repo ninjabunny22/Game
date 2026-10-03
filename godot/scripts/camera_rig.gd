@@ -23,9 +23,13 @@ func _ready() -> void:
 	_apply()
 
 
-func focus(target: Vector3, distance: float) -> void:
+func distance() -> float:
+	return _distance
+
+
+func focus(target: Vector3, view_distance: float) -> void:
 	position = target
-	_distance = clampf(distance, MIN_DISTANCE, MAX_DISTANCE)
+	_distance = clampf(view_distance, MIN_DISTANCE, MAX_DISTANCE)
 	_apply()
 
 

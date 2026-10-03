@@ -10,6 +10,9 @@ const UnitView := preload("res://scripts/unit_view.gd")
 const CameraRig := preload("res://scripts/camera_rig.gd")
 const Hud := preload("res://scripts/hud.gd")
 
+const FAR_VIEW := 75.0  # camera further than this: the whole-map view
+const NEAR_VIEW := 38.0  # camera closer than this: full detail
+
 var _client := SimClient.new()
 var _terrain := Terrain.new()
 var _civ_view := CivView.new()
@@ -20,6 +23,7 @@ var _hud := Hud.new()
 var _ready_for_ticks := false
 var _civ_colors: Array = []
 var _territory_rev := -1
+var _detail := -1  # how much the map shows, set from how far the camera is
 
 
 func _ready() -> void:
@@ -52,6 +56,20 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			_hud.request_speed(0.5)
 		KEY_TAB:
 			_hud.toggle_diplomacy()
+		KEY_B:
+			_terrain.toggle_region_borders()
+		KEY_1, KEY_2, KEY_3, KEY_4:
+			_hud.toggle_card(event.keycode - KEY_1)
+
+
+## Labels and figures are shown according to zoom, so the far view stays readable.
+func _process(_delta: float) -> void:
+	var distance: float = _camera.distance()
+	var detail := 0 if distance > FAR_VIEW else (1 if distance > NEAR_VIEW else 2)
+	if detail != _detail:
+		_detail = detail
+		_civ_view.set_detail(detail)
+		_unit_view.set_detail(detail)
 
 
 func _on_connection_changed(connected: bool) -> void:
@@ -75,6 +93,8 @@ func _on_init(data: Dictionary) -> void:
 		_camera.focus(_terrain.tile_position(int(view[0]), int(view[1])), view[2])
 	if OS.get_environment("CIVSIM_DIPLOMACY") == "1":  # start with the diplomacy panel open
 		_hud.toggle_diplomacy()
+	if OS.get_environment("CIVSIM_CARD") != "":  # start with one civ's card open, by civ id
+		_hud.toggle_card(int(OS.get_environment("CIVSIM_CARD")))
 	_territory_rev = -1
 	_ready_for_ticks = true
 

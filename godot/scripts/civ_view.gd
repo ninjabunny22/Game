@@ -22,6 +22,7 @@ var _native_color := Color(0.6, 0.55, 0.48)
 var _native_name := ""
 var _links: ImmediateMesh
 var _link_labels := {}  # "a:b" -> Label3D naming the war or alliance
+var _detail := 0  # 0 whole-map view, 1 closer, 2 full detail
 var _link_material: StandardMaterial3D
 
 
@@ -91,6 +92,32 @@ func update(civs: Array, regions: Array) -> void:
 		if not seen.has(key):
 			_nodes[key].queue_free()
 			_nodes.erase(key)
+
+
+## What the map labels at each zoom. From afar only each civ's own capital is named,
+## larger so it can be read; other capitals and alliance names appear closer in.
+## War names always show: they are the news.
+func set_detail(detail: int) -> void:
+	_detail = detail
+	for node: Node3D in _nodes.values():
+		_show_capital_label(node)
+	for label: Label3D in _link_labels.values():
+		_show_link_label(label)
+
+
+func _show_capital_label(node: Node3D) -> void:
+	if not node.has_meta("label"):
+		return
+	var label: Label3D = node.get_meta("label")
+	var is_main: bool = node.get_meta("main")
+	label.visible = is_main or _detail >= 1
+	label.pixel_size = 0.042 if _detail == 0 else 0.02
+
+
+func _show_link_label(label: Label3D) -> void:
+	var is_war: bool = label.get_meta("war", false)
+	label.visible = is_war or _detail >= 1
+	label.pixel_size = 0.04 if _detail == 0 else 0.018
 
 
 ## Redraws the arcs between civ capitals. Every pair of living civs has one, coloured
@@ -163,6 +190,8 @@ func _name_link(key: String, text: String, at: Vector3, color: Color) -> void:
 	node.text = text
 	node.modulate = color.lightened(0.45)
 	node.position = at
+	node.set_meta("war", color == LINK_COLORS["war"])
+	_show_link_label(node)
 
 
 func _make_building(civ_id: int, building: Dictionary) -> Node3D:
@@ -238,6 +267,9 @@ func _make_capital(color: Color, caption: String, x: int, y: int, is_main: bool)
 	label.modulate = color.lightened(0.5)
 	label.position.y = 1.3 * size + pole_height + 1.2
 	root.add_child(label)
+	root.set_meta("label", label)
+	root.set_meta("main", is_main)
+	_show_capital_label(root)
 
 	add_child(root)
 	return root

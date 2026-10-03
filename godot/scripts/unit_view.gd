@@ -6,6 +6,10 @@ extends Node3D
 ## one is shown as a single figure of its dominant unit type. Unit types are told
 ## apart by what they carry: spearmen a long spear, swordsmen a sword and shield,
 ## archers a bow, cavalry ride a horse. Villagers are small and carry a tool.
+##
+## How much is drawn follows the zoom. From afar a field army is a single marker
+## in its civ's colour with its size, garrisons and villagers are left out, and
+## nothing is captioned; the figures and the full captions appear closer in.
 
 const FIGURE_SCALE := 1.7
 const MOVE_SPEED := 6.0  # how fast figures glide toward their tile, in tiles per second
@@ -19,6 +23,7 @@ var _unit_names := {}
 var _armies := {}  # army id -> {"node", "label", "look", "target"}
 var _villagers := {}  # villager id -> {"node", "look", "target"}
 var _materials := {}
+var _detail := 0  # 0 whole-map view, 1 closer, 2 full detail
 
 
 func setup(terrain: Node3D, init: Dictionary, civ_colors: Array) -> void:
@@ -47,10 +52,11 @@ func update(armies: Array, villagers: Array) -> void:
 				_armies[id]["node"].queue_free()
 			_armies[id] = _make_army(civ, army, look)
 		var entry: Dictionary = _armies[id]
+		entry["field"] = army["role"] == "field"
+		entry["size"] = int(army["size"])
+		entry["caption"] = _army_caption(army) if commander != null else ""
+		_show_army(entry)
 		_aim(entry, _spot(int(army["x"]), int(army["y"]), Vector3(0.25, 0, 0.25) if army["role"] == "garrison" else Vector3.ZERO))
-		var label: Label3D = entry["label"]
-		if label != null:
-			label.text = _army_caption(army)
 	_drop_missing(_armies, seen)
 
 	seen = {}
@@ -73,7 +79,44 @@ func update(armies: Array, villagers: Array) -> void:
 		crowd[key] = n + 1
 		var fan := Vector3(-0.3 + 0.3 * (n % 3), 0, 0.3 - 0.3 * (n / 3 % 3))
 		_aim(_villagers[id], _spot(int(villager["x"]), int(villager["y"]), fan))
+		_villagers[id]["node"].visible = _detail >= 1
 	_drop_missing(_villagers, seen)
+
+
+func set_detail(detail: int) -> void:
+	_detail = detail
+	for entry: Dictionary in _armies.values():
+		_show_army(entry)
+	for entry: Dictionary in _villagers.values():
+		entry["node"].visible = detail >= 1
+
+
+## Far: field armies are a marker and a number, garrisons are hidden. Closer: the
+## figure, with its size. Closest: the figure with the full caption.
+func _show_army(entry: Dictionary) -> void:
+	var is_field: bool = entry.get("field", true)
+	var figure: Node3D = entry["figure"]
+	var marker: Node3D = entry["marker"]
+	var label: Label3D = entry["label"]
+	entry["node"].visible = is_field or _detail >= 1
+	figure.visible = _detail >= 1
+	marker.visible = _detail == 0 and is_field
+	if _detail == 0:
+		label.visible = is_field
+		label.text = str(entry.get("size", 0))
+		label.pixel_size = 0.05
+		label.position.y = 7.4
+	elif _detail == 1:
+		label.visible = is_field
+		label.text = str(entry.get("size", 0))
+		label.pixel_size = 0.022
+		label.position.y = 3.2
+	else:
+		# Up close: the unit counts and commander, or nothing at all for an army without one.
+		label.visible = entry.get("caption", "") != ""
+		label.text = entry.get("caption", "")
+		label.pixel_size = 0.016
+		label.position.y = 3.4
 
 
 func _process(delta: float) -> void:
@@ -125,22 +168,32 @@ func _army_caption(army: Dictionary) -> String:
 func _make_army(civ: int, army: Dictionary, look: String) -> Dictionary:
 	var color: Color = _civ_colors[civ]
 	var root := Node3D.new()
-	var label: Label3D = null
-	if army["commander"] != null:
-		root.add_child(_commander_figure(color))
-		label = Label3D.new()
-		label.font_size = 44
-		label.outline_size = 12
-		label.pixel_size = 0.016
-		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-		label.no_depth_test = true
-		label.modulate = color.lightened(0.55)
-		label.position.y = 3.4 * FIGURE_SCALE / 1.7 + 0.6
-		root.add_child(label)
-	else:
-		root.add_child(_soldier_figure(str(army["dominant"]), color))
+	var figure: Node3D = _commander_figure(color) if army["commander"] != null else _soldier_figure(str(army["dominant"]), color)
+	root.add_child(figure)
+
+	# What stands in for the army in the whole-map view: a diamond in the civ's colour.
+	var marker := MeshInstance3D.new()
+	var marker_mesh := BoxMesh.new()
+	marker_mesh.size = Vector3(2.6, 2.6, 2.6)
+	var marker_material := StandardMaterial3D.new()
+	marker_material.albedo_color = color
+	marker_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	marker_mesh.material = marker_material
+	marker.mesh = marker_mesh
+	marker.position.y = 3.4
+	marker.rotation = Vector3(PI / 4, 0, PI / 4)
+	root.add_child(marker)
+
+	var label := Label3D.new()
+	label.font_size = 44
+	label.outline_size = 12
+	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	label.no_depth_test = true
+	label.modulate = color.lightened(0.55)
+	root.add_child(label)
+
 	add_child(root)
-	return {"node": root, "label": label, "look": look, "target": Vector3.ZERO}
+	return {"node": root, "figure": figure, "marker": marker, "label": label, "look": look, "target": Vector3.ZERO}
 
 
 func _make_villager(civ: int, task: String, look: String) -> Dictionary:

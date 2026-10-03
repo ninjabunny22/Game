@@ -355,7 +355,7 @@ class Diplomacy:
             if building.complete:
                 text += self._seize_stores(bdef, captor, loser)
             if announce:
-                self._log(tick, events, "war", [captor, loser], text)
+                self._log(tick, events, "capture", [captor, loser], text)
         # Villagers are never harmed: those on the tile now work for the captor, once given a task.
         convert_villagers(tile, loser, captor)
 

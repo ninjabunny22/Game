@@ -1,12 +1,18 @@
 extends CanvasLayer
-## Overlay UI: sim status and controls (top left), event log (bottom left) and one
-## card per civ with era, economy, army, diplomacy, research and known techs (right).
+## Overlay UI for someone watching: the date and controls (top left), a log of
+## headline events (bottom left), a compact card per civ (top right) that expands
+## to full detail when clicked, and a diplomacy panel on demand.
 
 signal command_requested(action: String, value: Variant)
 
 const LINK_LEGEND := "[color=#ff4033]━[/color] war   [color=#59a6ff]━[/color] alliance   [color=#59e666]━[/color] trade   [color=#aaaaaa]━[/color] neutral"
 
-const MAX_LOG_LINES := 9
+const TICKS_PER_YEAR := 10  # purely for display: a calendar reads better than a tick count
+const MAX_HEADLINES := 8
+const ROUTINE_WINDOW := 100  # ticks over which routine events are counted for the summary line
+# Events worth a line of their own. Everything else is only counted.
+const HEADLINE_KINDS := ["war", "diplomacy", "region", "era"]
+const ROUTINE_LABELS := {"capture": "buildings captured", "tech": "discoveries", "trade": "trade changes"}
 const MAX_TECHS_LISTED := 6  # the most recent ones; the full list no longer fits a card
 const RESOURCE_LABELS := {"food": "Food", "wood": "Wood", "stone": "Stone", "ore": "Ore", "gold": "Gold", "water": "Water"}
 const STANCE_COLORS := {"trade": "#7ccf7c", "ally": "#6fb7ff", "ignore": "#8a93a0", "aggression": "#e07a6a"}
@@ -18,6 +24,10 @@ var _cards_box: VBoxContainer
 var _diplomacy_panel: PanelContainer
 var _diplomacy: RichTextLabel
 var _cards := {}  # civ id -> RichTextLabel
+var _expanded := -1  # civ whose card shows full detail, or -1
+var _latest := {}  # civ id -> its state in the latest tick
+var _paused_banner: Label
+var _routine: Array = []  # [tick, kind] of recent routine events
 
 var _connected := false
 var _tick := 0
@@ -47,6 +57,7 @@ func _ready() -> void:
 	var column := VBoxContainer.new()
 	controls.add_child(column)
 	_status = Label.new()
+	_status.add_theme_font_size_override("font_size", 20)
 	column.add_child(_status)
 	var buttons := HBoxContainer.new()
 	column.add_child(buttons)
@@ -56,7 +67,8 @@ func _ready() -> void:
 	_button(buttons, "Faster", func() -> void: request_speed(2.0))
 	_button(buttons, "Diplomacy", toggle_diplomacy)
 	var help := Label.new()
-	help.text = "Drag: pan   Right-drag: orbit   Wheel: zoom\nSpace: pause   . : step   - / = : speed   Tab: diplomacy"
+	help.text = ("Drag: pan   Right-drag: orbit   Wheel: zoom   B: region borders\n"
+			+ "Space: pause   . : step   - / = : speed   Tab: diplomacy   1-4: civ details")
 	help.add_theme_font_size_override("font_size", 12)
 	help.modulate = Color(1, 1, 1, 0.6)
 	column.add_child(help)
@@ -72,7 +84,7 @@ func _ready() -> void:
 
 	# Diplomacy: every war, alliance and trade deal in force. Toggled with the button or Tab.
 	_diplomacy_panel = _panel(root)
-	_diplomacy_panel.position = Vector2(10, 178)
+	_diplomacy_panel.position = Vector2(10, 186)
 	_diplomacy_panel.custom_minimum_size = Vector2(430, 0)
 	_diplomacy_panel.visible = false
 	_diplomacy = RichTextLabel.new()
@@ -96,26 +108,36 @@ func _ready() -> void:
 	_log.bbcode_enabled = true
 	_log.fit_content = true
 	_log.scroll_active = false
-	_log.autowrap_mode = TextServer.AUTOWRAP_OFF
-	_log.custom_minimum_size = Vector2(360, 0)
+	_log.custom_minimum_size = Vector2(520, 0)
 	_log.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_log.add_theme_font_size_override("normal_font_size", 13)
 	log_panel.add_child(_log)
 
-	# Civ cards.
+	# Civ cards: two lines each, so all of them always fit; one at a time opens to full detail.
 	var side := _panel(root)
-	side.set_anchors_preset(Control.PRESET_RIGHT_WIDE)
-	side.offset_left = -390
+	side.anchor_left = 1.0
+	side.anchor_right = 1.0
+	side.offset_left = -400
 	side.offset_right = -10
 	side.offset_top = 10
-	side.offset_bottom = -10
-	var scroll := ScrollContainer.new()
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	side.add_child(scroll)
 	_cards_box = VBoxContainer.new()
-	_cards_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_cards_box.add_theme_constant_override("separation", 14)
-	scroll.add_child(_cards_box)
+	_cards_box.custom_minimum_size = Vector2(370, 0)
+	_cards_box.add_theme_constant_override("separation", 10)
+	side.add_child(_cards_box)
+
+	# Impossible to miss when the sim is paused.
+	_paused_banner = Label.new()
+	_paused_banner.text = "PAUSED"
+	_paused_banner.add_theme_font_size_override("font_size", 30)
+	_paused_banner.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3))
+	_paused_banner.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+	_paused_banner.add_theme_constant_override("outline_size", 8)
+	_paused_banner.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	_paused_banner.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_paused_banner.offset_top = 14
+	_paused_banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_paused_banner.visible = false
+	root.add_child(_paused_banner)
 
 	_refresh_status()
 
@@ -152,11 +174,17 @@ func setup(init: Dictionary) -> void:
 		card.bbcode_enabled = true
 		card.fit_content = true
 		card.scroll_active = false
-		card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		card.custom_minimum_size = Vector2(370, 0)
+		card.mouse_filter = Control.MOUSE_FILTER_STOP  # clickable: opens and closes the detail
+		card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		card.gui_input.connect(_on_card_input.bind(civ_id))
 		card.add_theme_font_size_override("normal_font_size", 13)
 		card.add_theme_font_size_override("bold_font_size", 13)
 		_cards_box.add_child(card)
 		_cards[civ_id] = card
+	_expanded = -1
+	_latest.clear()
+	_routine.clear()
 	_log_lines.clear()
 	_log.text = ""
 
@@ -177,19 +205,61 @@ func update(tick: int, data: Dictionary) -> void:
 	for deal: Dictionary in data["deals"]:
 		_deals["%d:%d" % [mini(int(deal["a"]), int(deal["b"])), maxi(int(deal["a"]), int(deal["b"]))]] = deal
 	for civ: Dictionary in data["civs"]:
-		var civ_id := int(civ["id"])
-		if _cards.has(civ_id):
-			_cards[civ_id].text = _card_text(_civ_info[civ_id], civ)
+		_latest[int(civ["id"])] = civ
+	_refresh_cards()
 	if _diplomacy_panel.visible:
 		_diplomacy.text = _diplomacy_text_panel(data)
+
+	# Headlines get a line each; routine events are only counted.
 	for event: Dictionary in data["events"]:
-		if event["kind"] in ["building", "demolition"]:
-			continue  # too frequent to be worth a log line
-		var color: String = _civ_info[int(event["civ"])]["color"]
-		_log_lines.append("[color=#8a93a0]%5d[/color]  [color=%s]%s[/color]" % [tick, color, event["text"]])
-	if _log_lines.size() > MAX_LOG_LINES:
-		_log_lines = _log_lines.slice(_log_lines.size() - MAX_LOG_LINES)
-	_log.text = "\n".join(_log_lines)
+		if event["kind"] in HEADLINE_KINDS:
+			var color: String = _civ_info[int(event["civ"])]["color"]
+			_log_lines.append("[color=#8a93a0]Year %d[/color]  [color=%s]%s[/color]" % [_year(tick), color, event["text"]])
+		elif ROUTINE_LABELS.has(event["kind"]):
+			_routine.append([tick, event["kind"]])
+	if _log_lines.size() > MAX_HEADLINES:
+		_log_lines = _log_lines.slice(_log_lines.size() - MAX_HEADLINES)
+	while not _routine.is_empty() and int(_routine[0][0]) <= tick - ROUTINE_WINDOW:
+		_routine.pop_front()
+	var counts := {}
+	for entry: Array in _routine:
+		counts[entry[1]] = counts.get(entry[1], 0) + 1
+	var summary: Array[String] = []
+	for kind: String in ROUTINE_LABELS:
+		if counts.has(kind):
+			summary.append("%d %s" % [counts[kind], ROUTINE_LABELS[kind]])
+	var footer := "[color=#8a93a0]Last %d years: %s[/color]" % [
+		ROUTINE_WINDOW / TICKS_PER_YEAR, ", ".join(summary) if not summary.is_empty() else "quiet"]
+	_log.text = "\n".join(_log_lines + [footer])
+
+
+func _year(tick: int) -> int:
+	return tick / TICKS_PER_YEAR + 1
+
+
+func _years(ticks: int) -> String:
+	var years := maxi(1, roundi(float(ticks) / TICKS_PER_YEAR))
+	return "%d year%s" % [years, "" if years == 1 else "s"]
+
+
+func _refresh_cards() -> void:
+	for civ_id: int in _latest:
+		if _cards.has(civ_id):
+			var civ: Dictionary = _latest[civ_id]
+			_cards[civ_id].text = _card_text(_civ_info[civ_id], civ) if civ_id == _expanded else _compact_text(_civ_info[civ_id], civ)
+
+
+## Opens one civ's card to full detail, or closes it if it is already open.
+func toggle_card(civ_id: int) -> void:
+	if not _cards.has(civ_id):
+		return
+	_expanded = -1 if _expanded == civ_id else civ_id
+	_refresh_cards()
+
+
+func _on_card_input(event: InputEvent, civ_id: int) -> void:
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		toggle_card(civ_id)
 
 
 func toggle_diplomacy() -> void:
@@ -223,7 +293,7 @@ func _diplomacy_text_panel(data: Dictionary) -> String:
 		var started := _tick
 		for front: Dictionary in fronts:
 			started = mini(started, int(front["war"]["started"]))
-		lines.append("[b]%s[/b]  [color=#8a93a0]%d ticks[/color]" % [name, _tick - started])
+		lines.append("[b]%s[/b]  [color=#8a93a0]%s[/color]" % [name, _years(_tick - started)])
 		for front: Dictionary in fronts:
 			var war: Dictionary = front["war"]
 			# The side that declared is named first.
@@ -247,8 +317,9 @@ func _diplomacy_text_panel(data: Dictionary) -> String:
 	for alliance: Dictionary in alliances:
 		var name: String = str(alliance["name"]) if alliance["name"] != null else "Alliance"
 		lines.append("[b]%s[/b]" % name)
-		lines.append("  %s and %s  [color=#8a93a0]formed tick %d (%d ticks ago)[/color]" % [
-			_civ_name(int(alliance["a"])), _civ_name(int(alliance["b"])), int(alliance["since"]), _tick - int(alliance["since"]),
+		lines.append("  %s and %s  [color=#8a93a0]formed year %d (%s ago)[/color]" % [
+			_civ_name(int(alliance["a"])), _civ_name(int(alliance["b"])), _year(int(alliance["since"])),
+			_years(_tick - int(alliance["since"])),
 		])
 
 	lines.append("")
@@ -256,10 +327,10 @@ func _diplomacy_text_panel(data: Dictionary) -> String:
 	if data["deals"].is_empty():
 		lines.append("[color=#8a93a0]  None.[/color]")
 	for deal: Dictionary in data["deals"]:
-		lines.append("  %s sends %s %s/tick,  %s sends %s %s/tick  [color=#8a93a0]%d ticks left[/color]" % [
+		lines.append("  %s sends %s %s/tick,  %s sends %s %s/tick  [color=#8a93a0]%s left[/color]" % [
 			_civ_name(int(deal["a"])), String.num(float(deal["a_gives"]["rate"]), 2), deal["a_gives"]["resource"],
 			_civ_name(int(deal["b"])), String.num(float(deal["b_gives"]["rate"]), 2), deal["b_gives"]["resource"],
-			int(deal["ends"]) - _tick,
+			_years(int(deal["ends"]) - _tick),
 		])
 	return "\n".join(lines)
 
@@ -270,12 +341,53 @@ func request_speed(factor: float) -> void:
 
 
 func _refresh_status() -> void:
+	_paused_banner.visible = _connected and _paused
 	if not _connected:
 		_status.text = "Waiting for sim on ws://127.0.0.1:8765 ..."
 		return
-	var state := "paused" if _paused else "%s ticks/s" % String.num(_speed, 2)
-	_status.text = "Tick %d   %s   seed %d" % [_tick, state, _seed]
+	# Speed as years per minute, which is what a spectator feels.
+	var pace := "paused" if _paused else "%s years/min" % String.num(_speed * 60.0 / TICKS_PER_YEAR, 0)
+	_status.text = "Year %d   [%s]   tick %d, seed %d" % [_year(_tick), pace, _tick, _seed]
 	_pause_button.text = "Resume" if _paused else "Pause"
+
+
+## The two-line card: who they are, how big, and the one thing most worth knowing about them now.
+func _compact_text(info: Dictionary, civ: Dictionary) -> String:
+	var title := "[font_size=16][b][color=%s]%s[/color][/b][/font_size]  [color=#8a93a0]%s[/color]" % [
+		info["color"], info["name"], info["personality"]]
+	if not civ["alive"]:
+		return title + "\n[color=#e07a6a]Destroyed[/color]"
+	var facts := "%s   %d region%s   Pop %d   Army %d" % [
+		civ["era_name"], civ["regions"].size(), "" if civ["regions"].size() == 1 else "s",
+		int(civ["population"]), int(civ["soldiers"])]
+	return "%s\n%s\n%s" % [title, facts, _status_line(int(civ["id"]), civ)]
+
+
+## What is going on with this civ, most pressing first.
+func _status_line(civ_id: int, civ: Dictionary) -> String:
+	var enemies: Array[String] = []
+	var allies: Array[String] = []
+	for other_key: String in civ["stances"]:
+		var other := int(other_key)
+		var key := "%d:%d" % [mini(civ_id, other), maxi(civ_id, other)]
+		if not _relations.has(key):
+			continue
+		if _relations[key]["status"] == "war":
+			enemies.append(_civ_name(other))
+		elif _relations[key]["status"] == "alliance":
+			allies.append(_civ_name(other))
+	var parts: Array[String] = []
+	if not enemies.is_empty():
+		parts.append("[color=#ff5a4a]At war with[/color] %s" % ", ".join(enemies))
+	if civ["thirsty"]:
+		parts.append("[color=#e07a6a]out of water[/color]")
+	if int(civ["distrusted_for"]) > 0:
+		parts.append("[color=#e07a6a]distrusted[/color]")
+	if not allies.is_empty():
+		parts.append("[color=#6fb7ff]Allied with[/color] %s" % ", ".join(allies))
+	if parts.is_empty():
+		parts.append("[color=#8a93a0]At peace[/color]")
+	return "   ".join(parts)
 
 
 func _card_text(info: Dictionary, civ: Dictionary) -> String:
@@ -310,7 +422,7 @@ func _card_text(info: Dictionary, civ: Dictionary) -> String:
 	lines.append("[color=#8a93a0]Diplomacy points[/color] %d   %s" % [int(civ["diplomacy_points"]), _diplomacy_text(int(civ["id"]), civ)])
 	if civ["thinking"]:
 		lines.append("[color=#8a93a0]Strategist is thinking ...[/color]")
-	elif civ["reason"] != "":
+	elif civ["reason"] != "" and not str(civ["reason"]).begins_with("Rule-based policy"):
 		lines.append("[color=#8a93a0]\"%s\"[/color]" % civ["reason"])
 
 	var goal: Variant = civ["goal"]
@@ -351,7 +463,7 @@ func _army_text(civ: Dictionary) -> String:
 	if not problems.is_empty():
 		text += "   [color=#e07a6a](%s)[/color]" % ", ".join(problems)
 	if int(civ["distrusted_for"]) > 0:
-		text += "\n[color=#e07a6a]Distrusted for betrayal: %d ticks left[/color]" % int(civ["distrusted_for"])
+		text += "\n[color=#e07a6a]Distrusted for betrayal: %s left[/color]" % _years(int(civ["distrusted_for"]))
 	return text
 
 

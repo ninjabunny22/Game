@@ -4,11 +4,12 @@ extends Node3D
 ## holds the land. Region borders are drawn as dark lines. Tile (x, y) sits at world (x, h, y).
 
 const HEIGHT_SCALE := 9.0
-const TERRITORY_TINT := 0.3
-const BORDER_TINT := 0.8
+const BORDER_TINT := 0.8  # the tile on a civ's border
+const NEAR_BORDER_TINT := 0.4  # the tile behind it
+const INTERIOR_TINT := 0.1  # everything further in: the land shows through
 const UNOWNED := 255
 const RIVER_COLOR := Color(0.2, 0.5, 0.9)
-const NATIVE_TINT := 0.3
+const NATIVE_TINT := 0.16
 const REGION_BORDER_COLOR := Color(0.07, 0.07, 0.09)
 const REGION_BORDER_WIDTH := 0.14
 
@@ -25,6 +26,7 @@ var _material: StandardMaterial3D
 var _region_ids := PackedInt32Array()
 var _is_land := PackedByteArray()
 var _native_color := Color(0.6, 0.55, 0.48)
+var _region_lines: MeshInstance3D
 
 
 func build(map: Dictionary, biomes: Array, native_color: Color) -> void:
@@ -106,6 +108,20 @@ func apply_territory(territory: String, civ_colors: Array) -> void:
 	var owners := Marshalls.base64_to_raw(territory)
 	if owners.size() != _base_colors.size():
 		return
+	# Which tiles lie on a civ's border.
+	var edge := PackedByteArray()
+	edge.resize(owners.size())
+	for i in owners.size():
+		var civ := owners[i]
+		if civ >= civ_colors.size():
+			continue
+		var x := i % map_width
+		var y := i / map_width
+		if ((x > 0 and owners[i - 1] != civ) or (x < map_width - 1 and owners[i + 1] != civ)
+				or (y > 0 and owners[i - map_width] != civ) or (y < map_height - 1 and owners[i + map_width] != civ)):
+			edge[i] = 1
+
+	# Colour a band along each border strongly and leave the interior close to the land's own colours.
 	var colors := _base_colors.duplicate()
 	for i in owners.size():
 		var civ := owners[i]
@@ -114,17 +130,23 @@ func apply_territory(territory: String, civ_colors: Array) -> void:
 			if _is_land[i] == 1 and _region_ids[i] >= 0:
 				colors[i] = colors[i].lerp(_native_color, NATIVE_TINT)
 			continue
-		var x := i % map_width
-		var y := i / map_width
-		var on_border := (
-			(x > 0 and owners[i - 1] != civ)
-			or (x < map_width - 1 and owners[i + 1] != civ)
-			or (y > 0 and owners[i - map_width] != civ)
-			or (y < map_height - 1 and owners[i + map_width] != civ)
-		)
+		var tint := INTERIOR_TINT
+		if edge[i] == 1:
+			tint = BORDER_TINT
+		else:
+			var x := i % map_width
+			var y := i / map_width
+			if ((x > 0 and edge[i - 1] == 1) or (x < map_width - 1 and edge[i + 1] == 1)
+					or (y > 0 and edge[i - map_width] == 1) or (y < map_height - 1 and edge[i + map_width] == 1)):
+				tint = NEAR_BORDER_TINT
 		var civ_color: Color = civ_colors[civ]
-		colors[i] = colors[i].lerp(civ_color, BORDER_TINT if on_border else TERRITORY_TINT)
+		colors[i] = colors[i].lerp(civ_color, tint)
 	_commit(colors)
+
+
+func toggle_region_borders() -> void:
+	if _region_lines != null:
+		_region_lines.visible = not _region_lines.visible
 
 
 func _world_height(x: int, y: int) -> float:
@@ -232,6 +254,7 @@ func _add_region_borders() -> void:
 	lines.material_override = material
 	lines.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(lines)
+	_region_lines = lines
 
 
 func _add_sea() -> void:

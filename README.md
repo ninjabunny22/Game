@@ -40,11 +40,35 @@ Then open `godot/` in Godot 4.3 or newer and press Play (or
 viewer reconnects on its own.
 
 Viewer controls: drag to pan, right-drag to orbit, wheel to zoom, `Space` to
-pause, `.` to step one tick, `-` / `=` to change speed, `Tab` (or the Diplomacy
-button) for the diplomacy panel: every war with its name, sides, duration,
-land taken and losses; every alliance with its name and when it formed; every
-trade deal with its terms. Arcs between capitals are colour-coded: red for
-war, blue for alliance, green for a trade deal, thin grey for neither.
+pause, `.` to step one tick, `-` / `=` to change speed.
+
+The overlay is built for watching:
+
+- **Date.** The top left shows the year (10 ticks to a year) and the pace in
+  years per minute. A banner appears while the sim is paused.
+- **Headline log.** Only wars, peace, regions and capitals changing hands,
+  alliances, betrayals, routs and new eras get a line. Routine events
+  (buildings captured, discoveries, trade changes) are counted in one summary
+  line for the last ten years.
+- **Civ cards.** Each civ has a three-line card: name, era, regions,
+  population, army, and what matters most about it now (at war, out of water,
+  distrusted, allied). Click a card, or press `1`-`4`, to open its full detail;
+  one is open at a time.
+- **Diplomacy panel.** `Tab` or the Diplomacy button: every war with its name,
+  sides, duration, land taken and losses; every alliance with its name and
+  when it formed; every trade deal with its terms.
+- **Arcs** between capitals are colour-coded: red for war, blue for alliance,
+  green for a trade deal, thin grey for neither.
+- **Zoom-aware map.** From afar only each civ's own capital is named, field
+  armies are a coloured marker with their size, and garrisons and villagers
+  are left out. Closer in, every capital and alliance name appears and armies
+  become figures; closest, armies show their unit counts and commander.
+- **Territory** is tinted in a band along each civ's border, leaving the land's
+  own colours inside. `B` toggles the region borders.
+
+Start-up options, as environment variables: `CIVSIM_VIEW="x,y,distance"` starts
+the camera on a tile, `CIVSIM_DIPLOMACY=1` opens the diplomacy panel, and
+`CIVSIM_CARD=<civ id>` opens that civ's card.
 
 Wars and alliances are named when they begin (`diplomacy/naming.py`) from the
 world itself: the region being fought over, its capital, the kind of land it
