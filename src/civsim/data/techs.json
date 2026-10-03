@@ -16,8 +16,8 @@
     {
       "id": "mining", "name": "Mining", "era": 0, "prereqs": [],
       "cost": {"science": 35, "wood": 25},
-      "effects": {"yield_mult": {"stone": 0.15}},
-      "description": "+15% stone; unlocks Quarry"
+      "effects": {"yield_mult": {"stone": 0.15}, "demolition_refund": 0.03},
+      "description": "+15% stone, demolition refund up to 13%; unlocks Quarry"
     },
     {
       "id": "animal_husbandry", "name": "Animal Husbandry", "era": 0, "prereqs": ["agriculture"],
@@ -40,8 +40,8 @@
     {
       "id": "masonry", "name": "Masonry", "era": 1, "prereqs": ["mining"],
       "cost": {"science": 90, "stone": 50},
-      "effects": {"build_speed": 0.25, "housing": 10, "defense": 0.1},
-      "description": "+25% construction speed, +10 housing, +10% defence; unlocks Walls"
+      "effects": {"build_speed": 0.25, "housing": 10, "defense": 0.1, "demolition_refund": 0.04},
+      "description": "+25% construction speed, +10 housing, +10% defence, demolition refund up to 17%; unlocks Walls"
     },
     {
       "id": "the_wheel", "name": "The Wheel", "era": 1, "prereqs": ["animal_husbandry"],
@@ -70,8 +70,8 @@
     {
       "id": "engineering", "name": "Engineering", "era": 2, "prereqs": ["masonry", "the_wheel"],
       "cost": {"science": 360, "stone": 80, "ore": 20},
-      "effects": {"build_slots": 1},
-      "description": "+1 simultaneous construction; unlocks Aqueduct"
+      "effects": {"build_slots": 1, "demolition_refund": 0.04},
+      "description": "+1 simultaneous construction, demolition refund up to 21%; unlocks Aqueduct"
     },
     {
       "id": "education", "name": "Education", "era": 3, "prereqs": ["mathematics", "currency"],
@@ -88,8 +88,8 @@
     {
       "id": "guilds", "name": "Guilds", "era": 3, "prereqs": ["currency", "engineering"],
       "cost": {"science": 840, "stone": 60, "gold": 80},
-      "effects": {"income": {"gold": 0.5}, "build_speed": 0.25},
-      "description": "+0.5 gold per tick, +25% construction speed"
+      "effects": {"income": {"gold": 0.5}, "build_speed": 0.25, "demolition_refund": 0.04},
+      "description": "+0.5 gold per tick, +25% construction speed, demolition refund up to 25%"
     }
   ]
 }

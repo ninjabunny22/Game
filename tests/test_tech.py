@@ -10,7 +10,7 @@ from civsim.tech import Tech, TechTree, advance_research
 
 def test_tree_shape():
     tree = TechTree.load()
-    assert 10 <= len(tree.techs) <= 15
+    assert len(tree.techs) == 15
     assert 3 <= len(tree.eras) <= 4
     assert {tech.era for tech in tree.techs.values()} == set(range(len(tree.eras)))
     for tech in tree.techs.values():

@@ -26,6 +26,7 @@ STARVE_RATE = 0.01
 MIN_POPULATION = 5.0
 
 BASE_HOUSING = 30.0
+DEMOLITION_REFUND = 0.10  # share of a building's base cost recovered on demolition, before techs
 BASE_STORAGE = 250.0
 
 # Work slots a settlement provides regardless of the surrounding land.

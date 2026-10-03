@@ -88,8 +88,9 @@ per head rise with every tech known. Soldiers cost gold, ore and extra food.
 **Demolition.** A civ tears down its own buildings in two cases: one whose
 upkeep has gone unpaid for 60 ticks, and, when it has no free tile left, its
 least useful building if the one it wants scores at least twice as high.
-Demolition frees the tile and refunds 25% of the base cost
-(`DEMOLITION_REFUND` in `economy/buildings.py`); at most one every 25 ticks.
+Demolition frees the tile and refunds 10% of the base cost; at most one every
+25 ticks. Four of the construction techs, one per era, raise the refund as one
+of their effects: Mining (13%), Masonry (17%), Engineering (21%), Guilds (25%).
 
 **Tech.** 15 techs over 4 eras in `techs.json`. A tech needs its prerequisites,
 a material cost paid up front, then science, which is spent as it is produced.

@@ -61,7 +61,7 @@ class CivAI:
     def plan(self, civ: Civilization, mods: Modifiers, tick: int, events: list) -> None:
         needs = self.assess_needs(civ, mods)
         self._choose_research(civ, mods, needs, tick)
-        self._abandon_unaffordable(civ, tick, events)
+        self._abandon_unaffordable(civ, mods, tick, events)
         self._choose_project(civ, mods, needs, tick, events)
         self._allocate_workers(civ, mods)
 
@@ -130,6 +130,7 @@ class CivAI:
         value += 3.0 * effects.get("science_mult", 0) * weights["science"]
         value += 1.5 * effects.get("build_speed", 0) * weights["industry"]
         value += 0.6 * effects.get("build_slots", 0) * weights["industry"]
+        value += 3.0 * effects.get("demolition_refund", 0) * weights["infrastructure"]
         value -= 2.0 * effects.get("expand_cost", 0) * weights["expansion"]
         value += 2.0 * (effects.get("military", 0) + effects.get("defense", 0)) * weights["military"] * (
             0.3 + needs["military"])
@@ -183,7 +184,7 @@ class CivAI:
             if kind == "build":
                 site = find_site(civ, self.world, self.building_defs[target])
                 if site is None and civ.can_afford(cost):
-                    site = self._make_room(civ, self.building_defs[target], score, needs, tick, events)
+                    site = self._make_room(civ, mods, self.building_defs[target], score, needs, tick, events)
                 if site is None:
                     continue
                 civ.goal = Goal("build", target, cost)
@@ -210,16 +211,16 @@ class CivAI:
 
     # -- demolition ----------------------------------------------------------
 
-    def _abandon_unaffordable(self, civ: Civilization, tick: int, events: list) -> None:
+    def _abandon_unaffordable(self, civ: Civilization, mods: Modifiers, tick: int, events: list) -> None:
         """Tear down one building whose upkeep has gone unpaid for a long time."""
         if tick - civ.last_demolition < DEMOLITION_COOLDOWN:
             return
         stale = [b for b in civ.buildings if b.unpaid_ticks >= ABANDON_AFTER]
         if stale:
-            demolish(civ, max(stale, key=lambda b: (b.unpaid_ticks, b.tile)), self.building_defs, events)
+            demolish(civ, max(stale, key=lambda b: (b.unpaid_ticks, b.tile)), mods, self.building_defs, events)
             civ.last_demolition = tick
 
-    def _make_room(self, civ: Civilization, wanted: BuildingDef, score: float, needs: dict,
+    def _make_room(self, civ: Civilization, mods: Modifiers, wanted: BuildingDef, score: float, needs: dict,
                    tick: int, events: list) -> int | None:
         """With no free tile left, clear the civ's least useful building if `wanted` is far better.
 
@@ -249,7 +250,7 @@ class CivAI:
         victim = min(candidates, key=worth)
         if score < REPLACE_ADVANTAGE * worth(victim)[0]:
             return None
-        demolish(civ, victim, self.building_defs, events)
+        demolish(civ, victim, mods, self.building_defs, events)
         civ.last_demolition = tick
         return victim.tile
 

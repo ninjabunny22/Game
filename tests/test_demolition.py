@@ -3,8 +3,8 @@ import pytest
 from civsim.civ import Building
 from civsim.civ.ai import ABANDON_AFTER, DEMOLITION_COOLDOWN
 from civsim.config import SimConfig
-from civsim.economy import demolish, find_site
-from civsim.economy.buildings import DEMOLITION_REFUND
+from civsim.economy import compute_modifiers, demolish, find_site
+from civsim.economy.rules import DEMOLITION_REFUND
 from civsim.map import BIOME_INFO
 from civsim.simulation import Simulation
 
@@ -28,7 +28,7 @@ def test_demolishing_frees_the_tile_and_refunds_part_of_the_cost(sim):
     assert tile in civ.occupied()
 
     events: list = []
-    demolish(civ, library, sim.building_defs, events)
+    demolish(civ, library, sim.modifiers[civ.id], sim.building_defs, events)
     cost = sim.building_defs["library"].cost
     assert library not in civ.buildings and tile not in civ.occupied()
     assert civ.resources["wood"] == pytest.approx(DEMOLITION_REFUND * cost["wood"])
@@ -41,7 +41,7 @@ def test_unfinished_buildings_refund_in_proportion_to_progress(sim):
     half_built = Building("library", buildable_tiles(sim, civ)[0], 0.5, False)
     civ.buildings.append(half_built)
     civ.resources["wood"] = 0
-    demolish(civ, half_built, sim.building_defs, [])
+    demolish(civ, half_built, sim.modifiers[civ.id], sim.building_defs, [])
     assert civ.resources["wood"] == pytest.approx(0.5 * DEMOLITION_REFUND * sim.building_defs["library"].cost["wood"])
 
 
@@ -54,7 +54,7 @@ def test_buildings_the_civ_cannot_keep_up_are_eventually_torn_down(sim):
         civ.resources["gold"] = 0  # never enough for their upkeep
         for building in civ.buildings:
             building.unpaid_ticks += 1
-        sim.ai._abandon_unaffordable(civ, tick, events)
+        sim.ai._abandon_unaffordable(civ, sim.modifiers[civ.id], tick, events)
         if tick == ABANDON_AFTER - 2:
             assert civ.count("university") == 2, "not before it has been unpaid for a long while"
         if tick == ABANDON_AFTER + 2:
@@ -101,10 +101,53 @@ def test_nothing_is_demolished_for_a_marginal_gain(sim):
     before = len(civ.buildings)
 
     events: list = []
-    assert sim.ai._make_room(civ, farm, 1.5 * last_house, needs, tick=100, events=events) is None
+    assert sim.ai._make_room(civ, mods, farm, 1.5 * last_house, needs, tick=100, events=events) is None
     assert len(civ.buildings) == before and not events
 
-    freed = sim.ai._make_room(civ, farm, 2.5 * last_house, needs, tick=100, events=events)
+    freed = sim.ai._make_room(civ, mods, farm, 2.5 * last_house, needs, tick=100, events=events)
     assert freed is not None and freed not in civ.occupied()
     assert sim.world.yields[freed].get("food", 0) > 0, "the freed tile suits the new building"
     assert len(civ.buildings) == before - 1
+
+
+# The construction techs each make demolition a little less wasteful, one per era.
+REFUND_TECHS = ["mining", "masonry", "engineering", "guilds"]
+
+
+def test_base_refund_is_ten_percent(sim):
+    assert DEMOLITION_REFUND == 0.10
+    assert sim.modifiers[sim.civs[0].id].demolition_refund == 0.10
+
+
+def test_construction_techs_raise_the_refund_step_by_step_to_a_quarter(sim):
+    civ = sim.civs[0]
+    tree = sim.tech_tree
+    tile = buildable_tiles(sim, civ)[0]
+    rates = []
+    for level in range(len(REFUND_TECHS) + 1):
+        civ.known_techs = REFUND_TECHS[:level]
+        mods = compute_modifiers(civ, sim.building_defs, tree)
+        rates.append(round(mods.demolition_refund, 2))
+        library = Building("library", tile, 1.0, True)
+        civ.buildings = [library]
+        civ.resources["wood"] = 0
+        demolish(civ, library, mods, sim.building_defs, [])
+        assert civ.resources["wood"] == pytest.approx(mods.demolition_refund * sim.building_defs["library"].cost["wood"])
+    assert rates == [0.10, 0.13, 0.17, 0.21, 0.25]
+
+
+def test_refund_comes_from_ordinary_techs_not_a_dedicated_path(sim):
+    tree = sim.tech_tree
+    assert [tree.techs[t].era for t in REFUND_TECHS] == [0, 1, 2, 3]
+    with_refund = [t.id for t in tree.techs.values() if "demolition_refund" in t.effects]
+    assert with_refund == REFUND_TECHS
+    assert all(len(tree.techs[t].effects) > 1 for t in REFUND_TECHS), "each also does something else"
+    full = compute_modifiers_for_all(sim)
+    assert full == pytest.approx(0.25)
+
+
+def compute_modifiers_for_all(sim) -> float:
+    civ = sim.civs[0]
+    civ.known_techs = list(sim.tech_tree.techs)
+    civ.buildings = []
+    return compute_modifiers(civ, sim.building_defs, sim.tech_tree).demolition_refund

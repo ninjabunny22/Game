@@ -137,6 +137,7 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
             "techs": list(civ.known_techs),
             "research": research,
             "science_rate": round(civ.science_rate, 2),
+            "demolition_refund": round(mods.demolition_refund, 2),
             "soldiers": int(civ.soldiers),
             "army_strength": round(diplomacy.strength(civ), 1),
             "unpaid": civ.unpaid,

@@ -5,7 +5,6 @@ from ..datafiles import load_json
 from ..map import BIOME_INFO, WorldMap
 
 COST_GROWTH_PER_COPY = 0.2
-DEMOLITION_REFUND = 0.25  # share of a building's base cost recovered when it is torn down
 
 
 @dataclass(frozen=True)
@@ -62,12 +61,15 @@ def find_site(civ, world: WorldMap, bdef: BuildingDef) -> int | None:
     return best
 
 
-def demolish(civ, building, building_defs, events: list) -> None:
-    """Tear down one of the civ's own buildings, freeing its tile and recovering some materials."""
+def demolish(civ, building, mods, building_defs, events: list) -> None:
+    """Tear down one of the civ's own buildings, freeing its tile and recovering some materials.
+
+    The refund is a share of the base cost: mods.demolition_refund, which techs raise.
+    """
     civ.buildings.remove(building)
     bdef = building_defs[building.type]
     # Unfinished buildings return in proportion to how far along they were.
-    share = DEMOLITION_REFUND * (1.0 if building.complete else building.progress)
+    share = mods.demolition_refund * (1.0 if building.complete else building.progress)
     for res, amount in bdef.cost.items():
         civ.resources[res] += share * amount
     events.append({"civ": civ.id, "kind": "demolition", "text": f"{civ.name} demolished a {bdef.name}"})

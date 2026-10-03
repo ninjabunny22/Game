@@ -3,13 +3,13 @@
 Buildings and techs share one effects vocabulary (see data/*.json):
   yield_mult {res|"all": frac}, income {res: per tick}, housing, science,
   storage (cap of every resource), store {res: cap of that resource only},
-  science_mult, build_speed, growth, expand_cost, build_slots,
+  science_mult, build_speed, growth, expand_cost, build_slots, demolition_refund,
   military (army strength), defense (strength when holding own land)
 """
 
 from dataclasses import dataclass, field
 
-from .rules import BASE_HOUSING, BASE_STORAGE, RESOURCES
+from .rules import BASE_HOUSING, BASE_STORAGE, DEMOLITION_REFUND, RESOURCES
 
 
 @dataclass
@@ -27,6 +27,7 @@ class Modifiers:
     build_slots: int = 1
     military: float = 0.0
     defense: float = 0.0
+    demolition_refund: float = DEMOLITION_REFUND  # share of base cost recovered when demolishing
 
     def apply(self, effects: dict) -> None:
         for key, value in effects.items():
