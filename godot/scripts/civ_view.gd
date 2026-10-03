@@ -1,10 +1,14 @@
 extends Node3D
 ## Everything that sits on the terrain: resource deposits, settlements and buildings.
 ## Buildings are blocks in their type's colour on a plinth in the owner's colour;
-## they rise out of the ground while under construction.
+## they rise out of the ground while under construction. Arcs between capitals show
+## what holds between two civs: a trade deal (green), an alliance (blue), a war (red).
 
 const BUILDING_WIDTH := 0.62
 const PLINTH_HEIGHT := 0.12
+const LINK_COLORS := {"deal": Color(0.35, 0.9, 0.4), "alliance": Color(0.35, 0.65, 1.0), "war": Color(1.0, 0.25, 0.2)}
+const LINK_WIDTH := 0.45
+const LINK_SEGMENTS := 24
 
 var _terrain: Node3D
 var _building_defs := {}
@@ -12,6 +16,8 @@ var _civ_colors: Array = []
 var _nodes := {}  # "civ:x:y" -> Node3D
 var _body_meshes := {}  # building type -> BoxMesh
 var _plinth_meshes := {}  # civ id -> BoxMesh
+var _links: ImmediateMesh
+var _link_material: StandardMaterial3D
 
 
 func setup(terrain: Node3D, init: Dictionary, civ_colors: Array) -> void:
@@ -24,6 +30,17 @@ func setup(terrain: Node3D, init: Dictionary, civ_colors: Array) -> void:
 	_building_defs = init["buildings"]
 	_civ_colors = civ_colors
 	_add_deposits(init["map"]["deposits"], init["deposit_types"])
+
+	_link_material = StandardMaterial3D.new()
+	_link_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_link_material.vertex_color_use_as_albedo = true
+	_link_material.vertex_color_is_srgb = true
+	_link_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_links = ImmediateMesh.new()
+	var links_instance := MeshInstance3D.new()
+	links_instance.mesh = _links
+	links_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(links_instance)
 
 
 func update(civs: Array) -> void:
@@ -46,6 +63,35 @@ func update(civs: Array) -> void:
 		if not seen.has(key):
 			_nodes[key].queue_free()
 			_nodes.erase(key)
+
+
+## Redraws the arcs between capitals from the tick's relations and deals.
+func update_links(civs: Array, relations: Array, deals: Array) -> void:
+	var capitals := {}
+	for civ: Dictionary in civs:
+		var capital: Dictionary = civ["settlements"][0]
+		capitals[int(civ["id"])] = _terrain.tile_position(int(capital["x"]), int(capital["y"])) + Vector3(0, 4.4, 0)
+	_links.clear_surfaces()
+	for relation: Dictionary in relations:
+		if relation["status"] != "peace":
+			_add_link(capitals[int(relation["a"])], capitals[int(relation["b"])], LINK_COLORS[relation["status"]], 1.0)
+	for deal: Dictionary in deals:
+		_add_link(capitals[int(deal["a"])], capitals[int(deal["b"])], LINK_COLORS["deal"], 0.6)
+
+
+## A ribbon arcing from one point to another; `lift` scales how high it rises.
+func _add_link(from: Vector3, to: Vector3, color: Color, lift: float) -> void:
+	var side := (to - from).cross(Vector3.UP).normalized() * LINK_WIDTH / 2.0
+	var height := lift * (5.0 + 0.15 * from.distance_to(to))
+	_links.surface_begin(Mesh.PRIMITIVE_TRIANGLE_STRIP, _link_material)
+	for i in LINK_SEGMENTS + 1:
+		var t := float(i) / LINK_SEGMENTS
+		var point := from.lerp(to, t) + Vector3.UP * height * sin(PI * t)
+		_links.surface_set_color(color)
+		_links.surface_add_vertex(point - side)
+		_links.surface_set_color(color)
+		_links.surface_add_vertex(point + side)
+	_links.surface_end()
 
 
 func _make_building(civ_id: int, building: Dictionary) -> Node3D:

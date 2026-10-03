@@ -1,11 +1,13 @@
 extends CanvasLayer
 ## Overlay UI: sim status and controls (top left), event log (bottom left) and one
-## card per civ with era, economy, current research and known techs (right).
+## card per civ with era, economy, army, diplomacy, research and known techs (right).
 
 signal command_requested(action: String, value: Variant)
 
 const MAX_LOG_LINES := 9
+const MAX_TECHS_LISTED := 6  # the most recent ones; the full list no longer fits a card
 const RESOURCE_LABELS := {"food": "Food", "wood": "Wood", "stone": "Stone", "ore": "Ore", "gold": "Gold"}
+const STANCE_COLORS := {"trade": "#7ccf7c", "ally": "#6fb7ff", "ignore": "#8a93a0", "aggression": "#e07a6a"}
 
 var _status: Label
 var _pause_button: Button
@@ -23,6 +25,8 @@ var _tech_names := {}
 var _building_names := {}
 var _resources: Array = []
 var _log_lines: Array[String] = []
+var _relations := {}  # "a:b" with a < b -> relation from the latest tick
+var _deals := {}  # "a:b" with a < b -> deal
 
 
 func _ready() -> void:
@@ -129,12 +133,20 @@ func set_status(status: Dictionary) -> void:
 func update(tick: int, data: Dictionary) -> void:
 	_tick = tick
 	set_status(data["status"])
+	for tech: Dictionary in data["invented_techs"]:
+		_tech_names[tech["id"]] = tech["name"]
+	_relations.clear()
+	for relation: Dictionary in data["relations"]:
+		_relations["%d:%d" % [int(relation["a"]), int(relation["b"])]] = relation
+	_deals.clear()
+	for deal: Dictionary in data["deals"]:
+		_deals["%d:%d" % [mini(int(deal["a"]), int(deal["b"])), maxi(int(deal["a"]), int(deal["b"]))]] = deal
 	for civ: Dictionary in data["civs"]:
 		var civ_id := int(civ["id"])
 		if _cards.has(civ_id):
 			_cards[civ_id].text = _card_text(_civ_info[civ_id], civ)
 	for event: Dictionary in data["events"]:
-		if event["kind"] == "building":
+		if event["kind"] in ["building", "demolition"]:
 			continue  # too frequent to be worth a log line
 		var color: String = _civ_info[int(event["civ"])]["color"]
 		_log_lines.append("[color=#8a93a0]%5d[/color]  [color=%s]%s[/color]" % [tick, color, event["text"]])
@@ -170,8 +182,18 @@ func _card_text(info: Dictionary, civ: Dictionary) -> String:
 	for res: String in _resources:
 		var income := float(civ["income"][res])
 		var trend := "#7ccf7c" if income > 0.005 else ("#e07a6a" if income < -0.005 else "#8a93a0")
-		stock.append("%s %d [color=%s]%+.1f[/color]" % [RESOURCE_LABELS.get(res, res), int(civ["resources"][res]), trend, income])
+		var held := int(civ["resources"][res])
+		var cap := int(civ["storage"][res])
+		# Amber once a store is full: nothing more of it is produced until there is room.
+		var amount := "[color=#e8b04a]%d/%d[/color]" % [held, cap] if held >= cap else "%d/%d" % [held, cap]
+		stock.append("%s %s [color=%s]%+.1f[/color]" % [RESOURCE_LABELS.get(res, res), amount, trend, income])
 	lines.append("   ".join(stock))
+	lines.append(_army_text(civ))
+	lines.append(_diplomacy_text(int(civ["id"]), civ))
+	if civ["thinking"]:
+		lines.append("[color=#8a93a0]Strategist is thinking ...[/color]")
+	elif civ["reason"] != "":
+		lines.append("[color=#8a93a0]\"%s\"[/color]" % civ["reason"])
 
 	var goal: Variant = civ["goal"]
 	if goal != null:
@@ -189,9 +211,48 @@ func _card_text(info: Dictionary, civ: Dictionary) -> String:
 	var techs: Array[String] = []
 	for tech_id: String in civ["techs"]:
 		techs.append(_tech_names.get(tech_id, tech_id))
-	lines.append("[color=#8a93a0]Techs (%d/%d):[/color] %s"
-			% [techs.size(), _tech_names.size(), ", ".join(techs) if techs else "none yet"])
+	var listed := ", ".join(techs) if techs else "none yet"
+	if techs.size() > MAX_TECHS_LISTED:
+		listed = "... " + ", ".join(techs.slice(techs.size() - MAX_TECHS_LISTED))
+	lines.append("[color=#8a93a0]Techs (%d):[/color] %s" % [techs.size(), listed])
 	return "\n".join(lines)
+
+
+func _army_text(civ: Dictionary) -> String:
+	var text := "Army %d   strength %d" % [int(civ["soldiers"]), int(civ["army_strength"])]
+	var problems: Array[String] = []
+	if civ["unpaid"]:
+		problems.append("unpaid")
+	if civ["unsupplied"]:
+		problems.append("no ore")
+	if not problems.is_empty():
+		text += "   [color=#e07a6a](%s)[/color]" % ", ".join(problems)
+	return text
+
+
+## One entry per other civ: what actually holds between them (war, alliance, a
+## running deal), otherwise the stance this civ has taken toward them.
+func _diplomacy_text(civ_id: int, civ: Dictionary) -> String:
+	var parts: Array[String] = []
+	for other_key: String in civ["stances"]:
+		var other := int(other_key)
+		var key := "%d:%d" % [mini(civ_id, other), maxi(civ_id, other)]
+		var stance: String = civ["stances"][other_key]
+		var label := stance
+		var color: String = STANCE_COLORS.get(stance, "#8a93a0")
+		var status: String = _relations[key]["status"] if _relations.has(key) else "peace"
+		if status == "war":
+			label = "AT WAR"
+			color = "#ff5a4a"
+		elif status == "alliance":
+			label = "allied"
+			color = STANCE_COLORS["ally"]
+		if _deals.has(key):
+			label += " + deal"
+		elif status == "peace" and _relations.has(key) and _relations[key]["truce"]:
+			label += " (truce)"
+		parts.append("[color=%s]%s[/color] [color=%s]%s[/color]" % [_civ_info[other]["color"], _civ_info[other]["name"], color, label])
+	return "   ".join(parts)
 
 
 func _panel(parent: Control) -> PanelContainer:

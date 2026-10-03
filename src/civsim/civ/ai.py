@@ -6,18 +6,23 @@ Every tick each civ
   3. picks a project (a building or a territory expansion) and starts it if affordable,
      otherwise keeps it as the goal it is saving for,
   4. splits its workers across resources according to what the goal still requires.
+It also tears down buildings: ones it has long been unable to keep up, and, when it
+has run out of room, its least useful building to make way for a much better one.
 
 Score of an option = personality weight for its category x current need, with
-diminishing returns. A later strategy layer can steer a civ by changing its weights.
+diminishing returns. The strategic layer steers a civ through the standing orders
+on the Civilization (soldier_target, military_need, march_target, exports); this
+module turns them into day-to-day decisions.
 """
 
 import math
 import random
 from collections import deque
+from collections.abc import Callable
 
-from ..economy import BuildingDef, Modifiers, find_site, recompute_capacity
-from ..economy.rules import FOOD_PER_POP, RESOURCES, WORK_RATE
-from ..map import Biome, WorldMap
+from ..economy import BuildingDef, Modifiers, demolish, find_site, food_need, recompute_capacity
+from ..economy.rules import RESOURCES, WORK_RATE
+from ..map import BIOME_INFO, Biome, WorldMap
 from ..tech import Tech, TechTree
 from .civilization import Building, Civilization, Goal, Research
 
@@ -28,11 +33,18 @@ MATERIALS = ("wood", "stone", "ore", "gold")
 
 MIN_SCORE = 0.12  # below this nothing is worth doing; just stockpile
 GOAL_STICKINESS = 1.2  # bonus for the goal already being saved for, to avoid flip-flopping
-COUNT_FALLOFF = 0.35  # each existing copy of a building makes another less attractive
+COUNT_FALLOFF = 0.35  # each existing copy of a building makes another less attractive ...
+FALLOFF_POWER = 0.6  # ... but gently: rising costs and upkeep are what really limit a civ
+STORE_NEED = 0.4  # how much a completely full store makes the civ want more room for it
+UPKEEP_CAUTION = 0.2  # don't add upkeep in a resource that is below this share of storage and not growing
 TILES_PER_EXPANSION = 4
-SEEK_RANGE = 20  # how far (in tiles) a civ will stretch its border to reach a missing resource
-FOOD_RESERVE_TICKS = 40
+SEEK_RANGE = 35  # how far (in tiles) a civ will stretch its border to reach a missing resource
+MARCH_RANGE = 60  # ... or to reach a civ it intends to attack
+RESERVE_TICKS = 40  # stock kept on hand to cover upkeep, food and trade exports
 MATERIAL_RESERVE = {"wood": 30.0, "stone": 15.0, "ore": 0.0, "gold": 0.0}
+ABANDON_AFTER = 60  # ticks of unpaid upkeep after which a building is torn down
+REPLACE_ADVANTAGE = 2.0  # a new building must score this many times its victim to displace it
+DEMOLITION_COOLDOWN = 25  # ticks between demolitions, so a civ never churns its buildings
 RESEARCH_RETHINK_TICKS = 60  # reconsider a research target that still isn't paid for
 
 
@@ -43,31 +55,41 @@ class CivAI:
         self.building_defs = building_defs
         self.tech_tree = tech_tree
         self.rng = rng
+        # civ id -> resources whose cap was too low for something the civ wanted last tick
+        self._cap_blocked: dict[int, set[str]] = {}
 
     def plan(self, civ: Civilization, mods: Modifiers, tick: int, events: list) -> None:
         needs = self.assess_needs(civ, mods)
         self._choose_research(civ, mods, needs, tick)
-        self._choose_project(civ, mods, needs, events)
+        self._abandon_unaffordable(civ, tick, events)
+        self._choose_project(civ, mods, needs, tick, events)
         self._allocate_workers(civ, mods)
 
     # -- needs ---------------------------------------------------------------
 
     def assess_needs(self, civ: Civilization, mods: Modifiers) -> dict:
-        scarcity = {res: 1 - min(1.0, civ.resources[res] / mods.storage) for res in RESOURCES}
+        fill = {res: min(1.0, civ.resources[res] / mods.storage[res]) for res in RESOURCES}
+        scarcity = {res: 1 - fill[res] for res in RESOURCES}
+        blocked = self._cap_blocked.pop(civ.id, set())
         # Share of the population that must farm just to break even.
-        farming_share = FOOD_PER_POP / (WORK_RATE * (1 + mods.yield_mult["food"]))
-        reserve_ticks = civ.resources["food"] / max(civ.population * FOOD_PER_POP, 1e-9)
+        eaten = food_need(civ)
+        farming_share = eaten / max(civ.population, 1.0) / (WORK_RATE * (1 + mods.yield_mult["food"]))
+        reserve_ticks = civ.resources["food"] / max(eaten, 1e-9)
         # Resources the territory barely provides: a reason to expand toward them.
         wanted = [res for res in ("wood", "stone", "ore") if civ.capacity[res] < 4]
-        idle_share = civ.idle / max(civ.population, 1.0)
+        idle_share = civ.idle / max(civ.workforce, 1.0)
         return {
             "growth": _clamp((civ.population / mods.housing - 0.6) / 0.4, 0, 1.2),
             "food": 2 * farming_share + (0.5 if reserve_ticks < 25 else 0.0),
             "industry": 0.2 + 0.6 * sum(scarcity[r] for r in ("wood", "stone", "ore")) / 3,
-            "infrastructure": 0.6 * max(1 - scarcity[r] for r in RESOURCES) ** 3,
+            "infrastructure": 0.6 * max(fill.values()) ** 3,
+            # More room for a resource: wanted as its store fills up, or when its cap is in the way.
+            "store": {res: 1.0 if res in blocked else STORE_NEED * fill[res] ** 3 for res in RESOURCES},
             "science": 0.55,
             "wealth": 0.25 + 0.35 * scarcity["gold"],
-            "expansion": 0.25 + 0.75 * _clamp(3 * idle_share, 0, 1) + (0.4 if wanted else 0.0),
+            "military": 0.1 + 0.9 * civ.military_need,
+            "expansion": (0.25 + 0.75 * _clamp(3 * idle_share, 0, 1) + (0.4 if wanted else 0.0)
+                          + (0.5 if civ.march_target is not None else 0.0)),
             "resource": {res: 0.2 + 0.6 * scarcity[res] for res in RESOURCES},
             "scarcity": scarcity,
             "wanted": wanted,
@@ -78,10 +100,11 @@ class CivAI:
     def _choose_research(self, civ: Civilization, mods: Modifiers, needs: dict, tick: int) -> None:
         if civ.research is not None:
             stuck = not civ.research.paid and tick % RESEARCH_RETHINK_TICKS == 0
-            if not stuck:
+            # An invented tech is the only thing left to research; never drop it.
+            if not stuck or self.tech_tree.techs[civ.research.tech_id].owner is not None:
                 return
         best, best_score = None, 0.0
-        for tech in self.tech_tree.available(civ.known_techs):
+        for tech in self.tech_tree.available(civ.known_techs, civ.id):
             if not self._feasible(civ, tech.materials, mods):
                 continue
             score = self._tech_value(civ, tech, needs)
@@ -108,6 +131,8 @@ class CivAI:
         value += 1.5 * effects.get("build_speed", 0) * weights["industry"]
         value += 0.6 * effects.get("build_slots", 0) * weights["industry"]
         value -= 2.0 * effects.get("expand_cost", 0) * weights["expansion"]
+        value += 2.0 * (effects.get("military", 0) + effects.get("defense", 0)) * weights["military"] * (
+            0.3 + needs["military"])
         for bdef in self.building_defs.values():
             if bdef.requires_tech == tech.id:
                 value += 0.5 * weights[bdef.category] * self._building_need(bdef, needs)
@@ -116,7 +141,7 @@ class CivAI:
 
     # -- projects ------------------------------------------------------------
 
-    def _choose_project(self, civ: Civilization, mods: Modifiers, needs: dict, events: list) -> None:
+    def _choose_project(self, civ: Civilization, mods: Modifiers, needs: dict, tick: int, events: list) -> None:
         under_construction = sum(1 for b in civ.buildings if not b.complete)
         if under_construction >= mods.build_slots:
             civ.goal = None
@@ -133,10 +158,9 @@ class CivAI:
             if bdef.need_resource and civ.capacity[bdef.need_resource] <= 0:
                 continue
             cost = bdef.cost_for(count)
-            if not self._feasible(civ, cost, mods):
+            if not self._feasible(civ, cost, mods) or not self._sustainable(civ, bdef, mods):
                 continue
-            score = weights[bdef.category] * self._building_need(bdef, needs) / (1 + COUNT_FALLOFF * count)
-            options.append((score, "build", bdef.id, cost))
+            options.append((self._building_score(civ, bdef, needs, count), "build", bdef.id, cost))
 
         expand_cost = self.expansion_cost(civ, mods)
         if self._feasible(civ, expand_cost, mods):
@@ -158,6 +182,8 @@ class CivAI:
                 break
             if kind == "build":
                 site = find_site(civ, self.world, self.building_defs[target])
+                if site is None and civ.can_afford(cost):
+                    site = self._make_room(civ, self.building_defs[target], score, needs, tick, events)
                 if site is None:
                     continue
                 civ.goal = Goal("build", target, cost)
@@ -176,7 +202,60 @@ class CivAI:
                     civ.goal = None
             return
 
+    def _building_score(self, civ: Civilization, bdef: BuildingDef, needs: dict, count: int) -> float:
+        """How much the civ wants a copy of this building when it already has `count`."""
+        # Storage tapers off quickly: a full store alone justifies only a handful of buildings.
+        falloff = (1 + COUNT_FALLOFF * count) ** (1.0 if bdef.stores else FALLOFF_POWER)
+        return civ.personality.weights[bdef.category] * self._building_need(bdef, needs) / falloff
+
+    # -- demolition ----------------------------------------------------------
+
+    def _abandon_unaffordable(self, civ: Civilization, tick: int, events: list) -> None:
+        """Tear down one building whose upkeep has gone unpaid for a long time."""
+        if tick - civ.last_demolition < DEMOLITION_COOLDOWN:
+            return
+        stale = [b for b in civ.buildings if b.unpaid_ticks >= ABANDON_AFTER]
+        if stale:
+            demolish(civ, max(stale, key=lambda b: (b.unpaid_ticks, b.tile)), self.building_defs, events)
+            civ.last_demolition = tick
+
+    def _make_room(self, civ: Civilization, wanted: BuildingDef, score: float, needs: dict,
+                   tick: int, events: list) -> int | None:
+        """With no free tile left, clear the civ's least useful building if `wanted` is far better.
+
+        Returns the freed tile, or None if nothing is worth giving up.
+        """
+        if tick - civ.last_demolition < DEMOLITION_COOLDOWN:
+            return None
+        world = self.world
+        resource = wanted.placement.partition(":")[2]
+        cx, cy = world.xy(civ.capital.tile)
+
+        def worth(building: Building) -> tuple[float, float, int]:
+            # Value of the last copy of its type; among equals, give up the most remote one.
+            bdef = self.building_defs[building.type]
+            x, y = world.xy(building.tile)
+            return (self._building_score(civ, bdef, needs, civ.count(bdef.id) - 1),
+                    -math.hypot(x - cx, y - cy), building.tile)
+
+        candidates = [
+            b for b in civ.buildings
+            if b.complete and b.type != wanted.id
+            and BIOME_INFO[world.biomes[b.tile]].buildable
+            and (not resource or world.yields[b.tile].get(resource, 0) > 0)
+        ]
+        if not candidates:
+            return None
+        victim = min(candidates, key=worth)
+        if score < REPLACE_ADVANTAGE * worth(victim)[0]:
+            return None
+        demolish(civ, victim, self.building_defs, events)
+        civ.last_demolition = tick
+        return victim.tile
+
     def _building_need(self, bdef: BuildingDef, needs: dict) -> float:
+        if bdef.stores:
+            return max(needs["store"][res] for res in bdef.stores)
         if bdef.need_resource:
             return needs["resource"][bdef.need_resource]
         return needs[bdef.category]
@@ -184,12 +263,24 @@ class CivAI:
     def _feasible(self, civ: Civilization, cost: dict[str, float], mods: Modifiers) -> bool:
         """False if the civ could never pay: over storage, or a resource it cannot produce."""
         for res, amount in cost.items():
-            if amount > mods.storage:
+            if amount > mods.storage[res]:
+                self._cap_blocked.setdefault(civ.id, set()).add(res)
                 return False
-            producible = civ.capacity[res] > 0 or mods.income[res] > 0 or res == "gold"
-            if civ.resources[res] < amount and not producible:
+            if civ.resources[res] < amount and not self._obtainable(civ, res, mods):
                 return False
         return True
+
+    def _sustainable(self, civ: Civilization, bdef: BuildingDef, mods: Modifiers) -> bool:
+        """False if the civ has no supply of a resource the building's upkeep needs, or is already short of it."""
+        for res in bdef.upkeep:
+            if not self._obtainable(civ, res, mods):
+                return False
+            if civ.resources[res] < UPKEEP_CAUTION * mods.storage[res] and civ.income[res] <= 0:
+                return False
+        return True
+
+    def _obtainable(self, civ: Civilization, res: str, mods: Modifiers) -> bool:
+        return civ.capacity[res] > 0 or mods.income[res] > 0 or civ.imports[res] > 0 or res == "gold"
 
     # -- territory -----------------------------------------------------------
 
@@ -221,13 +312,20 @@ class CivAI:
             )
             return value - 0.08 * math.hypot(x - cx, y - cy) + 0.3 * self.rng.random()
 
-        # Head for a resource the territory lacks, then fill up with the most appealing tiles.
+        # Head for a civ marked for attack or a resource the territory lacks,
+        # then fill up with the most appealing tiles.
         picks: list[int] = []
-        for res in needs["wanted"]:
-            path = self._path_to_resource(border, res)
-            if 0 < len(path) <= SEEK_RANGE:
+        if civ.march_target is not None:
+            enemy = civ.march_target
+            path = self._path_to(border, lambda t: any(world.owner[n] == enemy for n in world.neighbors(t)))
+            if 0 < len(path) <= MARCH_RANGE:
                 picks = path[:TILES_PER_EXPANSION]
-                break
+        if not picks:
+            for res in needs["wanted"]:
+                path = self._path_to(border, lambda t, res=res: world.yields[t].get(res, 0) > 0)
+                if 0 < len(path) <= SEEK_RANGE:
+                    picks = path[:TILES_PER_EXPANSION]
+                    break
         ranked = sorted((tile for tile in border if tile not in picks), key=appeal, reverse=True)
         picks += ranked[: TILES_PER_EXPANSION - len(picks)]
         for tile in picks:
@@ -235,14 +333,14 @@ class CivAI:
             civ.territory.add(tile)
         recompute_capacity(civ, world)
 
-    def _path_to_resource(self, border: list[int], resource: str) -> list[int]:
-        """Shortest chain of claimable tiles from the border to the nearest tile yielding `resource`."""
+    def _path_to(self, border: list[int], is_goal: Callable[[int], bool]) -> list[int]:
+        """Shortest chain of claimable tiles from the border to the nearest goal tile."""
         world = self.world
         parent: dict[int, int | None] = dict.fromkeys(border)
         queue = deque(border)
         while queue:
             tile = queue.popleft()
-            if world.yields[tile].get(resource, 0) > 0:
+            if is_goal(tile):
                 path = []
                 step: int | None = tile
                 while step is not None:
@@ -258,9 +356,14 @@ class CivAI:
     # -- workers -------------------------------------------------------------
 
     def _allocate_workers(self, civ: Civilization, mods: Modifiers) -> None:
-        # What the civ wants in stock: a reserve, plus whatever it is saving for.
+        # What the civ wants in stock: a reserve covering upkeep and exports,
+        # plus whatever it is saving for.
+        eaten = food_need(civ)
         target = dict(MATERIAL_RESERVE)
-        target["food"] = civ.population * FOOD_PER_POP * FOOD_RESERVE_TICKS
+        target["food"] = 0.0
+        for res in RESOURCES:
+            target[res] += RESERVE_TICKS * (civ.upkeep[res] + civ.exports[res])
+        target["food"] = max(target["food"], RESERVE_TICKS * eaten)
         pending = [civ.goal.cost] if civ.goal else []
         if civ.research and not civ.research.paid:
             pending.append(self.tech_tree.techs[civ.research.tech_id].materials)
@@ -272,10 +375,10 @@ class CivAI:
         }
 
         workers = dict.fromkeys(RESOURCES, 0.0)
-        remaining = civ.population
+        remaining = civ.workforce
 
         # Food first: enough farmers to break even, more when the reserve is low.
-        break_even = civ.population * FOOD_PER_POP / (WORK_RATE * (1 + mods.yield_mult["food"]))
+        break_even = (eaten + civ.exports["food"]) / (WORK_RATE * (1 + mods.yield_mult["food"]))
         workers["food"] = min(break_even * (0.9 + 0.7 * urgency["food"]), civ.capacity["food"], remaining)
         remaining -= workers["food"]
 
@@ -284,7 +387,7 @@ class CivAI:
         active = {
             res: weights[CATEGORY_OF_RESOURCE[res]] * (0.1 + urgency[res])
             for res in MATERIALS
-            if civ.capacity[res] > 0 and civ.resources[res] < mods.storage
+            if civ.capacity[res] > 0 and civ.resources[res] < mods.storage[res]
         }
         while remaining > 1e-6 and active:
             total = sum(active.values())
@@ -301,7 +404,7 @@ class CivAI:
             remaining = spill
 
         # Anyone still idle farms, if there is land and room to store the food.
-        if remaining > 0 and civ.resources["food"] < mods.storage:
+        if remaining > 0 and civ.resources["food"] < mods.storage["food"]:
             extra = min(remaining, civ.capacity["food"] - workers["food"])
             workers["food"] += extra
             remaining -= extra

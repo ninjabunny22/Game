@@ -5,6 +5,7 @@ from ..datafiles import load_json
 from ..map import BIOME_INFO, WorldMap
 
 COST_GROWTH_PER_COPY = 0.2
+DEMOLITION_REFUND = 0.25  # share of a building's base cost recovered when it is torn down
 
 
 @dataclass(frozen=True)
@@ -16,11 +17,17 @@ class BuildingDef:
     cost: dict[str, float]
     build_time: int
     effects: dict = field(default_factory=dict)
+    upkeep: dict[str, float] = field(default_factory=dict)  # per tick; unpaid buildings stop working
     need_resource: str | None = None
     requires_tech: str | None = None
     max_count: int | None = None
     color: str = "#ffffff"
     height: float = 0.5
+
+    @property
+    def stores(self) -> dict[str, float]:
+        """Storage capacity this building adds, by resource (empty for most buildings)."""
+        return self.effects.get("store", {})
 
     def cost_for(self, existing: int) -> dict[str, float]:
         """Each copy already owned makes the next one more expensive."""
@@ -53,6 +60,17 @@ def find_site(civ, world: WorldMap, bdef: BuildingDef) -> int | None:
         if score > best_score:
             best, best_score = tile, score
     return best
+
+
+def demolish(civ, building, building_defs, events: list) -> None:
+    """Tear down one of the civ's own buildings, freeing its tile and recovering some materials."""
+    civ.buildings.remove(building)
+    bdef = building_defs[building.type]
+    # Unfinished buildings return in proportion to how far along they were.
+    share = DEMOLITION_REFUND * (1.0 if building.complete else building.progress)
+    for res, amount in bdef.cost.items():
+        civ.resources[res] += share * amount
+    events.append({"civ": civ.id, "kind": "demolition", "text": f"{civ.name} demolished a {bdef.name}"})
 
 
 def advance_construction(civ, mods, building_defs, events: list) -> None:

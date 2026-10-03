@@ -1,9 +1,13 @@
+import base64
 from collections.abc import Iterator
 
 from .biomes import BIOME_INFO, Biome
 
 _ORTHOGONAL = ((1, 0), (-1, 0), (0, 1), (0, -1))
 _DIAGONAL = ((1, 1), (1, -1), (-1, 1), (-1, -1))
+
+UNOWNED_BYTE = 255
+MAX_CIVS = UNOWNED_BYTE  # civ ids 0..254 fit the one-byte-per-tile territory encoding
 
 
 class WorldMap:
@@ -42,9 +46,11 @@ class WorldMap:
         return BIOME_INFO[self.biomes[i]].water
 
     def claim(self, i: int, civ_id: int) -> None:
+        if not 0 <= civ_id < MAX_CIVS:
+            raise ValueError(f"civ id {civ_id} does not fit the territory encoding (0..{MAX_CIVS - 1})")
         self.owner[i] = civ_id
         self.territory_rev += 1
 
-    def territory_string(self) -> str:
-        """One character per tile, row-major: '.' if unowned, else the civ id digit."""
-        return "".join("." if o < 0 else str(o) for o in self.owner)
+    def encode_territory(self) -> str:
+        """Base64 of one byte per tile, row-major: the owning civ's id, or 255 if unowned."""
+        return base64.b64encode(bytes(UNOWNED_BYTE if o < 0 else o for o in self.owner)).decode("ascii")

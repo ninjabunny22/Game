@@ -50,9 +50,12 @@ def test_invariants_hold(played):
         assert len(tiles) == len(set(tiles)), "two buildings share a tile"
         assert set(tiles) <= civ.territory
         for res in RESOURCES:
-            assert 0 <= civ.resources[res] <= mods.storage + 1e-6
+            assert 0 <= civ.resources[res] <= mods.storage[res] + 1e-6
             assert civ.workers[res] <= civ.capacity[res] + 1e-6
-        assert sum(civ.workers.values()) + civ.idle == pytest.approx(civ.population, abs=0.5)
+        # Workers are assigned before the tick's recruitment and growth, hence the slack.
+        employed = sum(civ.workers.values()) + civ.idle + civ.soldiers
+        assert employed == pytest.approx(civ.population, abs=0.03 * civ.population + 1)
+        assert 0 <= civ.soldiers <= civ.population
         assert all(world.owner[tile] == civ.id for tile in civ.territory)
 
 

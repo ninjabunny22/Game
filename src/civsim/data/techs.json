@@ -11,7 +11,7 @@
       "id": "pottery", "name": "Pottery", "era": 0, "prereqs": [],
       "cost": {"science": 30, "wood": 20},
       "effects": {"storage": 100},
-      "description": "+100 storage; unlocks Storehouse"
+      "description": "+100 storage for every resource; unlocks the storage buildings"
     },
     {
       "id": "mining", "name": "Mining", "era": 0, "prereqs": [],
@@ -34,14 +34,14 @@
     {
       "id": "bronze_working", "name": "Bronze Working", "era": 1, "prereqs": ["mining"],
       "cost": {"science": 100, "wood": 30, "stone": 40},
-      "effects": {"yield_mult": {"ore": 0.25}},
-      "description": "+25% ore; unlocks Mine"
+      "effects": {"yield_mult": {"ore": 0.25}, "military": 0.1},
+      "description": "+25% ore, +10% army strength; unlocks Mine and Barracks"
     },
     {
       "id": "masonry", "name": "Masonry", "era": 1, "prereqs": ["mining"],
       "cost": {"science": 90, "stone": 50},
-      "effects": {"build_speed": 0.25, "housing": 10},
-      "description": "+25% construction speed, +10 housing"
+      "effects": {"build_speed": 0.25, "housing": 10, "defense": 0.1},
+      "description": "+25% construction speed, +10 housing, +10% defence; unlocks Walls"
     },
     {
       "id": "the_wheel", "name": "The Wheel", "era": 1, "prereqs": ["animal_husbandry"],
@@ -58,8 +58,8 @@
     {
       "id": "iron_working", "name": "Iron Working", "era": 2, "prereqs": ["bronze_working"],
       "cost": {"science": 330, "wood": 40, "ore": 40},
-      "effects": {"yield_mult": {"ore": 0.25, "stone": 0.15}},
-      "description": "+25% ore, +15% stone; unlocks Workshop"
+      "effects": {"yield_mult": {"ore": 0.25, "stone": 0.15}, "military": 0.2},
+      "description": "+25% ore, +15% stone, +20% army strength; unlocks Workshop"
     },
     {
       "id": "mathematics", "name": "Mathematics", "era": 2, "prereqs": ["writing", "the_wheel"],
@@ -82,8 +82,8 @@
     {
       "id": "machinery", "name": "Machinery", "era": 3, "prereqs": ["engineering", "iron_working"],
       "cost": {"science": 880, "wood": 80, "ore": 80},
-      "effects": {"yield_mult": {"all": 0.15}},
-      "description": "+15% to all resource yields"
+      "effects": {"yield_mult": {"all": 0.15}, "military": 0.1},
+      "description": "+15% to all resource yields, +10% army strength"
     },
     {
       "id": "guilds", "name": "Guilds", "era": 3, "prereqs": ["currency", "engineering"],

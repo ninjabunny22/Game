@@ -1,0 +1,22 @@
+{
+  "_comment": "Bounds for techs invented by a civ's strategic layer. The game clamps effects to these caps and sets the price itself.",
+  "era_name": "Enlightenment",
+  "max_effects": 2,
+  "min_fraction": 0.25,
+  "base_science": 2500,
+  "base_material": 300,
+  "cost_growth": 1.35,
+  "caps": {
+    "yield_mult": 0.2,
+    "yield_mult_all": 0.08,
+    "income": 0.5,
+    "housing": 20,
+    "storage": 300,
+    "science_mult": 0.25,
+    "build_speed": 0.25,
+    "growth": 0.2,
+    "expand_cost": 0.2,
+    "military": 0.2,
+    "defense": 0.2
+  }
+}

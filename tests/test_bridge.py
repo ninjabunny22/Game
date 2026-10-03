@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 
 import pytest
@@ -7,6 +8,7 @@ from websockets.asyncio.client import connect
 from civsim.bridge import SimServer, protocol
 from civsim.config import SimConfig
 from civsim.simulation import Simulation
+from civsim.strategy import RuleBrain
 
 
 def test_messages_are_enveloped_json():
@@ -20,7 +22,9 @@ def test_messages_are_enveloped_json():
         assert message["tick"] == 1
     size = init["data"]["map"]["width"] * init["data"]["map"]["height"]
     assert len(init["data"]["map"]["heights"]) == len(init["data"]["map"]["biomes"]) == size
-    assert len(tick["data"]["territory"]) == size
+    owners = base64.b64decode(tick["data"]["territory"])
+    assert len(owners) == size
+    assert set(owners) == {0, 1, 2, 3, 255}
     assert len(tick["data"]["civs"]) == len(init["data"]["civs"]) == 4
     assert len(init["data"]["tech_tree"]["techs"]) == len(sim.tech_tree.techs)
 
@@ -40,7 +44,7 @@ def test_bad_commands_are_rejected(raw):
 def test_server_pushes_state_and_obeys_commands():
     async def scenario():
         sim = Simulation(SimConfig(seed=3))
-        server = SimServer(sim, port=0, tick_rate=50, paused=True)
+        server = SimServer(sim, RuleBrain(), port=0, tick_rate=50, paused=True)
         task = asyncio.create_task(server.run())
         await server.ready.wait()
 
@@ -51,7 +55,7 @@ def test_server_pushes_state_and_obeys_commands():
                     return message
 
         def command(action, value=None):
-            return json.dumps({"type": "command", "version": 1, "data": {"action": action, "value": value}})
+            return json.dumps({"type": "command", "version": protocol.PROTOCOL_VERSION, "data": {"action": action, "value": value}})
 
         try:
             async with connect(f"ws://127.0.0.1:{server.port}") as ws:

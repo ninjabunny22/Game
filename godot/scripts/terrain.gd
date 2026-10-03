@@ -5,7 +5,7 @@ extends Node3D
 const HEIGHT_SCALE := 9.0
 const TERRITORY_TINT := 0.3
 const BORDER_TINT := 0.8
-const UNOWNED := 46  # '.' in the territory string
+const UNOWNED := 255
 
 var map_width := 0
 var map_height := 0
@@ -79,16 +79,16 @@ func tile_position(x: int, y: int) -> Vector3:
 	return Vector3(x, maxf(_heights[y * map_width + x], 0.0) * HEIGHT_SCALE, y)
 
 
-## `territory` has one char per tile: '.' for unowned, else the civ id digit.
+## `territory` is base64 of one byte per tile: the owning civ's id, or 255 if unowned.
 func apply_territory(territory: String, civ_colors: Array) -> void:
-	var owners := territory.to_ascii_buffer()
+	var owners := Marshalls.base64_to_raw(territory)
 	if owners.size() != _base_colors.size():
 		return
 	var colors := _base_colors.duplicate()
 	for i in owners.size():
 		var civ := owners[i]
-		if civ == UNOWNED:
-			continue
+		if civ >= civ_colors.size():
+			continue  # unowned (255), or a civ this viewer was never told about
 		var x := i % map_width
 		var y := i / map_width
 		var on_border := (
@@ -97,7 +97,7 @@ func apply_territory(territory: String, civ_colors: Array) -> void:
 			or (y > 0 and owners[i - map_width] != civ)
 			or (y < map_height - 1 and owners[i + map_width] != civ)
 		)
-		var civ_color: Color = civ_colors[civ - 48]
+		var civ_color: Color = civ_colors[civ]
 		colors[i] = colors[i].lerp(civ_color, BORDER_TINT if on_border else TERRITORY_TINT)
 	_commit(colors)
 

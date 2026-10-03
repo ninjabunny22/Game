@@ -16,6 +16,8 @@ class Building:
     tile: int
     progress: float = 0.0
     complete: bool = False
+    active: bool = True  # False while its upkeep goes unpaid
+    unpaid_ticks: int = 0  # consecutive ticks it has been inactive
 
 
 @dataclass
@@ -30,7 +32,8 @@ class Goal:
 @dataclass
 class Research:
     tech_id: str
-    paid: bool = False  # material cost paid; now waiting on science
+    paid: bool = False  # material cost paid; science now flows into it
+    progress: float = 0.0  # science spent on it so far
 
 
 @dataclass
@@ -50,7 +53,26 @@ class Civilization:
     idle: float = 0.0
     capacity: dict[str, float] = field(default_factory=lambda: dict.fromkeys(RESOURCES, 0.0))
     income: dict[str, float] = field(default_factory=lambda: dict.fromkeys(RESOURCES, 0.0))
+    upkeep: dict[str, float] = field(default_factory=lambda: dict.fromkeys(RESOURCES, 0.0))
     goal: Goal | None = None
+
+    # Army. Soldiers are counted in `population`.
+    soldiers: float = 0.0
+    unpaid: bool = False
+    unsupplied: bool = False
+
+    # Standing orders from the diplomacy layer, executed by the economy and the AI.
+    soldier_target: float = 0.0
+    military_need: float = 0.0  # 0 = at peace and unthreatened, 1 = at war
+    march_target: int | None = None  # civ to expand toward, to bring it within reach
+    exports: dict[str, float] = field(default_factory=lambda: dict.fromkeys(RESOURCES, 0.0))  # per tick, via deals
+    imports: dict[str, float] = field(default_factory=lambda: dict.fromkeys(RESOURCES, 0.0))
+
+    # Strategic layer.
+    thinking: bool = False  # a check-in is waiting on the strategy brain
+    last_reason: str = ""
+
+    last_demolition: int = -10_000  # tick; demolitions are rate-limited
 
     known_techs: list[str] = field(default_factory=list)
     research: Research | None = None
@@ -60,6 +82,10 @@ class Civilization:
     @property
     def capital(self) -> Settlement:
         return self.settlements[0]
+
+    @property
+    def workforce(self) -> float:
+        return max(0.0, self.population - self.soldiers)
 
     def occupied(self) -> set[int]:
         return {b.tile for b in self.buildings} | {s.tile for s in self.settlements}

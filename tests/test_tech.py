@@ -3,6 +3,7 @@ import pytest
 from civsim.civ import Research
 from civsim.config import SimConfig
 from civsim.economy import load_building_defs
+from civsim.economy.rules import SCIENCE_BANK_CAP
 from civsim.simulation import Simulation
 from civsim.tech import Tech, TechTree, advance_research
 
@@ -46,16 +47,20 @@ def test_research_is_gated_by_materials_then_science():
     advance_research(civ, sim.tech_tree, [])
     assert civ.known_techs == [] and not civ.research.paid
 
+    assert civ.science == SCIENCE_BANK_CAP, "science with nowhere to go is capped"
+
     civ.resources["wood"] = 50
-    civ.science = 0
+    civ.science = 10
     advance_research(civ, sim.tech_tree, [])
     assert civ.research.paid and civ.resources["wood"] == 50 - tech.materials["wood"]
+    assert civ.research.progress == 10 and civ.science == 0, "science is spent as it comes in"
     assert civ.known_techs == []
 
     civ.science = tech.science_cost
     events: list = []
     advance_research(civ, sim.tech_tree, events)
     assert civ.known_techs == ["pottery"] and civ.research is None
+    assert civ.science == 10, "the overshoot carries over"
     assert events[0]["kind"] == "tech"
 
 

@@ -1,4 +1,7 @@
+import base64
 import random
+
+import pytest
 
 from civsim.map import BIOME_INFO, DEPOSIT_TYPES, Biome, find_start_positions, generate_map
 
@@ -46,3 +49,15 @@ def test_start_positions_are_on_land_and_spread_out():
     for i, (ax, ay) in enumerate(points):
         for bx, by in points[i + 1:]:
             assert abs(ax - bx) + abs(ay - by) >= 15
+
+
+def test_territory_encoding_is_one_byte_per_tile_for_any_civ_id():
+    world = generate_map(5, 16, 16)
+    world.claim(0, 3)
+    world.claim(1, 12)
+    world.claim(2, 254)
+    owners = base64.b64decode(world.encode_territory())
+    assert len(owners) == 16 * 16
+    assert list(owners[:4]) == [3, 12, 254, 255]
+    with pytest.raises(ValueError):
+        world.claim(3, 255)

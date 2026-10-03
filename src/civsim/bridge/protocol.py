@@ -6,8 +6,9 @@ Server -> client
   init    sent once on connect: everything static (map, biome/building/tech
           definitions, civ identities).
   tick    sent after every sim tick, and once right after init: the full dynamic
-          state of every civ plus the territory grid. No deltas; any tick message
-          alone is enough to redraw.
+          state of every civ, the territory grid, relations between civs, trade
+          deals and invented techs. No deltas; any tick message alone is enough
+          to redraw.
   status  sent when pause/speed changes (ticks stop while paused).
   error   reply to a malformed or unknown command.
 
@@ -22,7 +23,7 @@ from ..economy.rules import RESOURCES
 from ..map import BIOME_INFO, DEPOSIT_TYPES, Biome
 from ..simulation import Simulation
 
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2
 COMMANDS = ("pause", "resume", "toggle_pause", "step", "set_speed")
 
 
@@ -80,7 +81,7 @@ def init_message(sim: Simulation) -> str:
         },
         "buildings": {
             bdef.id: {"name": bdef.name, "color": bdef.color, "height": bdef.height,
-                      "requires_tech": bdef.requires_tech}
+                      "requires_tech": bdef.requires_tech, "upkeep": bdef.upkeep}
             for bdef in sim.building_defs.values()
         },
         "tech_tree": {
@@ -88,7 +89,7 @@ def init_message(sim: Simulation) -> str:
             "techs": [
                 {"id": tech.id, "name": tech.name, "era": tech.era, "prereqs": list(tech.prereqs),
                  "cost": tech.cost, "description": tech.description}
-                for tech in sim.tech_tree.techs.values()
+                for tech in sim.tech_tree.techs.values() if tech.owner is None
             ],
         },
         "civs": [
@@ -102,6 +103,7 @@ def init_message(sim: Simulation) -> str:
 def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
     world = sim.world
     tree = sim.tech_tree
+    diplomacy = sim.diplomacy
     civs = []
     for civ in sim.civs:
         mods = sim.modifiers[civ.id]
@@ -109,13 +111,13 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
         research = None
         if civ.research:
             tech = tree.techs[civ.research.tech_id]
-            progress = min(1.0, civ.science / tech.science_cost) if civ.research.paid else 0.0
+            progress = min(1.0, civ.research.progress / tech.science_cost)
             research = {"id": tech.id, "paid": civ.research.paid, "progress": round(progress, 3)}
         civs.append({
             "id": civ.id,
             "population": int(civ.population),
             "housing": int(mods.housing),
-            "storage": int(mods.storage),
+            "storage": {res: int(mods.storage[res]) for res in RESOURCES},  # hard cap per resource
             "resources": {res: round(civ.resources[res], 1) for res in RESOURCES},
             "income": {res: round(civ.income[res], 2) for res in RESOURCES},
             "workers": {res: round(civ.workers[res], 1) for res in RESOURCES},
@@ -126,7 +128,7 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
             ],
             "buildings": [
                 {"type": b.type, "x": b.tile % world.width, "y": b.tile // world.width,
-                 "progress": round(b.progress, 2), "complete": b.complete}
+                 "progress": round(b.progress, 2), "complete": b.complete, "active": b.active}
                 for b in civ.buildings
             ],
             "goal": {"kind": civ.goal.kind, "target": civ.goal.target} if civ.goal else None,
@@ -135,13 +137,47 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
             "techs": list(civ.known_techs),
             "research": research,
             "science_rate": round(civ.science_rate, 2),
+            "soldiers": int(civ.soldiers),
+            "army_strength": round(diplomacy.strength(civ), 1),
+            "unpaid": civ.unpaid,
+            "unsupplied": civ.unsupplied,
+            # Strategic layer: stance toward each other civ (keyed by civ id), and why.
+            "stances": {str(other): diplomacy.intent(civ.id, other).stance.value for other in diplomacy.others(civ.id)},
+            "reason": civ.last_reason,
+            "thinking": civ.thinking,
+        })
+    relations = []
+    for (a, b), relation in diplomacy.relations.items():
+        war = relation.war
+        relations.append({
+            "a": a, "b": b, "status": relation.status, "since": relation.since,
+            "truce": sim.tick < relation.truce_until,
+            "war": {
+                "aggressors": sorted(war.aggressors),
+                "tiles_taken": {str(civ_id): count for civ_id, count in war.tiles_taken.items()},
+                "casualties": {str(civ_id): round(lost) for civ_id, lost in war.casualties.items()},
+            } if war else None,
         })
     data = {
         "status": {"paused": paused, "speed": speed},
-        # One char per tile, row-major: '.' unowned, otherwise the civ id digit.
-        "territory": world.territory_string(),
+        # Base64 of one byte per tile, row-major: owning civ id, 255 = unowned.
+        "territory": world.encode_territory(),
         "territory_rev": world.territory_rev,
         "civs": civs,
+        "relations": relations,
+        "deals": [
+            {"id": deal.id, "a": deal.a, "b": deal.b, "ends": deal.end,
+             "a_gives": {"resource": deal.a_gives[0], "rate": deal.a_gives[1]},
+             "b_gives": {"resource": deal.b_gives[0], "rate": deal.b_gives[1]}}
+            for deal in diplomacy.deals
+        ],
+        # The era list grows when the first tech is invented.
+        "eras": tree.eras,
+        "invented_techs": [
+            {"id": tech.id, "name": tech.name, "era": tech.era, "owner": tech.owner,
+             "cost": tech.cost, "description": tech.description}
+            for tech in tree.techs.values() if tech.owner is not None
+        ],
         "events": sim.events,
     }
     return encode("tick", sim.tick, data)
