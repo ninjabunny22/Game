@@ -44,12 +44,14 @@ pause, `.` to step one tick, `-` / `=` to change speed.
 
 The overlay is built for watching:
 
-- **Date.** The top left shows the year (10 ticks to a year) and the pace in
-  years per minute. A banner appears while the sim is paused.
+- **Date.** The top left shows the day (one tick is one day) and the pace in
+  days per minute. A banner appears while the sim is paused.
+- **Text size.** The whole overlay is drawn 35% larger than Godot's default;
+  `[` and `]` make it smaller or larger while watching.
 - **Headline log.** Only wars, peace, regions and capitals changing hands,
   alliances, betrayals, routs and new eras get a line. Routine events
   (buildings captured, discoveries, trade changes) are counted in one summary
-  line for the last ten years.
+  line for the last 100 days.
 - **Civ cards.** Each civ has a three-line card: name, era, regions,
   population, army, and what matters most about it now (at war, out of water,
   distrusted, allied). Click a card, or press `1`-`4`, to open its full detail;
@@ -284,9 +286,14 @@ them, each under a commander.
   armies move two tiles a tick, others one, slower over forest, hills and
   mountains.
 - **Battles.** Armies of warring civs within one tile of each other fight every
-  tick with the phase 3 casualty rule. An army on its own land adds militia and
-  the home bonus. An army whose strength falls below half its opponent's is
-  routed and falls back to its capital to rest.
+  tick until one breaks. There is no minimum or maximum length. Each tick both
+  sides take the phase 3 casualties (at 2.5 times the base rate), the weaker
+  side losing the larger share, so the gap widens; an army breaks when its
+  strength falls below half its opponent's. A badly outmatched army is routed
+  at once, armies within 10% of each other fight for roughly 40 to 100 ticks.
+  An army on its own land adds militia and the home bonus. A routed army falls
+  back to its capital to rest; a beaten garrison is scattered and cannot fight
+  until it rallies. Assaults on native capitals work the same way.
 - **Taking ground.** An army cannot step onto enemy land until it has captured
   the tile in its way, by the phase 3 capture rule against the local militia.
   Up to two cheap, undefended tiles beside a captured one fall with it.

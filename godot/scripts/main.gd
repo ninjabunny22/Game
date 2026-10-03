@@ -10,6 +10,8 @@ const UnitView := preload("res://scripts/unit_view.gd")
 const CameraRig := preload("res://scripts/camera_rig.gd")
 const Hud := preload("res://scripts/hud.gd")
 
+const UI_SCALE := 1.35  # the whole overlay is drawn this much larger than Godot's default text size
+const UI_SCALE_STEP := 0.1
 const FAR_VIEW := 75.0  # camera further than this: the whole-map view
 const NEAR_VIEW := 38.0  # camera closer than this: full detail
 
@@ -27,6 +29,7 @@ var _detail := -1  # how much the map shows, set from how far the camera is
 
 
 func _ready() -> void:
+	_set_ui_scale(UI_SCALE)
 	_add_lighting()
 	add_child(_terrain)
 	add_child(_civ_view)
@@ -58,6 +61,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			_hud.toggle_diplomacy()
 		KEY_B:
 			_terrain.toggle_region_borders()
+		KEY_BRACKETLEFT:
+			_set_ui_scale(get_window().content_scale_factor - UI_SCALE_STEP)
+		KEY_BRACKETRIGHT:
+			_set_ui_scale(get_window().content_scale_factor + UI_SCALE_STEP)
 		KEY_1, KEY_2, KEY_3, KEY_4:
 			_hud.toggle_card(event.keycode - KEY_1)
 
@@ -70,6 +77,11 @@ func _process(_delta: float) -> void:
 		_detail = detail
 		_civ_view.set_detail(detail)
 		_unit_view.set_detail(detail)
+
+
+## Scales every panel and all overlay text together; the 3D map is unaffected.
+func _set_ui_scale(factor: float) -> void:
+	get_window().content_scale_factor = clampf(factor, 0.8, 2.2)
 
 
 func _on_connection_changed(connected: bool) -> void:

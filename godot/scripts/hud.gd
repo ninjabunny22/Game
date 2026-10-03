@@ -7,9 +7,8 @@ signal command_requested(action: String, value: Variant)
 
 const LINK_LEGEND := "[color=#ff4033]━[/color] war   [color=#59a6ff]━[/color] alliance   [color=#59e666]━[/color] trade   [color=#aaaaaa]━[/color] neutral"
 
-const TICKS_PER_YEAR := 10  # purely for display: a calendar reads better than a tick count
 const MAX_HEADLINES := 8
-const ROUTINE_WINDOW := 100  # ticks over which routine events are counted for the summary line
+const ROUTINE_WINDOW := 100  # days over which routine events are counted for the summary line
 # Events worth a line of their own. Everything else is only counted.
 const HEADLINE_KINDS := ["war", "diplomacy", "region", "era"]
 const ROUTINE_LABELS := {"capture": "buildings captured", "tech": "discoveries", "trade": "trade changes"}
@@ -68,7 +67,8 @@ func _ready() -> void:
 	_button(buttons, "Diplomacy", toggle_diplomacy)
 	var help := Label.new()
 	help.text = ("Drag: pan   Right-drag: orbit   Wheel: zoom   B: region borders\n"
-			+ "Space: pause   . : step   - / = : speed   Tab: diplomacy   1-4: civ details")
+			+ "Space: pause   . : step   - / = : speed   Tab: diplomacy   1-4: civ details\n"
+			+ "[ and ] : smaller / larger text")
 	help.add_theme_font_size_override("font_size", 12)
 	help.modulate = Color(1, 1, 1, 0.6)
 	column.add_child(help)
@@ -84,14 +84,14 @@ func _ready() -> void:
 
 	# Diplomacy: every war, alliance and trade deal in force. Toggled with the button or Tab.
 	_diplomacy_panel = _panel(root)
-	_diplomacy_panel.position = Vector2(10, 186)
-	_diplomacy_panel.custom_minimum_size = Vector2(430, 0)
+	_diplomacy_panel.position = Vector2(10, 178)
+	_diplomacy_panel.custom_minimum_size = Vector2(390, 0)
 	_diplomacy_panel.visible = false
 	_diplomacy = RichTextLabel.new()
 	_diplomacy.bbcode_enabled = true
 	_diplomacy.fit_content = true
 	_diplomacy.scroll_active = false
-	_diplomacy.custom_minimum_size = Vector2(410, 0)
+	_diplomacy.custom_minimum_size = Vector2(370, 0)
 	_diplomacy.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_diplomacy.add_theme_font_size_override("normal_font_size", 13)
 	_diplomacy.add_theme_font_size_override("bold_font_size", 13)
@@ -108,7 +108,7 @@ func _ready() -> void:
 	_log.bbcode_enabled = true
 	_log.fit_content = true
 	_log.scroll_active = false
-	_log.custom_minimum_size = Vector2(520, 0)
+	_log.custom_minimum_size = Vector2(440, 0)
 	_log.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_log.add_theme_font_size_override("normal_font_size", 13)
 	log_panel.add_child(_log)
@@ -214,7 +214,7 @@ func update(tick: int, data: Dictionary) -> void:
 	for event: Dictionary in data["events"]:
 		if event["kind"] in HEADLINE_KINDS:
 			var color: String = _civ_info[int(event["civ"])]["color"]
-			_log_lines.append("[color=#8a93a0]Year %d[/color]  [color=%s]%s[/color]" % [_year(tick), color, event["text"]])
+			_log_lines.append("[color=#8a93a0]Day %d[/color]  [color=%s]%s[/color]" % [tick, color, event["text"]])
 		elif ROUTINE_LABELS.has(event["kind"]):
 			_routine.append([tick, event["kind"]])
 	if _log_lines.size() > MAX_HEADLINES:
@@ -228,18 +228,14 @@ func update(tick: int, data: Dictionary) -> void:
 	for kind: String in ROUTINE_LABELS:
 		if counts.has(kind):
 			summary.append("%d %s" % [counts[kind], ROUTINE_LABELS[kind]])
-	var footer := "[color=#8a93a0]Last %d years: %s[/color]" % [
-		ROUTINE_WINDOW / TICKS_PER_YEAR, ", ".join(summary) if not summary.is_empty() else "quiet"]
+	var footer := "[color=#8a93a0]Last %d days: %s[/color]" % [
+		ROUTINE_WINDOW, ", ".join(summary) if not summary.is_empty() else "quiet"]
 	_log.text = "\n".join(_log_lines + [footer])
 
 
-func _year(tick: int) -> int:
-	return tick / TICKS_PER_YEAR + 1
-
-
-func _years(ticks: int) -> String:
-	var years := maxi(1, roundi(float(ticks) / TICKS_PER_YEAR))
-	return "%d year%s" % [years, "" if years == 1 else "s"]
+## One tick is one day.
+func _days(ticks: int) -> String:
+	return "%d day%s" % [ticks, "" if ticks == 1 else "s"]
 
 
 func _refresh_cards() -> void:
@@ -293,7 +289,7 @@ func _diplomacy_text_panel(data: Dictionary) -> String:
 		var started := _tick
 		for front: Dictionary in fronts:
 			started = mini(started, int(front["war"]["started"]))
-		lines.append("[b]%s[/b]  [color=#8a93a0]%s[/color]" % [name, _years(_tick - started)])
+		lines.append("[b]%s[/b]  [color=#8a93a0]%s[/color]" % [name, _days(_tick - started)])
 		for front: Dictionary in fronts:
 			var war: Dictionary = front["war"]
 			# The side that declared is named first.
@@ -317,9 +313,9 @@ func _diplomacy_text_panel(data: Dictionary) -> String:
 	for alliance: Dictionary in alliances:
 		var name: String = str(alliance["name"]) if alliance["name"] != null else "Alliance"
 		lines.append("[b]%s[/b]" % name)
-		lines.append("  %s and %s  [color=#8a93a0]formed year %d (%s ago)[/color]" % [
-			_civ_name(int(alliance["a"])), _civ_name(int(alliance["b"])), _year(int(alliance["since"])),
-			_years(_tick - int(alliance["since"])),
+		lines.append("  %s and %s  [color=#8a93a0]formed day %d (%s ago)[/color]" % [
+			_civ_name(int(alliance["a"])), _civ_name(int(alliance["b"])), int(alliance["since"]),
+			_days(_tick - int(alliance["since"])),
 		])
 
 	lines.append("")
@@ -330,7 +326,7 @@ func _diplomacy_text_panel(data: Dictionary) -> String:
 		lines.append("  %s sends %s %s/tick,  %s sends %s %s/tick  [color=#8a93a0]%s left[/color]" % [
 			_civ_name(int(deal["a"])), String.num(float(deal["a_gives"]["rate"]), 2), deal["a_gives"]["resource"],
 			_civ_name(int(deal["b"])), String.num(float(deal["b_gives"]["rate"]), 2), deal["b_gives"]["resource"],
-			_years(int(deal["ends"]) - _tick),
+			_days(int(deal["ends"]) - _tick),
 		])
 	return "\n".join(lines)
 
@@ -345,9 +341,9 @@ func _refresh_status() -> void:
 	if not _connected:
 		_status.text = "Waiting for sim on ws://127.0.0.1:8765 ..."
 		return
-	# Speed as years per minute, which is what a spectator feels.
-	var pace := "paused" if _paused else "%s years/min" % String.num(_speed * 60.0 / TICKS_PER_YEAR, 0)
-	_status.text = "Year %d   [%s]   tick %d, seed %d" % [_year(_tick), pace, _tick, _seed]
+	# One tick is one day; speed is shown as days per minute, which is what a spectator feels.
+	var pace := "paused" if _paused else "%s days/min" % String.num(_speed * 60.0, 0)
+	_status.text = "Day %d   [%s]   seed %d" % [_tick, pace, _seed]
 	_pause_button.text = "Resume" if _paused else "Pause"
 
 
@@ -463,7 +459,7 @@ func _army_text(civ: Dictionary) -> String:
 	if not problems.is_empty():
 		text += "   [color=#e07a6a](%s)[/color]" % ", ".join(problems)
 	if int(civ["distrusted_for"]) > 0:
-		text += "\n[color=#e07a6a]Distrusted for betrayal: %s left[/color]" % _years(int(civ["distrusted_for"]))
+		text += "\n[color=#e07a6a]Distrusted for betrayal: %s left[/color]" % _days(int(civ["distrusted_for"]))
 	return text
 
 

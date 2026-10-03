@@ -12,7 +12,8 @@ The strategic layer still only sets intent. Everything here is rule-based:
     garrison at the capital;
   - an aggressor's army paths to the enemy capital and captures the enemy tiles
     in its way; a defender's army marches to intercept armies on its land;
-  - armies within one tile of each other fight every tick until one routs;
+  - armies within one tile of each other fight every tick until one breaks; how
+    long that takes depends only on how evenly matched they are;
   - a civ at peace sends an expedition against a neighbouring native capital
     once its army is about twice the garrison's strength.
 """
@@ -31,7 +32,10 @@ REINFORCE_RATE = 0.05  # share of the army that can reach a field army per tick 
 MIN_FIELD_ARMY = 3.0  # soldiers below which an army will not set out
 REPLAN_TICKS = 15
 DEFENCE_RADIUS = 6  # a defending army also answers threats this close to the capital
-MIN_BATTLE_TICKS = 5
+# Battles have no fixed length: an army breaks when it is outmatched, and nothing else ends one.
+# The casualty rate sets the pace. At 2.5 times the base rate a lopsided battle is over in a
+# few ticks and a close one (armies within 10% of each other) takes roughly 40 to 100.
+BATTLE_INTENSITY = 2.5
 ROUT_RATIO = 0.5  # an army breaks when its strength falls below this share of its opponent's
 RALLY_TICKS = 30  # rest at the capital after a rout before marching again
 COMMANDER_DEATH_CHANCE = 0.15  # when the army is routed
@@ -301,11 +305,11 @@ class Military:
             if relation.status != "war":
                 continue
             for mine in self.civs[a].armies:
-                if mine.size < 0.5 or mine.state in ("retreating", "returning"):
+                if mine.size < 0.5 or mine.state in ("retreating", "returning") or self._broken(mine, tick):
                     continue
                 mx, my = world.xy(mine.tile)
                 for theirs in self.civs[b].armies:
-                    if theirs.size < 0.5 or theirs.state in ("retreating", "returning"):
+                    if theirs.size < 0.5 or theirs.state in ("retreating", "returning") or self._broken(theirs, tick):
                         continue
                     tx, ty = world.xy(theirs.tile)
                     if max(abs(mx - tx), abs(my - ty)) <= 1:
@@ -346,8 +350,8 @@ class Military:
         engaged = min(one.size, two.size)
         if total > 0 and engaged > 0:
             for army, enemy in ((one, two), (two, one)):
-                # The phase 3 casualty rule; a skilled commander loses fewer.
-                loss = 2 * rules.CASUALTY_RATE * engaged * strengths[enemy.id] / total
+                # The phase 3 casualty rule, at battle intensity; a skilled commander loses fewer.
+                loss = 2 * BATTLE_INTENSITY * rules.CASUALTY_RATE * engaged * strengths[enemy.id] / total
                 if army.commander:
                     loss *= 1 - army.commander.casualty_reduction
                 loss *= max(0.2, 1 + self.mods[army.civ].casualties)
@@ -360,12 +364,35 @@ class Military:
                     war.casualties[civ.id] += loss
                 self._gain(army, XP_PER_BATTLE_TICK)
 
+        # An army breaks when it is wiped out or its strength falls below half its opponent's.
+        # The weaker side loses a larger share each tick, so the gap widens until that happens:
+        # quickly when the armies are unequal, slowly when they are close.
         for army, enemy in ((one, two), (two, one)):
-            broken = army.size < 1.0 or (
-                tick - started >= MIN_BATTLE_TICKS and strengths[army.id] < ROUT_RATIO * strengths[enemy.id])
-            if broken and army.role == "field":
-                self._rout(army, enemy, tick, events)
+            if army.size < 1.0 or strengths[army.id] < ROUT_RATIO * strengths[enemy.id]:
+                self._defeat(army, enemy, tick, events)
                 return
+
+    def _broken(self, army: Army, tick: int) -> bool:
+        """A garrison beaten in battle cannot fight again until it has rallied."""
+        return army.role == "garrison" and tick < self._rally.get(army.id, 0)
+
+    def _defeat(self, loser: Army, winner: Army, tick: int, events: list) -> None:
+        if loser.role == "field":
+            self._rout(loser, winner, tick, events)
+            return
+        # A garrison has nowhere to fall back to: it is scattered and takes time to rally.
+        self._rally[loser.id] = tick + RALLY_TICKS
+        self._battles.pop((loser.id, winner.id), None)
+        self._battles.pop((winner.id, loser.id), None)
+        if winner.commander:
+            winner.commander.battles += 1
+            winner.commander.wins += 1
+            self._gain(winner, XP_WON)
+        if winner.role == "field" and winner.state == "fighting":
+            winner.state = "marching"
+        winning, losing = self.civs[winner.civ], self.civs[loser.civ]
+        events.append({"civ": winning.id, "kind": "war",
+                       "text": f"{winning.name}'s army scatters the garrison of {losing.capital.name}"})
 
     def _rout(self, loser: Army, winner: Army, tick: int, events: list) -> None:
         losing, winning = self.civs[loser.civ], self.civs[winner.civ]
@@ -462,16 +489,19 @@ class Military:
         attack, defence = self.army_strength(army), natives.defence(region)
         engaged = min(army.size, region.garrison)
         if attack + defence > 0 and engaged > 0:
-            loss = 2 * rules.CASUALTY_RATE * engaged * defence / (attack + defence)
+            rate = 2 * BATTLE_INTENSITY * rules.CASUALTY_RATE
+            loss = rate * engaged * defence / (attack + defence)
             if army.commander:
                 loss *= 1 - army.commander.casualty_reduction
             loss = min(army.size, loss * max(0.2, 1 + self.mods[civ.id].casualties))
             army.take(loss)
             civ.soldiers = max(0.0, civ.soldiers - loss)
             civ.population = max(MIN_POPULATION, civ.population - loss)
-            region.garrison = max(0.0, region.garrison - 2 * rules.CASUALTY_RATE * engaged * attack / (attack + defence))
+            region.garrison = max(0.0, region.garrison - rate * engaged * attack / (attack + defence))
             self._gain(army, XP_PER_BATTLE_TICK)
 
+        # Like any battle, the assault runs until one side is broken.
+        attack, defence = self.army_strength(army), natives.defence(region)
         if region.garrison < 1.0:
             if army.commander:
                 army.commander.battles += 1
@@ -480,8 +510,7 @@ class Military:
             self.diplomacy.capture_region(civ, region, tick, events)
             army.state, army.engaged_since = "returning", None
             civ.campaign_cooldown = tick + CAMPAIGN_REST
-        elif army.size < 1.0 or (tick - army.engaged_since >= MIN_BATTLE_TICKS
-                                 and self.army_strength(army) < ROUT_RATIO * natives.defence(region)):
+        elif army.size < 1.0 or attack < ROUT_RATIO * defence:
             if army.commander:
                 army.commander.battles += 1
                 self._gain(army, XP_FOUGHT)

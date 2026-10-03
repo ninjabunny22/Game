@@ -223,7 +223,7 @@ def test_a_better_commander_wins_an_otherwise_even_fight(sim):
             sim.world.owner[tile] = -1
     army.commander.experience = 2025  # level 10
     lost = {army.id: army.size, other.id: other.size}
-    for _ in range(1000):  # evenly matched armies grind for a long time
+    for _ in range(300):
         sim.tick += 1
         busy = sim.military._fight(sim.tick, [])
         if army.state == "retreating" or other.state == "retreating":
@@ -232,6 +232,88 @@ def test_a_better_commander_wins_an_otherwise_even_fight(sim):
     assert other.state == "retreating" and army.state != "retreating"
     assert lost[other.id] - other.size > lost[army.id] - army.size, "and it loses fewer soldiers doing it"
     assert army.commander.wins == 1
+
+
+def face_off(sim, a, b, soldiers=(100, 100)):
+    """Two field armies side by side on ground neither civ owns."""
+    army = go_to_war(sim, a, b, soldiers=soldiers)
+    other = field(b, a)
+    other.tile, other.path = next(sim.world.neighbors(army.tile)), []
+    for civ in (a, b):
+        civ.population = 300
+    for tile in (army.tile, other.tile):
+        owner = sim.world.owner[tile]
+        if owner >= 0:
+            sim.civs[owner].territory.discard(tile)
+            sim.world.owner[tile] = -1
+    return army, other
+
+
+def battle_length(sim, army, other) -> int:
+    for ticks in range(1, 2000):
+        sim.tick += 1
+        sim.military._fight(sim.tick, [])
+        if "retreating" in (army.state, other.state):
+            return ticks
+    return 2000
+
+
+def fresh_battle(soldiers) -> tuple[int, object, object]:
+    sim = Simulation(SimConfig(seed=3))
+    for civ in sim.civs:
+        civ.diplomacy_points = 300.0
+    army, other = face_off(sim, sim.civs[0], sim.civs[1], soldiers)
+    return battle_length(sim, army, other), army, other
+
+
+def test_battle_length_follows_only_from_how_evenly_matched_the_armies_are():
+    lengths = {theirs: fresh_battle((100, theirs))[0] for theirs in (30, 60, 80, 90, 95, 99)}
+    assert lengths[30] == 1, "badly outmatched: broken at once, with no minimum to sit through"
+    assert list(lengths.values()) == sorted(lengths.values()), "the closer the fight, the longer it runs"
+    assert lengths[60] < 15
+    for close in (90, 95, 99):
+        assert 30 <= lengths[close] <= 100, f"a close battle grinds on, but not forever ({close}: {lengths[close]})"
+
+
+def test_the_weaker_army_is_the_one_that_breaks_and_both_pay_for_a_long_fight():
+    length, army, other = fresh_battle((100, 95))
+    assert other.state == "retreating" and army.state != "retreating"
+    assert army.size < 0.75 * 80 and other.size < army.size, "a long, close battle is costly for the winner too"
+    quick, army, other = fresh_battle((100, 30))
+    assert army.size > 0.99 * 80, "a walkover costs the winner almost nothing"
+    assert quick < length
+
+
+def test_nothing_ends_a_battle_but_one_side_breaking(sim):
+    """No ceiling: two armies that stay level keep fighting for as long as they stay level."""
+    a, b = sim.civs[0], sim.civs[1]
+    army, other = face_off(sim, a, b, (100, 100))
+    for _ in range(150):
+        sim.tick += 1
+        assert sim.military._fight(sim.tick, []), "still engaged"
+        a.soldiers = b.soldiers = 80.0  # both sides keep their numbers up
+        army.units, other.units = {"spearman": 80.0}, {"spearman": 80.0}
+    assert "retreating" not in (army.state, other.state)
+
+
+def test_a_beaten_garrison_is_scattered_not_routed(sim):
+    a, b = sim.civs[0], sim.civs[1]
+    army = go_to_war(sim, a, b, soldiers=(150, 10))
+    b.armies = [x for x in b.armies if x.role == "garrison"]  # only the garrison is home
+    garrison = b.garrison
+    garrison.units = {"spearman": 10.0}
+    b.soldiers = 10.0
+    army.tile, army.path = next(n for n in sim.world.neighbors(b.capital.tile) if not sim.world.is_water(n)), []
+    events: list = []
+    for _ in range(40):
+        sim.tick += 1
+        sim.military._fight(sim.tick, events)
+        if events:
+            break
+    assert any("scatters the garrison" in e["text"] for e in events)
+    assert garrison.tile == b.capital.tile and garrison.state != "retreating", "it has nowhere to fall back to"
+    assert sim.military._broken(garrison, sim.tick), "and cannot fight again until it rallies"
+    assert not sim.military._fight(sim.tick + 1, []), "so the attacker is free to press on"
 
 
 def test_commanders_keep_their_experience_between_wars(sim):
