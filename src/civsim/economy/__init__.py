@@ -1,3 +1,4 @@
+from .horses import stables, tend_horses
 from .buildings import BuildingDef, advance_construction, demolish, find_site, load_building_defs
 from .modifiers import Modifiers, compute_modifiers
 from .production import food_need, produce, recompute_capacity, water_balance, water_growth_factor, water_urgency
@@ -17,6 +18,8 @@ __all__ = [
     "manage_villagers",
     "produce",
     "recompute_capacity",
+    "stables",
+    "tend_horses",
     "water_balance",
     "water_growth_factor",
     "water_urgency",

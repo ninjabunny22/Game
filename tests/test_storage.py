@@ -22,7 +22,7 @@ def sim() -> Simulation:
 
 
 def free_tiles(sim, civ):
-    taken = civ.occupied()
+    taken = civ.buildings_by_tile()
     return [t for t in sorted(civ.territory) if t not in taken and BIOME_INFO[sim.world.biomes[t]].buildable]
 
 

@@ -1,6 +1,7 @@
 """Villagers: the visible, non-combatant workers of a civ.
 
-A building only advances while a villager is standing on its site, so building
+A building only advances while a villager is standing on its site building it
+(one villager to a building, even where several go up on one tile), so building
 far from where the villagers are takes longer. Villagers with no building to do
 walk out to work the land (that part is for show: the amounts gathered still
 come from the worker allocation). They are never killed; capture converts them.
@@ -22,22 +23,27 @@ def manage_villagers(civ, world: WorldMap, mods, next_id: Callable[[], int]) -> 
     while len(civ.villagers) < wanted:
         civ.villagers.append(Villager(next_id(), civ.capital.tile))
 
-    # Builders whose site is finished (or lost) are free again.
-    sites = {b.tile for b in civ.buildings if not b.complete}
+    for building in civ.buildings:
+        if building.id == 0:
+            building.id = next_id()
+
+    # Builders whose building is finished (or lost) are free again.
+    sites = {b.id for b in civ.buildings if not b.complete}
     for villager in civ.villagers:
-        if villager.task == "build" and villager.target not in sites:
+        if villager.task == "build" and villager.building not in sites:
             _release(villager)
 
     # Every building under way needs a builder: send the nearest villager not already building.
     under_way = [b for b in civ.buildings if not b.complete][: mods.build_slots]
     for building in under_way:
-        if any(v.task == "build" and v.target == building.tile for v in civ.villagers):
+        if any(v.task == "build" and v.building == building.id for v in civ.villagers):
             continue
         free = [v for v in civ.villagers if v.task != "build"]
         if not free:
             break
         nearest = min(free, key=lambda v: (_distance(world, v.tile, building.tile), v.id))
         _send(nearest, world, mods, "build", building.tile)
+        nearest.building = building.id
 
     # Anyone with nothing to do goes out to work the land.
     for villager in civ.villagers:
@@ -45,6 +51,7 @@ def manage_villagers(civ, world: WorldMap, mods, next_id: Callable[[], int]) -> 
             site = _work_site(civ, world, villager)
             if site is not None:
                 _send(villager, world, mods, "gather", site)
+                villager.gathers = max(civ.workers, key=lambda res: (civ.workers[res], res))
 
     for villager in civ.villagers:
         for _ in range(1 + mods.villager_speed):
@@ -53,8 +60,8 @@ def manage_villagers(civ, world: WorldMap, mods, next_id: Callable[[], int]) -> 
 
 
 def builders_on_site(civ) -> set[int]:
-    """Tiles where a villager is in place and building."""
-    return {v.tile for v in civ.villagers if v.task == "build" and v.tile == v.target}
+    """Ids of the buildings that have a villager in place and building them."""
+    return {v.building for v in civ.villagers if v.task == "build" and v.tile == v.target}
 
 
 def convert_villagers(tile: int, loser, captor) -> int:
@@ -63,6 +70,7 @@ def convert_villagers(tile: int, loser, captor) -> int:
     for villager in taken:
         loser.villagers.remove(villager)
         _release(villager)
+        villager.mounted = False  # the horse is lost; the villager, as ever, is not
         captor.villagers.append(villager)
     return len(taken)
 
@@ -70,6 +78,8 @@ def convert_villagers(tile: int, loser, captor) -> int:
 def _release(villager: Villager) -> None:
     villager.task = "idle"
     villager.target = None
+    villager.building = 0
+    villager.gathers = None
     villager.path = []
 
 

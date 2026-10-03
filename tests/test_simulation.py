@@ -51,7 +51,11 @@ def test_invariants_hold(played):
     for civ in played.civs:
         mods = played.modifiers[civ.id]
         tiles = [b.tile for b in civ.buildings] + [s.tile for s in civ.settlements]
-        assert len(tiles) == len(set(tiles)), "two buildings share a tile"
+        for there in civ.buildings_by_tile().values():
+            assert len(there) <= 3, "a tile holds at most three buildings"
+            assert len({b.type for b in there}) == len(there), "and never two of the same type"
+        ids = [b.id for b in civ.buildings]
+        assert 0 not in ids and len(ids) == len(set(ids))
         assert set(tiles) <= civ.territory
         for res in RESOURCES:
             assert 0 <= civ.resources[res] <= mods.storage[res] + 1e-6

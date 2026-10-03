@@ -11,6 +11,7 @@ DIPLOMACY_START = 50.0
 # Trade
 DEAL_DURATION = 100
 DEAL_FEE = 20  # diplomacy points, paid by each side when a deal opens; allies trade free
+ALLY_TRADE_BONUS = 0.15  # extra goods delivered, over what was sent, on a deal between allies
 MIN_RATE = 0.05
 MAX_RATE = 2.0
 SUSTAIN_TICKS = 50  # a side never promises more per tick than stock / this
@@ -34,6 +35,9 @@ DISTRUST_RATE_FACTOR = 0.5  # and is sent only this share of what its partner of
 
 # War
 WAR_COST = 100  # diplomacy points: about two check-ins' worth
+# A civ will not declare war without an army worth the name: at least this many soldiers ...
+WAR_MIN_SOLDIERS = 20
+WAR_MIN_SHARE = 0.10  # ... and this share of its population under arms
 REACH = 4  # max gap, in tiles, across which two territories can fight
 MIN_WAR = 50  # ticks before a war can end by mutual consent
 MAX_WAR = 400  # ticks after which both sides are exhausted

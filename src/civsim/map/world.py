@@ -26,6 +26,9 @@ class WorldMap:
         self.deposits: dict[int, str] = {}
         # Rivers run through land tiles: tile -> size (1 near the source, up to 3 downstream).
         self.rivers: dict[int, int] = {}
+        # Where each river tile's water goes next: the next river tile downstream, or the
+        # sea or lake tile it empties into. Rivers are these links, not just neighbouring tiles.
+        self.river_flow: dict[int, int] = {}
         self.yields: list[dict[str, int]] = [{} for _ in range(size)]
         self.owner: list[int] = [-1] * size
         # Regions (see regions.py): region id per tile (-1 for open sea), the regions

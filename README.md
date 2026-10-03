@@ -80,7 +80,25 @@ editor.
 - Each building type maps to a model in `BUILDING_MODELS` (`civ_view.gd`).
   Types that share a model carry a small pennant in the type's colour; models
   with nothing to repaint (fields, walls, stockpiles) fly their owner's flag.
+- **Figures.** Commanders, villagers, mounted villagers, the stables, the harbour and
+  the ship are separate models in `godot/assets/characters` (`Commander.glb`,
+  `Villager.glb`, `Rider.glb`, `Stable.glb`, `Harbour.glb`, `Boat.glb`), loaded at run time by
+  `scripts/characters.gd` and put in their civ's colour by swapping one named
+  material. A commander stands, walks or strikes with what his army is doing;
+  a villager walks, hammers at a building, works the land or draws water; a
+  rider stands, walks or trots. Armies without a commander are still the plain
+  figures. If a model file is missing the old placeholder is drawn instead.
+  The stables and the harbour are drawn larger than one tile so they read
+  beside a commander, keep that size when they share a tile, and come without
+  the plate of grass their files include; the harbour is turned so its quay
+  faces the water.
 - A civ's own capital is a castle; every other region capital is a tower.
+- A tile holds up to three buildings. Closer in they are drawn one by one,
+  sharing the tile (around the castle or tower on a capital's tile), and each
+  village is named. From the whole-map view each village is drawn as a single
+  cluster that grows through three sizes (under 6, 6 to 19, 20 or more
+  buildings; a village holds at most 40), and a capital's town as a ring of houses around its castle or
+  tower. The switch follows the same zoom levels as villagers and labels.
 - Forest tiles are scattered with trees and mountain tiles with peaks.
 - The sea and lakes use a small shader: three bands of colour by depth, a foam
   line at the shore and a gentle swell. Rivers are curved ribbons with a
@@ -130,8 +148,11 @@ seeded on suitable biomes and grown into contiguous clusters. Each tile offers
 work slots per resource from its biome plus any deposit. The seed also places
 inland lakes (each at most 14 tiles) and rivers, which rise in hills and
 mountains and run downhill to the sea, a lake or another river, widening from
-size 1 to 3 along the way. A river runs through land tiles rather than
-replacing them, and makes plains, forest and desert more fertile.
+size 1 to 3 along the way and swelling where a tributary joins. A river runs
+through land tiles rather than replacing them, and makes plains, forest and
+desert more fertile. Each river tile records the tile its water flows into,
+so a river is one unbroken course that never doubles back on itself; the
+viewer draws rivers along those links only.
 
 **Regions.** The land is divided into 16 regions of similar size (none under
 60% or over 150% of the average), each with a capital on a random tile inside
@@ -212,7 +233,7 @@ with it a civ can claim land and wage war across up to 6 tiles of open water.
 Boats are transport only.
 
 **Demolition.** A civ tears down its own buildings in two cases: one whose
-upkeep has gone unpaid for 60 ticks, and, when it has no free tile left, its
+upkeep has gone unpaid for 60 ticks, and, when it has no free slot left, its
 least useful building if the one it wants scores at least twice as high.
 Demolition frees the tile and refunds 10% of the base cost; at most one every
 25 ticks. Four of the construction techs, one per era, raise the refund as one
@@ -312,6 +333,24 @@ them, each under a commander.
   An army on its own land adds militia and the home bonus. A routed army falls
   back to its capital to rest; a beaten garrison is scattered and cannot fight
   until it rallies. Assaults on native capitals work the same way.
+- **Pursuit.** The victor chases a routed army if it is at least as fast, the
+  loser is not already at its capital, and no other enemy army is within 3
+  tiles. The chase lasts at most 8 days or 6 tiles. Each day the pursuer is
+  within a tile, the fleeing army loses 15% of the soldiers it had when it
+  broke and cannot fight back; below a fifth of that it is destroyed. It is
+  safe once it reaches its capital or a friendly army, and gets no
+  reinforcements while in flight. A pursuer fights at 80% strength during the
+  chase and for 5 days after.
+- **The fallen.** Of the soldiers a beaten army lost in the battle, and of
+  those cut off in a pursuit, 60% are wounded (they leave the army, do no
+  work, and recover into the population at about 1% a day), 30% escape to the
+  garrison and 10% die. The winner's losses are simply dead. A beaten army's
+  commander is killed (10%), captured (25%) or escapes (65%): rolled at every
+  rout, and again if the army is then run down. A captured commander changes
+  sides half the time (if the captor's roster has room); otherwise he is held
+  prisoner until his civ ransoms him (20 gold plus 20 per level, paid to the
+  captor, and only while it keeps 20 gold back) or the two civs make peace.
+  A beaten army falls back on the nearest capital its civ holds.
 - **Taking ground.** An army cannot step onto enemy land until it has captured
   the tile in its way, by the phase 3 capture rule against the local militia.
   Up to two cheap, undefended tiles beside a captured one fall with it.
@@ -325,9 +364,21 @@ them, each under a commander.
 - **Commanders** lead field armies; garrisons have none. Experience comes only
   from combat: 1 per tick of battle, 25 for a win, 5 for a loss. Level is
   1 + sqrt(experience / 25), up to 10. Each level above the first adds 4% to
-  the army's strength and takes 2% off its losses. A commander may be killed
-  when the army is routed; otherwise they return to the civ's reserve after a
-  war and the most experienced one leads the next army.
+  the army's strength and takes 2% off its losses. A commander whose army is
+  run down in a pursuit may be killed or captured (see The fallen); otherwise
+  they return to the civ's reserve after a war and the most experienced one
+  leads the next army.
+- **The roster.** A civ starts with 3 commanders and may have at most 20,
+  counting those leading armies and those in reserve. A new one is promoted
+  from the ranks for 20 gold, starting at level 1 (2 with Military Academy, 3
+  with General Staff). With Military Academy a civ that has 140 gold appoints
+  a trained officer instead, for 120 gold, two levels higher. An army whose
+  civ cannot pay goes without a commander.
+- **Holding capitals.** Commanders in reserve are stationed one to a capital,
+  the most experienced at the capital nearest an enemy. A stationed commander
+  adds 10% plus 2% per level to that capital's defence, both to the price of
+  taking it and to armies fighting on it. If it falls he faces the same
+  10/25/65 roll.
 
 **Villagers.** Each civ has 2 to 12 villagers on the map, one per 25 people
 (`economy/villagers.py`). A building only advances while a villager is standing
@@ -336,6 +387,68 @@ nothing to build walk out to work the land; that part is for show, since the
 amounts gathered come from the worker allocation. Armies never harm villagers:
 those on a captured tile change sides and wait for their new owner's orders.
 
+
+## Armies, war and waiting for strategists
+
+- **Standing armies.** At peace a civ keeps 10% of its population under arms,
+  and recruits or stands down up to 2% of its population a day. The wartime
+  cap is unchanged at 35%. An army that is not being paid takes no recruits.
+- **No war without an army.** A civ cannot declare war on another civ with
+  fewer than 20 soldiers or less than 10% of its population under arms. A
+  hostile civ musters what it needs first; the strategist is told the figure
+  (`soldiers_needed_to_declare_war`, `max_soldiers`). Expeditions against the
+  native faction are not declarations and are unaffected.
+- **Allied trade.** Allies open deals without a fee, and on a deal between
+  allies 15% more arrives than was sent.
+- **Nobody misses a decision.** Each civ's strategist call runs on its own
+  thread. If a civ's next check-in falls due while its last is unanswered, the
+  server holds the clock for everyone until it answers; the viewer shows who
+  it is waiting for. With a slow model and a fast clock the game advances
+  about one check-in interval per answer.
+- **Army counts.** Unit counts are whole numbers that add up exactly to the
+  army's size. The civ card lists each army with its own breakdown, and an
+  army shows its breakdown on the map whether or not it has a commander.
+
+## Horses, stables and ships
+
+- **Stables** (Animal Husbandry; 90 wood, 30 stone, 20 days; upkeep 0.15 food
+  and 0.05 water a day; a civ builds at most 2). Each working stable breeds one
+  horse every 10 days and keeps up to 8, counting those out under riders.
+- **Every horse eats and drinks twice what a person does** (0.16 food and 0.06
+  water a day), whether it is in the stables or under a rider.
+- **Cavalry need a horse each.** A cavalry recruit takes one from the stables;
+  with none to be had, the recruit serves on foot as another unit type.
+  Cavalry stood down return their horses; cavalry lost in battle do not.
+- **Mounted villagers.** At peace, spare horses go to villagers, up to half of
+  them. A mounted villager at work on the land adds the output of three more
+  workers of whatever it is gathering. While the civ is at war or threatened
+  no more villagers mount, so the army has first call on the herd. A mounted
+  villager on a captured tile loses the horse and carries on as a plain
+  villager: villagers are never killed.
+- **Ships.** Whether an army can cross open water is still the Navigation
+  tech's business (6 tiles, one more per Harbour), sea and lakes alike. An
+  army that steps onto open water within 3 tiles of one of its civ's own
+  working Harbours is drawn as a ship until it lands; one that sets out from
+  anywhere else crosses just the same but is drawn as before.
+
+## Villages and building slots
+
+- **Slots.** A tile holds up to 3 buildings, capitals included, and never two
+  of the same type. Everything else still works on whole tiles: capturing a
+  tile takes every building on it, and movement, pathfinding and water access
+  are unchanged. Each building has its own id, and one villager builds one
+  building even where several go up on the same tile.
+- **Filling before spreading.** When choosing a site a civ prefers tiles that
+  are already built on, or a capital's tile, to breaking new ground; buildings
+  placed by yield weigh that against the yield of the tile.
+- **Villages.** Every capital a civ holds is the centre of its own town. A
+  building joins the nearest village or town of its civ within 4 tiles that
+  still has room (a town holds 60 buildings, a village 40); if there is none
+  it founds a new village on its own tile, named from a fixed list. A village belongs to whoever holds its centre tile, so it is taken
+  whole when that tile is captured; buildings left on either side rejoin the
+  nearest village of the civ that now has them (or found a new one). A
+  village with no buildings left disappears; a capital's town does not.
+
 ## Protocol
 
 JSON text frames, each an envelope `{"type", "version", "tick", "data"}`.
@@ -343,7 +456,7 @@ JSON text frames, each an envelope `{"type", "version", "tick", "data"}`.
 | Direction | Type | Content |
 |---|---|---|
 | sim -> viewer | `init` | Once on connect: map (heights, biomes, deposits, rivers, region id per tile), regions (name, capital), the native faction, biome/building/unit/tech definitions, civ names and colours |
-| sim -> viewer | `tick` | After every tick: full state of every civ (including army, stances and the strategist's reason), every army (position, unit counts, commander) and villager on the map, who holds each region, the territory grid (base64, one byte per tile: owner id, 255 = unowned), relations, deals, pause/speed status, events of that tick. No deltas |
+| sim -> viewer | `tick` | After every tick: full state of every civ (including its buildings, each with an id and its village, its villages, army, stances and the strategist's reason), every army (position, unit counts, commander) and villager on the map, who holds each region, the territory grid (base64, one byte per tile: owner id, 255 = unowned), relations, deals, pause/speed status, events of that tick. No deltas |
 | sim -> viewer | `status` | When pause or speed changes |
 | sim -> viewer | `error` | Reply to a bad command |
 | viewer -> sim | `command` | `data.action`: `pause`, `resume`, `toggle_pause`, `step`, `set_speed` (with `data.value` in ticks/s, clamped to 0.25-60) |

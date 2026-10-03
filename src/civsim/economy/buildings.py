@@ -6,6 +6,9 @@ from ..map import BIOME_INFO, WorldMap
 from .villagers import builders_on_site
 
 COST_GROWTH_PER_COPY = 0.2
+TILE_SLOTS = 3  # buildings a tile can hold, capitals included; never two of the same type
+FILL_FIRST = 1000.0  # a tile already built on (or a capital) is preferred to breaking new ground
+FILL_FIRST_YIELD = 1.0  # ... for buildings placed by yield, worth half a point of yield
 
 
 @dataclass(frozen=True)
@@ -40,13 +43,21 @@ def load_building_defs() -> dict[str, BuildingDef]:
 
 
 def find_site(civ, world: WorldMap, bdef: BuildingDef) -> int | None:
-    """Best free buildable tile in the civ's territory for this building, or None."""
-    occupied = civ.occupied()
+    """Best buildable tile in the civ's territory with room for this building, or None.
+
+    A tile holds up to TILE_SLOTS buildings, no two of the same type. Tiles already
+    built on are filled before new ones are started, so buildings gather into villages.
+    """
+    on_tile = civ.buildings_by_tile()
+    settled = set(on_tile) | {s.tile for s in civ.settlements}
     cx, cy = world.xy(civ.capital.tile)
     resource = bdef.placement.partition(":")[2]
     best, best_score = None, -math.inf
     for tile in sorted(civ.territory):
-        if tile in occupied or not BIOME_INFO[world.biomes[tile]].buildable:
+        there = on_tile.get(tile, ())
+        if len(there) >= TILE_SLOTS or any(b.type == bdef.id for b in there):
+            continue
+        if not BIOME_INFO[world.biomes[tile]].buildable:
             continue
         x, y = world.xy(tile)
         distance = math.hypot(x - cx, y - cy)
@@ -56,16 +67,16 @@ def find_site(civ, world: WorldMap, bdef: BuildingDef) -> int | None:
             tile_yield = world.yields[tile].get(resource, 0)
             if tile_yield <= 0:
                 continue
-            score = 2 * tile_yield - 0.15 * distance
+            score = 2 * tile_yield - 0.15 * distance + (FILL_FIRST_YIELD if tile in settled else 0.0)
         else:
-            score = -distance
+            score = -distance + (FILL_FIRST if tile in settled else 0.0)
         if score > best_score:
             best, best_score = tile, score
     return best
 
 
 def demolish(civ, building, mods, building_defs, events: list) -> None:
-    """Tear down one of the civ's own buildings, freeing its tile and recovering some materials.
+    """Tear down one of the civ's own buildings, freeing its slot and recovering some materials.
 
     The refund is a share of the base cost: mods.demolition_refund, which techs raise.
     """
@@ -83,7 +94,7 @@ def advance_construction(civ, mods, building_defs, events: list) -> None:
     staffed = builders_on_site(civ)
     active = [b for b in civ.buildings if not b.complete][: mods.build_slots]
     for building in active:
-        if building.tile not in staffed:
+        if building.id not in staffed:
             continue
         bdef = building_defs[building.type]
         building.progress += (1 + mods.build_speed) / bdef.build_time

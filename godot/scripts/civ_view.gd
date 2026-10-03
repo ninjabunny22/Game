@@ -5,6 +5,13 @@ extends Node3D
 ## two building types share a model, a small pennant in the type's colour tells them
 ## apart, and models with nothing to paint fly their owner's flag instead. Arcs between capitals show
 ## what holds between two civs: a trade deal (green), an alliance (blue), a war (red).
+##
+## A tile holds up to three buildings, and buildings belong to named villages. The map
+## shows them two ways, switching with the camera like villagers and labels do:
+##   - from afar, each village is one consolidated cluster (bigger as it grows), and a
+##     capital's town is a ring of houses around its castle or tower;
+##   - closer in, every building is drawn on its own, sharing its tile with the others
+##     there, and each village is named.
 
 const BUILDING_WIDTH := 0.62  # of the plain block used if a model is missing
 const PLINTH_HEIGHT := 0.12
@@ -33,14 +40,41 @@ const BUILDING_MODELS := {
 	"workshop": {"model": "building_blacksmith_green", "size": 0.9, "tinted": true},
 	"factory": {"model": "building_blacksmith_green", "size": 0.98, "tinted": true, "marker": true},
 	"aqueduct": {"model": "building_bridge_A", "size": 0.95, "lift": 0.45},
-	"harbour": {"model": "building_watermill_green", "size": 0.9, "tinted": true},
+	# A quay with a warehouse and a ship alongside; it is turned so the quay is on the water.
+	"harbour": {"scene": "Harbour", "size": 3.6, "full_size": true, "faces_water": true,
+		"model": "building_watermill_green", "tinted": true},
 	"barracks": {"model": "building_barracks_green", "size": 0.95, "tinted": true},
 	"academy": {"model": "building_archeryrange_green", "size": 0.95, "tinted": true},
 	"walls": {"model": "wall_straight", "size": 0.98},
 	"fortress": {"model": "building_tower_B_green", "size": 0.9, "tinted": true},
+	# Its own model, from assets/characters: a long building that has to read beside a commander,
+	# so it is drawn larger than its tile and keeps its size when it shares the tile.
+	"stables": {"scene": "Stable", "size": 2.0, "full_size": true},
 }
 const CAPITAL_MODEL := "building_castle_green"  # a civ's own capital
 const TOWN_MODEL := "building_tower_A_green"  # every other region capital
+const CAPITAL_FOOTPRINT := 1.7
+const TOWN_FOOTPRINT := 1.05
+
+## How buildings sharing a tile are laid out: [scale, distance from the tile's centre].
+const TILE_LAYOUT := {1: [1.0, 0.0], 2: [0.58, 0.25], 3: [0.52, 0.28]}
+const WATER_SIDE := 0.0  # turn that brings the harbour model's quay round to face the water
+const SHARED_SCALE := 0.5  # buildings on a capital's tile stand around it, this size
+
+## A village seen from afar, by how many buildings it has: [at least, tiles across, models].
+const VILLAGE_TIERS := [
+	[20, 3.0, ["building_church_green", "building_market_green", "building_home_A_green", "building_home_B_green",
+		"building_home_A_green", "building_windmill_green", "building_home_B_green"]],
+	[6, 2.2, ["building_windmill_green", "building_home_A_green", "building_home_B_green", "building_home_A_green"]],
+	[0, 1.5, ["building_home_A_green", "building_home_B_green"]],
+]
+## The town around a capital, from afar: houses ringing the castle or tower. [at least, houses, landmarks]
+const CAPITAL_TIERS := [
+	[45, 9, ["building_church_green", "building_market_green", "building_windmill_green"]],
+	[20, 6, ["building_church_green"]],
+	[5, 4, []],
+	[0, 0, []],
+]
 const LINK_COLORS := {"deal": Color(0.35, 0.9, 0.4), "alliance": Color(0.35, 0.65, 1.0), "war": Color(1.0, 0.25, 0.2),
 	"neutral": Color(0.75, 0.75, 0.78, 0.45)}
 const LINK_WIDTH := 0.45
@@ -49,10 +83,11 @@ const LINK_SEGMENTS := 24
 var _terrain: Node3D
 var _building_defs := {}
 var _civ_colors: Array = []
-var _nodes := {}  # "civ:x:y" -> Node3D
+var _nodes := {}  # key -> Node3D: capitals, buildings ("b:...") and villages ("v:...")
 var _body_meshes := {}  # building type -> BoxMesh
 var _plinth_meshes := {}  # civ id -> BoxMesh
 var _models: RefCounted  # models.gd
+var _characters: RefCounted  # characters.gd
 var _regions := {}  # region id -> static info from init
 var _native_color := Color(0.6, 0.55, 0.48)
 var _native_name := ""
@@ -62,8 +97,9 @@ var _detail := 0  # 0 whole-map view, 1 closer, 2 full detail
 var _link_material: StandardMaterial3D
 
 
-func setup(terrain: Node3D, init: Dictionary, civ_colors: Array, models: RefCounted) -> void:
+func setup(terrain: Node3D, init: Dictionary, civ_colors: Array, models: RefCounted, characters: RefCounted) -> void:
 	_models = models
+	_characters = characters
 	for child in get_children():
 		child.queue_free()
 	_nodes.clear()
@@ -118,13 +154,44 @@ func update(civs: Array, regions: Array) -> void:
 			if not _nodes.has(key):
 				var caption := ("★ " if is_main else "") + str(settlement["name"])
 				_nodes[key] = _make_capital(_civ_colors[civ_id], caption, int(settlement["x"]), int(settlement["y"]), is_main)
+		var capital_tiles := {}  # "x:y" -> footprint of the capital standing there
+		index = 0
+		for settlement: Dictionary in civ["settlements"]:
+			capital_tiles["%d:%d" % [int(settlement["x"]), int(settlement["y"])]] = CAPITAL_FOOTPRINT if index == 0 else TOWN_FOOTPRINT
+			index += 1
+		# Buildings share tiles: work out who stands where before drawing any of them.
+		var on_tile := {}
 		for building: Dictionary in civ["buildings"]:
-			var key := "%d:%d:%d" % [civ_id, int(building["x"]), int(building["y"])]
+			var tile := "%d:%d" % [int(building["x"]), int(building["y"])]
+			if not on_tile.has(tile):
+				on_tile[tile] = []
+			on_tile[tile].append(building)
+		for tile: String in on_tile:
+			var there: Array = on_tile[tile]
+			there.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a["id"]) < int(b["id"]))
+			var around: float = capital_tiles.get(tile, 0.0)
+			for slot in there.size():
+				var building: Dictionary = there[slot]
+				# The key holds everything the node's look depends on, so a change rebuilds it.
+				var key := "b:%d:%d:%d:%d:%.2f" % [civ_id, int(building["id"]), slot, there.size(), around]
+				seen[key] = true
+				if not _nodes.has(key):
+					_nodes[key] = _make_building(civ_id, building, slot, there.size(), around)
+				var node: Node3D = _nodes[key]
+				var size: float = node.get_meta("size")
+				var grown: float = 1.0 if building["complete"] else lerpf(0.15, 1.0, float(building["progress"]))
+				node.scale = Vector3(size, size * grown, size)
+		for village: Dictionary in civ["villages"]:
+			var count := int(village["buildings"])
+			var tiers: Array = CAPITAL_TIERS if village["capital"] else VILLAGE_TIERS
+			var tier := 0
+			while count < int(tiers[tier][0]):
+				tier += 1
+			var key := "v:%d:%d:%d" % [civ_id, int(village["id"]), tier]
 			seen[key] = true
 			if not _nodes.has(key):
-				_nodes[key] = _make_building(civ_id, building)
-			var node: Node3D = _nodes[key]
-			node.scale.y = 1.0 if building["complete"] else lerpf(0.15, 1.0, float(building["progress"]))
+				var footprint: float = capital_tiles.get("%d:%d" % [int(village["x"]), int(village["y"])], TOWN_FOOTPRINT)
+				_nodes[key] = _make_village(civ_id, village, tier, footprint)
 	for key: String in _nodes.keys():
 		if not seen.has(key):
 			_nodes[key].queue_free()
@@ -138,6 +205,7 @@ func set_detail(detail: int) -> void:
 	_detail = detail
 	for node: Node3D in _nodes.values():
 		_show_capital_label(node)
+		_show_settled(node)
 	for label: Label3D in _link_labels.values():
 		_show_link_label(label)
 
@@ -149,6 +217,19 @@ func _show_capital_label(node: Node3D) -> void:
 	var is_main: bool = node.get_meta("main")
 	label.visible = is_main or _detail >= 1
 	label.pixel_size = 0.042 if _detail == 0 else 0.02
+
+
+## Buildings one by one up close; whole villages from afar.
+func _show_settled(node: Node3D) -> void:
+	match node.get_meta("kind", ""):
+		"building":
+			node.visible = _detail >= 1
+		"village":
+			node.get_meta("cluster").visible = _detail == 0
+			if node.has_meta("name_label"):
+				var name_label: Label3D = node.get_meta("name_label")
+				name_label.visible = _detail >= 1
+				name_label.pixel_size = 0.014 if _detail == 1 else 0.009
 
 
 func _show_link_label(label: Label3D) -> void:
@@ -231,18 +312,48 @@ func _name_link(key: String, text: String, at: Vector3, color: Color) -> void:
 	_show_link_label(node)
 
 
-func _make_building(civ_id: int, building: Dictionary) -> Node3D:
+## `slot` of `count` buildings on the tile; `around` is the footprint of the capital
+## standing on that tile (0 for an ordinary tile), which the buildings then stand around.
+func _make_building(civ_id: int, building: Dictionary, slot: int, count: int, around: float) -> Node3D:
 	var type: String = building["type"]
 	var x := int(building["x"])
 	var y := int(building["y"])
 	var root := Node3D.new()
-	root.position = _terrain.tile_position(x, y)
+	var layout: Array = TILE_LAYOUT[clampi(count, 1, 3)]
+	var size: float = layout[0]
+	var out: float = layout[1]
+	if around > 0.0:
+		size = SHARED_SCALE
+		out = around * 0.5 + 0.22
+	# Spread the tile's buildings evenly round its centre, starting somewhere different on each tile.
+	var angle := TAU * slot / maxi(count, 3 if around > 0.0 else count) + (x * 5 + y * 3) % 6 * PI / 3
+	var spot: Vector3 = _terrain.tile_position(x, y) + Vector3(cos(angle), 0, sin(angle)) * out
+	if out > 0.0:
+		spot.y = _terrain.height_at(spot.x, spot.z)
+	root.position = spot
+	if BUILDING_MODELS.get(type, {}).get("full_size", false):
+		size = 1.0
+	root.set_meta("kind", "building")
+	root.set_meta("size", size)
+	root.visible = _detail >= 1
 	var color: Color = _civ_colors[civ_id]
 	var spec: Dictionary = BUILDING_MODELS.get(type, {})
 	var model: Node3D = null
-	if not spec.is_empty():
+	if spec.has("scene"):
+		model = _characters.instance(spec["scene"], color, 0.0, float(spec["size"]))
+		if model != null:
+			model.rotation.y = (x * 7 + y * 13 + slot) % 4 * PI / 2
+			if spec.get("faces_water", false):
+				model.rotation.y = _toward_water(x, y) + WATER_SIDE
+				root.position = _terrain.tile_position(x, y)  # on the shore itself, not pushed to a corner
+			root.add_child(model)
+			add_child(root)
+			return root
+		spec = spec.duplicate()
+		spec["size"] = 0.9  # the model file is missing: fall back to the pack's building
+	if not spec.is_empty() and spec.has("model") and model == null:
 		var name: String = spec["model"]
-		if spec.has("alt") and (x + y) % 2 == 1:
+		if spec.has("alt") and (x + y + slot) % 2 == 1:
 			name = spec["alt"]  # two looks for the commonest building, so a town is not all one house
 		var material: Material = _models.tinted_material(color) if spec.get("tinted", false) else _models.base_material()
 		model = _models.instance(name, material, float(spec["size"]))
@@ -250,7 +361,7 @@ func _make_building(civ_id: int, building: Dictionary) -> Node3D:
 		_add_block(root, civ_id, type)
 	else:
 		# Face one of four ways, the same way every time for a given tile.
-		model.rotation.y = (x * 7 + y * 13) % 4 * PI / 2
+		model.rotation.y = (x * 7 + y * 13 + slot) % 4 * PI / 2
 		model.position.y = float(spec.get("lift", 0.0))
 		root.add_child(model)
 		var top: float = _models.height(spec["model"], float(spec["size"])) + float(spec.get("lift", 0.0))
@@ -260,6 +371,80 @@ func _make_building(civ_id: int, building: Dictionary) -> Node3D:
 			_add_marker(root, Color.html(_building_defs[type]["color"]), top)
 	add_child(root)
 	return root
+
+
+## A village as one cluster of models, for the whole-map view, with its name for closer in.
+## A capital's town has no name of its own (the capital is already labelled) and its
+## houses ring the castle or tower instead of standing at the centre.
+func _make_village(civ_id: int, village: Dictionary, tier: int, footprint: float) -> Node3D:
+	var x := int(village["x"])
+	var y := int(village["y"])
+	var color: Color = _civ_colors[civ_id]
+	var material: Material = _models.tinted_material(color)
+	var root := Node3D.new()
+	root.position = _terrain.tile_position(x, y)
+	root.set_meta("kind", "village")
+	var cluster := Node3D.new()
+	root.add_child(cluster)
+	root.set_meta("cluster", cluster)
+	var start := (x * 5 + y * 3) % 6 * PI / 3
+	var name_label: Label3D = null
+	if village["capital"]:
+		var spec: Array = CAPITAL_TIERS[tier]
+		var houses := int(spec[1])
+		var landmarks: Array = spec[2]
+		var ring := footprint * 0.5 + 0.75
+		for i in houses + landmarks.size():
+			var model_name: String = landmarks[i - houses] if i >= houses else ("building_home_A_green" if i % 2 == 0 else "building_home_B_green")
+			_place(cluster, model_name, material, 1.25 if i >= houses else 0.95, start + TAU * i / (houses + landmarks.size()), ring)
+	else:
+		var spec: Array = VILLAGE_TIERS[tier]
+		var across: float = spec[1]
+		var models: Array = spec[2]
+		# The first model is the landmark at the centre; the rest stand round it.
+		_place(cluster, models[0], material, across * 0.5, start, 0.0)
+		for i in range(1, models.size()):
+			_place(cluster, models[i], material, across * 0.36, start + TAU * i / (models.size() - 1), across * 0.42)
+		name_label = Label3D.new()
+		name_label.text = str(village["name"])
+		name_label.font_size = 40
+		name_label.outline_size = 12
+		name_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		name_label.no_depth_test = true
+		name_label.modulate = color.lightened(0.6)
+		name_label.position.y = 1.5
+		root.add_child(name_label)
+	if name_label != null:
+		root.set_meta("name_label", name_label)
+	_show_settled(root)
+	add_child(root)
+	return root
+
+
+func _place(parent: Node3D, model_name: String, material: Material, footprint: float, angle: float, out: float) -> void:
+	var model: Node3D = _models.instance(model_name, material, footprint)
+	if model == null:
+		return
+	var offset := Vector3(cos(angle), 0, sin(angle)) * out
+	var origin: Vector3 = parent.get_parent().position
+	model.position = offset
+	model.position.y = _terrain.height_at(origin.x + offset.x, origin.z + offset.z) - origin.y
+	model.rotation.y = -angle + PI / 2
+	parent.add_child(model)
+
+
+## The direction (as a rotation about the vertical) from a tile to the lowest ground beside it,
+## which for a shore tile is the water.
+func _toward_water(x: int, y: int) -> float:
+	var best := Vector2.RIGHT
+	var lowest := INF
+	for step: Vector2 in [Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1)]:
+		var there: Vector3 = _terrain.tile_position(x, y) + Vector3(step.x, 0, step.y)
+		var ground: float = _terrain.height_at(there.x, there.z)
+		if ground < lowest:
+			lowest = ground
+			best = step
+	return atan2(best.x, best.y)
 
 
 ## Nothing on the model shows whose it is: plant the owner's flag at the corner of the tile.
@@ -320,7 +505,7 @@ func _make_capital(color: Color, caption: String, x: int, y: int, is_main: bool)
 	var root := Node3D.new()
 	root.position = _terrain.tile_position(x, y)
 	var model_name := CAPITAL_MODEL if is_main else TOWN_MODEL
-	var footprint := 1.7 if is_main else 1.05
+	var footprint := CAPITAL_FOOTPRINT if is_main else TOWN_FOOTPRINT
 	var model: Node3D = _models.instance(model_name, _models.tinted_material(color), footprint)
 	var top := 3.0
 	if model != null:

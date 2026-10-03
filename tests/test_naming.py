@@ -10,6 +10,8 @@ from civsim.diplomacy import Intent, Stance
 from civsim.diplomacy.naming import alliance_name, war_name
 from civsim.simulation import Simulation
 
+pytestmark = pytest.mark.usefixtures("no_war_minimum")  # these tests are about other rules
+
 
 @pytest.fixture
 def sim() -> Simulation:

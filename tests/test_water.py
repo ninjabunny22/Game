@@ -70,6 +70,54 @@ def test_rivers_run_over_land_from_high_ground_to_water(seed):
     assert mouths, "rivers reach the sea or a lake"
 
 
+@pytest.mark.parametrize("seed", [1, 2, 3, 5, 7, 11, 42])
+def test_every_river_is_one_clean_course_to_water(seed):
+    world = generate_map(seed)
+    assert set(world.river_flow) == set(world.rivers), "every river tile says where its water goes"
+    for tile, into in world.river_flow.items():
+        assert into in set(world.neighbors(tile)), "to a tile right beside it"
+        assert world.is_water(into) or into in world.rivers
+    # Following the flow from anywhere reaches the sea or a lake, without ever looping.
+    for start in world.rivers:
+        seen = set()
+        tile = start
+        while tile in world.rivers:
+            assert tile not in seen, "a river never runs in a circle"
+            seen.add(tile)
+            tile = world.river_flow[tile]
+        assert world.is_water(tile)
+    # Width never shrinks on the way down.
+    for tile, into in world.river_flow.items():
+        if into in world.rivers:
+            assert world.rivers[into] >= world.rivers[tile]
+
+
+@pytest.mark.parametrize("seed", [1, 2, 3, 5, 7, 11, 42])
+def test_a_river_does_not_coil_back_against_itself(seed):
+    """The knot seen in the viewer: a river touching its own earlier course."""
+    world = generate_map(seed)
+    upstream: dict[int, list[int]] = {}
+    for tile, into in world.river_flow.items():
+        upstream.setdefault(into, []).append(tile)
+    touching = 0
+    for tile in world.rivers:
+        linked = set(upstream.get(tile, [])) | {world.river_flow[tile]}
+        # River tiles right beside this one that are neither upstream nor downstream of it.
+        strangers = [n for n in world.neighbors(tile) if n in world.rivers and n not in linked]
+        touching += len(strangers)
+    assert touching <= 0.06 * len(world.rivers), "rivers rarely even brush past each other"
+
+
+def test_the_viewer_is_told_the_flow(sim):
+    import json
+    from civsim.bridge import protocol
+    rivers = json.loads(protocol.init_message(sim))["data"]["map"]["rivers"]
+    assert len(rivers) == len(sim.world.rivers)
+    for river in rivers:
+        tile = sim.world.idx(river["x"], river["y"])
+        assert sim.world.idx(*river["to"]) == sim.world.river_flow[tile]
+
+
 def test_water_features_follow_the_seed():
     a, b, c = generate_map(11), generate_map(11), generate_map(12)
     assert a.rivers == b.rivers and a.biomes == b.biomes

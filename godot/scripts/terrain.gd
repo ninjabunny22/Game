@@ -260,18 +260,28 @@ func _commit(colors: PackedColorArray) -> void:
 	_land.mesh = mesh
 
 
-## Rivers as ribbons lying on the terrain. Within each river tile the water curves from
-## one neighbouring river tile (or the water it empties into) to the next, so a river
-## bends rather than turning at right angles. Wider rivers get wider ribbons, and the
-## shader makes the surface run.
+## Rivers as ribbons lying on the terrain, drawn along the way the water actually
+## flows: each river tile is joined to the one tile it drains into and to the tiles
+## that drain into it, and to nothing else. So a river is a single clean course even
+## where it passes close to another, and a tributary meets the main river at one point
+## instead of tangling with it. Wider rivers get wider ribbons, and the shader makes
+## the surface run.
 func _add_rivers(map: Dictionary, biomes: Array) -> void:
 	var water_biomes := {}
 	for biome: Dictionary in biomes:
 		if biome["water"]:
 			water_biomes[int(biome["id"])] = true
 	var sizes := {}
+	var downstream := {}  # river tile -> the tile its water flows into
+	var upstream := {}  # river tile -> the river tiles that flow into it
 	for river: Dictionary in map.get("rivers", []):
-		sizes[int(river["y"]) * map_width + int(river["x"])] = float(river["size"])
+		var tile := int(river["y"]) * map_width + int(river["x"])
+		var into := int(river["to"][1]) * map_width + int(river["to"][0])
+		sizes[tile] = float(river["size"])
+		downstream[tile] = into
+		if not upstream.has(into):
+			upstream[into] = []
+		upstream[into].append(tile)
 	if sizes.is_empty():
 		return
 
@@ -279,28 +289,20 @@ func _add_rivers(map: Dictionary, biomes: Array) -> void:
 	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var lift := Vector3(0, 0.14, 0)
 	for tile: int in sizes:
-		var x := tile % map_width
-		var y := tile / map_width
-		var here: Vector3 = tile_position(x, y) + lift
-		# Where the river leaves this tile: the middle of each edge shared with more river or with open water.
-		var exits: Array[Vector3] = []
-		for offset: Vector2i in [Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(0, -1)]:
-			var nx := x + offset.x
-			var ny := y + offset.y
-			if nx < 0 or ny < 0 or nx >= map_width or ny >= map_height:
-				continue
-			var other := ny * map_width + nx
-			var into_water: bool = water_biomes.has(int(map["biomes"][other]))
-			if not into_water and not sizes.has(other):
-				continue
-			var there: Vector3 = tile_position(nx, ny) + lift
-			# A mouth runs a little way out into the water rather than stopping at the bank.
-			exits.append(here.lerp(there, 0.8 if into_water else 0.5))
+		var here: Vector3 = tile_position(tile % map_width, tile / map_width) + lift
+		var into: int = downstream[tile]
+		var there: Vector3 = tile_position(into % map_width, into / map_width) + lift
+		# A mouth runs a little way out into the water rather than stopping at the bank.
+		var into_water: bool = water_biomes.has(int(map["biomes"][into]))
+		var exit := here.lerp(there, 0.8 if into_water else 0.5)
 		var width: float = 0.11 + 0.07 * float(sizes[tile])
-		if exits.size() == 1:
-			_river_ribbon(surface, here, here.lerp(exits[0], 0.5), exits[0], width)  # a spring
-		for k in range(1, exits.size()):
-			_river_ribbon(surface, exits[0], here, exits[k], width)
+		var feeders: Array = upstream.get(tile, [])
+		if feeders.is_empty():
+			_river_ribbon(surface, here, here.lerp(exit, 0.5), exit, width)  # a spring
+		for feeder: int in feeders:
+			var from: Vector3 = tile_position(feeder % map_width, feeder / map_width) + lift
+			# Each feeder arrives at its own width and leaves at this tile's.
+			_river_ribbon(surface, here.lerp(from, 0.5), here, exit, width)
 
 	var material := ShaderMaterial.new()
 	var shader := Shader.new()

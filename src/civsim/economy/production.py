@@ -3,6 +3,9 @@ from ..military.units import upkeep_per_soldier
 from .modifiers import Modifiers
 from .rules import (
     DESERTION_RATE,
+    HORSE_FOOD,
+    HORSE_WATER,
+    MOUNTED_WORKERS,
     CONSUMPTION_PER_TECH,
     FOOD_PER_POP,
     GROWTH_RATE,
@@ -22,6 +25,7 @@ from .rules import (
     TAX_PER_POP,
     WOOD_PER_POP,
     WORK_RATE,
+    WOUND_RECOVERY,
 )
 
 
@@ -42,8 +46,9 @@ def recompute_capacity(civ, world: WorldMap) -> None:
 
 
 def food_need(civ) -> float:
-    """Food eaten per tick. More advanced societies eat more per head; soldiers eat extra."""
-    return civ.population * FOOD_PER_POP * _living_standard(civ) + civ.soldiers * SOLDIER_FOOD
+    """Food eaten per tick. More advanced societies eat more per head; soldiers eat extra, and so do horses."""
+    return (civ.population * FOOD_PER_POP * _living_standard(civ) + civ.soldiers * SOLDIER_FOOD
+            + civ.herd * HORSE_FOOD)
 
 
 def _living_standard(civ) -> float:
@@ -82,8 +87,13 @@ def water_urgency(civ, mods: Modifiers) -> float:
 def produce(civ, mods: Modifiers, building_defs) -> None:
     """Gather with the current worker allocation, pay upkeep, then feed and grow the population."""
     before = dict(civ.resources)
+    # A mounted villager at work on the land does the work of several.
+    riders = dict.fromkeys(RESOURCES, 0)
+    for villager in civ.villagers:
+        if villager.mounted and villager.task == "gather" and villager.tile == villager.target and villager.gathers:
+            riders[villager.gathers] += 1
     for res in RESOURCES:
-        workers = min(civ.workers[res], civ.capacity[res])
+        workers = min(civ.workers[res], civ.capacity[res]) + MOUNTED_WORKERS * riders[res]
         output = WORK_RATE * workers * (1 + mods.yield_mult[res]) + mods.income[res]
         if res == "gold":
             output += TAX_PER_POP * civ.population
@@ -112,7 +122,7 @@ def produce(civ, mods: Modifiers, building_defs) -> None:
     _maintain_army(civ, upkeep)
 
     # Thirst: the population shrinks slowly, in proportion to how much water is missing.
-    thirst = WATER_PER_POP * civ.population * max(0.2, 1 + mods.water_use)
+    thirst = WATER_PER_POP * civ.population * max(0.2, 1 + mods.water_use) + civ.herd * HORSE_WATER
     available = civ.resources["water"]
     civ.thirsty = not _charge(civ, upkeep, "water", thirst)
     if civ.thirsty:
@@ -139,9 +149,14 @@ def produce(civ, mods: Modifiers, building_defs) -> None:
 
 def _maintain_army(civ, upkeep: dict[str, float]) -> None:
     """Recruit or demobilise toward the standing order, then pay and equip the soldiers."""
-    target = min(civ.soldier_target, max(0.0, civ.population - MIN_POPULATION))
+    # The wounded mend slowly; until they do they can be neither soldiers nor workers.
+    civ.wounded = max(0.0, civ.wounded - max(0.05, WOUND_RECOVERY * civ.wounded))
+    target = min(civ.soldier_target, max(0.0, civ.population - MIN_POPULATION - civ.wounded))
     step = RECRUIT_RATE * civ.population + 0.2
-    civ.soldiers = max(0.0, civ.soldiers + max(-step, min(step, target - civ.soldiers)))
+    change = max(-step, min(step, target - civ.soldiers))
+    if civ.unpaid:
+        change = min(change, 0.0)  # nobody enlists in an army that is not being paid
+    civ.soldiers = max(0.0, civ.soldiers + change)
     # What the army costs depends on what it is made of: swordsmen need ore, archers wood, cavalry gold.
     factors = upkeep_per_soldier(civ.unit_counts())
     civ.unpaid = not _charge(civ, upkeep, "gold", civ.soldiers * SOLDIER_GOLD * factors["gold"])

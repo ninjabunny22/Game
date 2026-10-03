@@ -34,7 +34,7 @@ class SimServer:
         self._wake = asyncio.Event()  # a command changed pause/speed/steps
         self._pending_steps = 0
         self._thinking: set[asyncio.Task] = set()
-        self._one_at_a_time = asyncio.Semaphore(1)  # a local model answers one prompt at a time anyway
+        self._waiting: list[int] = []  # civs whose late answer the clock is being held for
 
     async def run(self) -> None:
         async with serve(self._handle_client, self.host, self.port) as server:
@@ -50,6 +50,16 @@ class SimServer:
         loop = asyncio.get_running_loop()
         next_tick = loop.time()
         while True:
+            # A civ must never miss a decision: if its next check-in is due and its last is still
+            # unanswered, hold the clock (for everyone, so nobody acts against a frozen opponent).
+            waiting = self.sim.waiting_for()
+            if waiting != self._waiting:
+                self._waiting = waiting
+                self._broadcast(protocol.status_message(self.sim, self.paused, self.speed))
+            if waiting:
+                await asyncio.sleep(0.05)
+                next_tick = loop.time()
+                continue
             if self.paused:
                 if self._pending_steps == 0:
                     await self._sleep(None)
@@ -86,8 +96,8 @@ class SimServer:
         """Ask the brain off the event loop; the sim applies the answer on its next tick."""
         reply = None
         try:
-            async with self._one_at_a_time:
-                reply = await asyncio.to_thread(self.brain.decide, request)
+            # Each civ's call runs on its own thread, independent of the others.
+            reply = await asyncio.to_thread(self.brain.decide, request)
         except Exception:
             log.exception("strategy brain failed on the check-in for civ %d", request.civ_id)
         finally:

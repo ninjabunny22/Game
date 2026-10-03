@@ -9,7 +9,8 @@ Server -> client
           state of every civ, the territory grid, armies and villagers on the
           map, relations between civs, and trade deals. No deltas; any tick message alone is enough
           to redraw.
-  status  sent when pause/speed changes (ticks stop while paused).
+  status  sent when pause/speed changes (ticks stop while paused), and when the clock starts
+          or stops waiting for a strategist's answer.
   error   reply to a malformed or unknown command.
 
 Client -> server
@@ -22,9 +23,10 @@ import json
 from ..economy.rules import RESOURCES
 from ..map import BIOME_INFO, DEPOSIT_TYPES, Biome, load_faction
 from ..military import UNIT_TYPES
+from ..military.warfare import ROSTER_CAP
 from ..simulation import Simulation
 
-PROTOCOL_VERSION = 6
+PROTOCOL_VERSION = 9
 COMMANDS = ("pause", "resume", "toggle_pause", "step", "set_speed")
 
 
@@ -69,9 +71,11 @@ def init_message(sim: Simulation) -> str:
             "biomes": [int(b) for b in world.biomes],
             # Region id per tile, row-major; -1 for open sea.
             "region_ids": world.region_of,
-            # Rivers run through land tiles; size is 1 (stream) to 3 (wide river).
+            # Rivers run through land tiles; size is 1 (stream) to 3 (wide river). "to" is the
+            # tile the water flows into next: more river, or the sea or lake at the mouth.
             "rivers": [
-                {"x": tile % world.width, "y": tile // world.width, "size": size}
+                {"x": tile % world.width, "y": tile // world.width, "size": size,
+                 "to": [world.river_flow[tile] % world.width, world.river_flow[tile] // world.width]}
                 for tile, size in sorted(world.rivers.items())
             ],
             "deposits": [
@@ -133,6 +137,7 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
             tech = tree.techs[civ.research.tech_id]
             progress = min(1.0, civ.research.progress / tech.science_cost)
             research = {"id": tech.id, "paid": civ.research.paid, "progress": round(progress, 3)}
+        posts = {s.tile: s.name for s in civ.settlements}
         civs.append({
             "id": civ.id,
             "alive": civ.alive,
@@ -148,10 +153,20 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
             "settlements": [
                 {"name": s.name, "x": s.tile % world.width, "y": s.tile // world.width} for s in civ.settlements
             ],
+            # A tile can hold several buildings, so each has its own id; "village" is the
+            # id of the village or town it belongs to.
             "buildings": [
-                {"type": b.type, "x": b.tile % world.width, "y": b.tile // world.width,
+                {"id": b.id, "type": b.type, "x": b.tile % world.width, "y": b.tile // world.width,
+                 "village": b.village,
                  "progress": round(b.progress, 2), "complete": b.complete, "active": b.active}
                 for b in civ.buildings
+            ],
+            # Villages and towns: named groups of buildings. "capital" marks the town around
+            # a region capital; "buildings" is how many belong to it.
+            "villages": [
+                {"id": v.id, "name": v.name, "x": v.tile % world.width, "y": v.tile // world.width,
+                 "capital": v.capital, "buildings": sim.villages.size(v.id)}
+                for v in sim.villages.of(civ.id)
             ],
             "goal": {"kind": civ.goal.kind, "target": civ.goal.target} if civ.goal else None,
             "era": era,
@@ -160,10 +175,21 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
             "research": research,
             "science_rate": round(civ.science_rate, 2),
             "demolition_refund": round(mods.demolition_refund, 2),
-            "soldiers": int(civ.soldiers),
-            "units": {unit_id: round(count) for unit_id, count in civ.unit_counts().items() if round(count) > 0},
-            "commanders_in_reserve": [{"name": c.name, "level": c.level} for c in civ.commanders],
+            # Totals over all the civ's armies; the armies themselves are listed under "armies".
+            "soldiers": round(civ.soldiers),
+            "units": whole(civ.unit_counts()),
+            # "post" is the capital a reserve commander is stationed at, which he helps defend.
+            "commanders_in_reserve": [{"name": c.name, "level": c.level, "post": posts.get(c.post)}
+                                      for c in civ.commanders],
+            "commanders": sim.military.roster(civ),
+            "commander_cap": ROSTER_CAP,
             "army_strength": round(diplomacy.strength(civ), 1),
+            "wounded": int(civ.wounded),
+            # Horses standing in the stables, and the whole herd including those under riders.
+            "horses": int(civ.horses),
+            "herd": int(civ.herd),
+            # Enemy commanders this civ holds prisoner.
+            "captives": [{"name": c.commander.name, "level": c.commander.level, "home": c.home} for c in civ.captives],
             "unpaid": civ.unpaid,
             "unsupplied": civ.unsupplied,
             "diplomacy_points": int(civ.diplomacy_points),
@@ -186,17 +212,25 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
             armies.append({
                 "id": army.id, "civ": civ.id, "x": army.tile % world.width, "y": army.tile // world.width,
                 "role": army.role, "state": army.state, "target_civ": army.target_civ,
-                # Whole soldiers per unit type; types rounding to zero are left out.
-                "units": {unit_id: round(count) for unit_id, count in army.units.items() if round(count) > 0},
+                # Whole soldiers per unit type, adding up exactly to "size".
+                "units": whole(army.units),
                 "size": round(army.size),
                 "dominant": army.dominant,
+                # afloat: on open water. boat: it put out from one of its civ's harbours, and is
+                # drawn as a ship until it lands.
+                "afloat": world.is_open_water(army.tile),
+                "boat": army.boat,
                 "strength": round(sim.military.army_strength(army), 1),
                 "commander": {"name": commander.name, "level": commander.level, "battles": commander.battles,
                               "wins": commander.wins} if commander else None,
             })
         for villager in civ.villagers:
             villagers.append({"id": villager.id, "civ": civ.id, "x": villager.tile % world.width,
-                              "y": villager.tile // world.width, "task": villager.task})
+                              "y": villager.tile // world.width, "task": villager.task,
+                              # What a gatherer is working, whether it has reached its place of work,
+                              # and whether it rides a horse from the stables.
+                              "gathers": villager.gathers, "at_work": villager.tile == villager.target,
+                              "mounted": villager.mounted})
     relations = []
     for (a, b), relation in diplomacy.relations.items():
         war = relation.war
@@ -217,7 +251,7 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
             } if war else None,
         })
     data = {
-        "status": {"paused": paused, "speed": speed},
+        "status": _status(sim, paused, speed),
         # Base64 of one byte per tile, row-major: owning civ id, 255 = unowned.
         "territory": world.encode_territory(),
         "territory_rev": world.territory_rev,
@@ -242,7 +276,22 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
 
 
 def status_message(sim: Simulation, paused: bool, speed: float) -> str:
-    return encode("status", sim.tick, {"paused": paused, "speed": speed})
+    return encode("status", sim.tick, _status(sim, paused, speed))
+
+
+def _status(sim: Simulation, paused: bool, speed: float) -> dict:
+    # waiting_for: civs whose strategist has not answered in time; the clock holds until it does.
+    return {"paused": paused, "speed": speed, "waiting_for": sim.waiting_for()}
+
+
+def whole(units: dict[str, float]) -> dict[str, int]:
+    """Soldiers per unit type as whole numbers that add up to the rounded total."""
+    total = round(sum(units.values()))
+    counts = {unit: int(count) for unit, count in units.items()}
+    by_fraction = sorted(units, key=lambda unit: (-(units[unit] - counts[unit]), unit))
+    for unit in by_fraction[: max(0, total - sum(counts.values()))]:
+        counts[unit] += 1
+    return {unit: count for unit, count in counts.items() if count > 0}
 
 
 def error_message(sim: Simulation, text: str) -> str:

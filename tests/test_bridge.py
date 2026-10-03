@@ -86,3 +86,35 @@ def test_server_pushes_state_and_obeys_commands():
             task.cancel()
 
     asyncio.run(scenario())
+
+
+def test_army_unit_counts_add_up_to_the_army_size():
+    from civsim.bridge.protocol import whole
+    assert whole({"spearman": 3.4, "archer": 3.4, "swordsman": 3.4}) == {"archer": 4, "spearman": 3, "swordsman": 3}
+    assert whole({"spearman": 0.4, "archer": 0.4, "swordsman": 0.4, "cavalry": 0.4}) == {"archer": 1, "cavalry": 1}
+    assert whole({"spearman": 12.0}) == {"spearman": 12}
+    for units in ({"a": 0.5, "b": 0.5}, {"a": 7.49, "b": 2.2, "c": 0.31}, {"a": 0.2}):
+        assert sum(whole(units).values()) == round(sum(units.values()))
+
+
+def test_the_clock_waits_for_a_strategist_who_has_not_answered():
+    from civsim.config import SimConfig
+    from civsim.simulation import Simulation
+    from civsim.strategy import CHECKIN_INTERVAL
+    sim = Simulation(SimConfig(seed=3))
+    held = []
+    while not held:  # run until someone has a check-in outstanding, and never answer it
+        sim.step()
+        held += sim.take_requests()
+    request = held[0]
+    assert sim.waiting_for() == [], "not yet: its next check-in is a whole interval away"
+    for _ in range(CHECKIN_INTERVAL - 1):
+        assert request.civ_id not in sim.waiting_for()
+        sim.step()
+        for other in sim.take_requests():  # everyone else answers at once
+            sim.submit(other, None)
+    assert sim.waiting_for() == [request.civ_id], "its next check-in is due and the last is unanswered"
+    sim.submit(request, None)
+    assert sim.waiting_for() == [], "answered: the clock may move again"
+    status = json.loads(protocol.status_message(sim, False, 1.0))["data"]
+    assert status == {"paused": False, "speed": 1.0, "waiting_for": []}

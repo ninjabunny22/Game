@@ -21,15 +21,23 @@ SCIENCE_PER_POP = 0.015
 SCIENCE_BANK_CAP = 500.0  # most science a civ can hold while it has nothing to spend it on
 
 # Army. Soldiers are part of the population but do not work.
-GARRISON = 0.02  # peacetime share of the population under arms
+GARRISON = 0.10  # peacetime share of the population under arms
 MAX_MOBILIZATION = 0.35
-RECRUIT_RATE = 0.01  # share of the population that can join or leave the army per tick
+RECRUIT_RATE = 0.02  # share of the population that can join or leave the army per tick
 SOLDIER_FOOD = 0.04  # on top of what they eat as population
 SOLDIER_GOLD = 0.02
 SOLDIER_ORE = 0.005
 UNPAID_QUALITY = 0.5
 UNSUPPLIED_QUALITY = 0.6
 DESERTION_RATE = 0.03  # of the army per tick while unpaid
+# Horses, bred at stables.
+HORSE_BREED_TICKS = 10  # ticks for one stable to raise one horse
+HERD_PER_STABLE = 8  # horses a stable can keep, counting those out under riders
+HORSE_FOOD = 0.16  # per horse per tick: twice what a person eats ...
+HORSE_WATER = 0.06  # ... and drinks
+MOUNTED_WORKERS = 3.0  # extra workers' worth of output from a mounted villager on the land he works
+MOUNTED_SHARE = 0.5  # at most this share of a civ's villagers ride
+WOUND_RECOVERY = 0.01  # share of the wounded who return to ordinary life each tick
 
 GROWTH_RATE = 0.01
 STARVE_RATE = 0.01

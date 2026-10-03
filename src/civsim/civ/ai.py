@@ -47,6 +47,7 @@ FALLOFF_POWER = 0.6  # ... but gently: rising costs and upkeep are what really l
 STORE_NEED = 0.4  # how much a completely full store makes the civ want more room for it
 UPKEEP_CAUTION = 0.2  # don't add upkeep in a resource that is below this share of storage and not growing
 TILES_PER_EXPANSION = 4  # claiming budget per expansion; a river tile without bridges uses more of it
+STABLES_NEED = 0.5  # how much a civ at peace wants stables, on the scale of the other needs
 NO_FOREST = 6  # wood work slots on the land (capitals aside) below which expansion stops costing wood
 WATER_MARGIN = 1.15  # look for more water once supply is below this multiple of consumption
 SEEK_RANGE = 35  # how far (in tiles) a civ will stretch its border to reach a missing resource
@@ -255,9 +256,9 @@ class CivAI:
 
     def _make_room(self, civ: Civilization, mods: Modifiers, wanted: BuildingDef, score: float, needs: dict,
                    tick: int, events: list) -> int | None:
-        """With no free tile left, clear the civ's least useful building if `wanted` is far better.
+        """With no room left, clear the civ's least useful building if `wanted` is far better.
 
-        Returns the freed tile, or None if nothing is worth giving up.
+        Returns the tile with the freed slot, or None if nothing is worth giving up.
         """
         if tick - civ.last_demolition < DEMOLITION_COOLDOWN:
             return None
@@ -272,9 +273,10 @@ class CivAI:
             return (self._building_score(civ, bdef, needs, civ.count(bdef.id) - 1),
                     -math.hypot(x - cx, y - cy), building.tile)
 
+        has_one = {b.tile for b in civ.buildings if b.type == wanted.id}  # no two of a type on a tile
         candidates = [
             b for b in civ.buildings
-            if b.complete and b.type != wanted.id
+            if b.complete and b.type != wanted.id and b.tile not in has_one
             and BIOME_INFO[world.biomes[b.tile]].buildable
             and (not resource or world.yields[b.tile].get(resource, 0) > 0)
         ]
@@ -292,6 +294,9 @@ class CivAI:
             return max(needs["store"][res] for res in bdef.stores)
         if bdef.need_resource:
             return needs["resource"][bdef.need_resource]
+        if bdef.id == "stables":
+            # Worth having in peace too: horses work the land as well as carrying cavalry.
+            return max(needs["military"], STABLES_NEED)
         return needs[bdef.category]
 
     def _feasible(self, civ: Civilization, cost: dict[str, float], mods: Modifiers) -> bool:

@@ -1,17 +1,24 @@
 extends Node3D
 ## Armies and villagers on the map.
 ##
-## An army with a commander is shown as the commander (cape and banner in the
-## civ's colour) with the count of each unit type written above. An army without
-## one is shown as a single figure of its dominant unit type. Unit types are told
-## apart by what they carry: spearmen a long spear, swordsmen a sword and shield,
-## archers a bow, cavalry ride a horse. Villagers are small and carry a tool.
+## An army with a commander is shown as the commander, an animated model in the
+## civ's colour that stands, walks or strikes according to what the army is doing,
+## with the count of each unit type written above. An army without one is shown as
+## a single plain figure of its dominant unit type (spear, sword and shield, bow,
+## or horse). An army that has put out from a harbour is shown as a ship until it
+## lands. Villagers are animated too: walking, hammering at a building, working the
+## land or drawing water; one with a horse from the stables is shown riding.
 ##
 ## How much is drawn follows the zoom. From afar a field army is a single marker
 ## in its civ's colour with its size, garrisons and villagers are left out, and
 ## nothing is captioned; the figures and the full captions appear closer in.
 
 const FIGURE_SCALE := 1.7
+const COMMANDER_HEIGHT := 2.1  # in tiles
+const VILLAGER_HEIGHT := 1.05
+const RIDER_HEIGHT := 1.55
+const BOAT_LENGTH := 2.2
+const AT_ARMS := ["fighting", "besieging"]  # army states shown as striking
 const MOVE_SPEED := 6.0  # how fast figures glide toward their tile, in tiles per second
 const SKIN := Color(0.87, 0.72, 0.58)
 const STEEL := Color(0.78, 0.8, 0.84)
@@ -24,9 +31,11 @@ var _armies := {}  # army id -> {"node", "label", "look", "target"}
 var _villagers := {}  # villager id -> {"node", "look", "target"}
 var _materials := {}
 var _detail := 0  # 0 whole-map view, 1 closer, 2 full detail
+var _characters: RefCounted  # characters.gd
 
 
-func setup(terrain: Node3D, init: Dictionary, civ_colors: Array) -> void:
+func setup(terrain: Node3D, init: Dictionary, civ_colors: Array, characters: RefCounted) -> void:
+	_characters = characters
 	for child in get_children():
 		child.queue_free()
 	_armies.clear()
@@ -53,8 +62,15 @@ func update(armies: Array, villagers: Array) -> void:
 			_armies[id] = _make_army(civ, army, look)
 		var entry: Dictionary = _armies[id]
 		entry["field"] = army["role"] == "field"
+		entry["state"] = str(army["state"])
+		entry["afloat"] = bool(army.get("boat", false))
+		if entry["afloat"] and not entry.has("boat"):
+			var boat: Node3D = _characters.instance("Boat", _civ_colors[civ], 0.0, BOAT_LENGTH)
+			if boat != null:
+				entry["node"].add_child(boat)
+				entry["boat"] = boat
 		entry["size"] = int(army["size"])
-		entry["caption"] = _army_caption(army) if commander != null else ""
+		entry["caption"] = _army_caption(army)
 		_show_army(entry)
 		_aim(entry, _spot(int(army["x"]), int(army["y"]), Vector3(0.25, 0, 0.25) if army["role"] == "garrison" else Vector3.ZERO))
 	_drop_missing(_armies, seen)
@@ -64,13 +80,15 @@ func update(armies: Array, villagers: Array) -> void:
 	for villager: Dictionary in villagers:
 		var id := int(villager["id"])
 		seen[id] = true
-		var look := "%d:%s" % [int(villager["civ"]), villager["task"]]
+		# Only what changes the model itself; what the villager is doing is shown by its animation.
+		var plain: bool = not _characters.has("Villager")
+		var look := "%d:%s:%s" % [int(villager["civ"]), villager["mounted"], villager["task"] if plain else ""]
 		if not _villagers.has(id) or _villagers[id]["look"] != look:
 			var at: Variant = null
 			if _villagers.has(id):
 				at = _villagers[id]["node"].position
 				_villagers[id]["node"].queue_free()
-			_villagers[id] = _make_villager(int(villager["civ"]), villager["task"], look)
+			_villagers[id] = _make_villager(int(villager["civ"]), villager["task"], look, bool(villager["mounted"]))
 			if at != null:  # same villager, new task: carry on from where it stands
 				_villagers[id]["node"].position = at
 				_villagers[id]["placed"] = true
@@ -80,6 +98,14 @@ func update(armies: Array, villagers: Array) -> void:
 		var fan := Vector3(-0.3 + 0.3 * (n % 3), 0, 0.3 - 0.3 * (n / 3 % 3))
 		_aim(_villagers[id], _spot(int(villager["x"]), int(villager["y"]), fan))
 		_villagers[id]["node"].visible = _detail >= 1
+		# What it does once it has stopped walking.
+		var doing := "idle"
+		if villager["at_work"] and villager["task"] == "build":
+			doing = "hammer"
+		elif villager["at_work"] and villager["task"] == "gather":
+			doing = "water" if villager["gathers"] == "water" else "pick"
+		_villagers[id]["doing"] = doing
+		_villagers[id]["mounted"] = bool(villager["mounted"])
 	_drop_missing(_villagers, seen)
 
 
@@ -89,6 +115,7 @@ func set_detail(detail: int) -> void:
 		_show_army(entry)
 	for entry: Dictionary in _villagers.values():
 		entry["node"].visible = detail >= 1
+		_characters.set_active(entry["node"], detail >= 1)
 
 
 ## Far: field armies are a marker and a number, garrisons are hidden. Closer: the
@@ -99,7 +126,11 @@ func _show_army(entry: Dictionary) -> void:
 	var marker: Node3D = entry["marker"]
 	var label: Label3D = entry["label"]
 	entry["node"].visible = is_field or _detail >= 1
-	figure.visible = _detail >= 1
+	var afloat: bool = entry.get("afloat", false) and entry.has("boat")
+	figure.visible = _detail >= 1 and not afloat
+	_characters.set_active(figure, figure.visible)
+	if entry.has("boat"):
+		entry["boat"].visible = _detail >= 1 and afloat
 	marker.visible = _detail == 0 and is_field
 	if _detail == 0:
 		label.visible = is_field
@@ -112,7 +143,7 @@ func _show_army(entry: Dictionary) -> void:
 		label.pixel_size = 0.022
 		label.position.y = 3.2
 	else:
-		# Up close: the unit counts and commander, or nothing at all for an army without one.
+		# Up close: exactly what is in the army, and who leads it.
 		label.visible = entry.get("caption", "") != ""
 		label.text = entry.get("caption", "")
 		label.pixel_size = 0.016
@@ -125,10 +156,19 @@ func _process(delta: float) -> void:
 			var node: Node3D = entry["node"]
 			var target: Vector3 = entry["target"]
 			var offset := target - node.position
+			var moving := offset.length() > 0.05
 			if offset.length() > 0.01:
 				if Vector2(offset.x, offset.z).length() > 0.05:
 					node.rotation.y = atan2(offset.x, offset.z)
 				node.position = node.position.move_toward(target, MOVE_SPEED * delta)
+			# The right animation for the moment.
+			if is_same(group, _armies):
+				var state: String = entry.get("state", "idle")
+				_characters.play(entry["figure"], "attack" if state in AT_ARMS else ("walk" if moving else "idle"))
+			elif entry.get("mounted", false):
+				_characters.play(node, ("trot" if offset.length() > 1.5 else "walk") if moving else "idle")
+			else:
+				_characters.play(node, "walk" if moving else entry.get("doing", "idle"))
 
 
 ## Sets where a figure should be. A figure seen for the first time appears there
@@ -159,6 +199,8 @@ func _army_caption(army: Dictionary) -> String:
 	var parts: Array[String] = []
 	for unit_id: String in order:
 		parts.append("%d %s" % [int(units[unit_id]), _unit_names.get(unit_id, unit_id)])
+	if army["commander"] == null:
+		return ", ".join(parts)
 	var commander: Dictionary = army["commander"]
 	return "%s\n%s  (level %d)" % [", ".join(parts), commander["name"], int(commander["level"])]
 
@@ -168,7 +210,13 @@ func _army_caption(army: Dictionary) -> String:
 func _make_army(civ: int, army: Dictionary, look: String) -> Dictionary:
 	var color: Color = _civ_colors[civ]
 	var root := Node3D.new()
-	var figure: Node3D = _commander_figure(color) if army["commander"] != null else _soldier_figure(str(army["dominant"]), color)
+	var figure: Node3D = null
+	if army["commander"] != null:
+		figure = _characters.instance("Commander", color, COMMANDER_HEIGHT)
+		if figure == null:
+			figure = _commander_figure(color)  # the model is missing: the old placeholder
+	else:
+		figure = _soldier_figure(str(army["dominant"]), color)
 	root.add_child(figure)
 
 	# What stands in for the army in the whole-map view: a diamond in the civ's colour.
@@ -196,8 +244,14 @@ func _make_army(civ: int, army: Dictionary, look: String) -> Dictionary:
 	return {"node": root, "figure": figure, "marker": marker, "label": label, "look": look, "target": Vector3.ZERO}
 
 
-func _make_villager(civ: int, task: String, look: String) -> Dictionary:
+func _make_villager(civ: int, task: String, look: String, mounted: bool) -> Dictionary:
 	var color: Color = _civ_colors[civ]
+	var model: Node3D = _characters.instance("Rider", color, RIDER_HEIGHT) if mounted else _characters.instance("Villager", color, VILLAGER_HEIGHT)
+	if model != null:
+		model.visible = _detail >= 1
+		_characters.set_active(model, _detail >= 1)
+		add_child(model)
+		return {"node": model, "look": look, "target": Vector3.ZERO}
 	var figure := Node3D.new()
 	figure.scale = Vector3.ONE * FIGURE_SCALE * 0.6
 	_part(figure, _capsule(0.13, 0.5), color.lerp(Color(0.6, 0.5, 0.35), 0.5), Vector3(0, 0.25, 0))

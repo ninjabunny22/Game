@@ -8,6 +8,7 @@ const Terrain := preload("res://scripts/terrain.gd")
 const CivView := preload("res://scripts/civ_view.gd")
 const UnitView := preload("res://scripts/unit_view.gd")
 const Models := preload("res://scripts/models.gd")
+const Characters := preload("res://scripts/characters.gd")
 const CameraRig := preload("res://scripts/camera_rig.gd")
 const Hud := preload("res://scripts/hud.gd")
 
@@ -23,6 +24,7 @@ var _unit_view := UnitView.new()
 var _camera := CameraRig.new()
 var _hud := Hud.new()
 var _models := Models.new()
+var _characters := Characters.new()
 
 var _ready_for_ticks := false
 var _civ_colors: Array = []
@@ -97,8 +99,8 @@ func _on_init(data: Dictionary) -> void:
 	for civ: Dictionary in data["civs"]:
 		_civ_colors.append(Color.html(civ["color"]))
 	_terrain.build(data["map"], data["biomes"], Color.html(data["native_faction"]["color"]), _models)
-	_civ_view.setup(_terrain, data, _civ_colors, _models)
-	_unit_view.setup(_terrain, data, _civ_colors)
+	_civ_view.setup(_terrain, data, _civ_colors, _models, _characters)
+	_unit_view.setup(_terrain, data, _civ_colors, _characters)
 	_hud.setup(data)
 	_camera.focus(_terrain.center(), maxf(_terrain.map_width, _terrain.map_height) * 1.15)
 	# CIVSIM_VIEW="x,y,distance" starts the camera on a tile instead of the whole map.

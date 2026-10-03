@@ -109,12 +109,21 @@ def test_navigation_lets_boats_reach_further(sim):
 
 def test_commander_training_techs(sim):
     civ = sim.civs[0]
-    assert sim.military._appoint(civ).level == 1
+    civ.commanders.clear()  # nobody in reserve, so each call raises a new commander
+    civ.resources["gold"] = 20
+    assert sim.military._appoint(civ).level == 1 and civ.resources["gold"] == 0, "promotion costs 20 gold"
     sim.modifiers[civ.id] = mods_with(sim, civ, "military_academy")
+    civ.resources["gold"] = 100  # enough to promote, not to appoint a trained officer
     assert sim.military._appoint(civ).level == 2
     sim.modifiers[civ.id] = mods_with(sim, civ, "military_academy", "general_staff")
+    civ.resources["gold"] = 100
     officer = sim.military._appoint(civ)
     assert officer.level == 3
+    civ.resources["gold"] = 139
+    assert sim.military._appoint(civ).level == 3, "not if it would take the treasury below its reserve"
+    civ.resources["gold"] = 140
+    assert sim.military._appoint(civ).level == 5, "an appointed officer starts two levels higher"
+    assert civ.resources["gold"] == 20
 
     army = Army(1, civ.id, civ.capital.tile, "field", units={"spearman": 10.0}, commander=Commander("Test"))
     sim.military._gain(army, 10)

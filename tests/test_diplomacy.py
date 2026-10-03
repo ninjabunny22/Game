@@ -7,6 +7,8 @@ from civsim.diplomacy import Intent, Stance
 from civsim.diplomacy import rules
 from civsim.simulation import Simulation
 
+pytestmark = pytest.mark.usefixtures("no_war_minimum")  # these tests are about other rules
+
 
 @pytest.fixture
 def sim() -> Simulation:
@@ -567,3 +569,74 @@ def test_every_civ_earns_diplomacy_points_automatically_up_to_a_cap():
     assert all(civ.diplomacy_points == rules.DIPLOMACY_CAP for civ in sim.civs)
     assert rules.WAR_COST == 100 and rules.WAR_COST > rules.ALLIANCE_COST > rules.DEAL_FEE
     assert "diplomacy_points" not in sim.civs[0].resources, "not a tradeable resource"
+
+
+# -- the minimum army for declaring war, and allied trade ---------------------
+
+def _hostile_pair(sim, soldiers, population):
+    from civsim.diplomacy import rules
+    a, b = sim.civs[0], sim.civs[1]
+    edge = next(n for t in sorted(b.territory) for n in sim.world.neighbors(t)
+                if sim.world.owner[n] < 0 and not sim.world.is_open_water(n))
+    sim.world.claim(edge, a.id)
+    a.territory.add(edge)
+    a.population, a.soldiers, a.diplomacy_points = population, soldiers, 300.0
+    sim.diplomacy.set_intents(a.id, {b.id: Intent(Stance.AGGRESSION, commitment=1.0)})
+    assert sim.diplomacy.in_reach(a.id, b.id, sim.tick)
+    return a, b, rules
+
+
+@pytest.mark.parametrize("soldiers, population, declared", [
+    (19, 150, False),  # fewer than twenty soldiers
+    (20, 150, True),
+    (25, 300, False),  # twenty, but under a tenth of the people
+    (30, 300, True),
+])
+def test_war_is_not_declared_without_an_army_worth_the_name(sim, monkeypatch, soldiers, population, declared):
+    from civsim.diplomacy import rules
+    monkeypatch.setattr(rules, "WAR_MIN_SOLDIERS", 20)
+    monkeypatch.setattr(rules, "WAR_MIN_SHARE", 0.10)
+    a, b, _ = _hostile_pair(sim, soldiers, population)
+    assert sim.diplomacy.war_army(a) == max(20, 0.1 * population)
+    events: list = []
+    sim.diplomacy._resolve_pair(a.id, b.id, sim.tick, events)
+    assert (sim.diplomacy.relation(a.id, b.id).status == "war") == declared
+    assert a.diplomacy_points == (200.0 if declared else 300.0), "nothing is spent on a war that is not declared"
+
+
+def test_a_hostile_civ_musters_the_army_it_needs_before_declaring(sim, monkeypatch):
+    from civsim.diplomacy import rules
+    monkeypatch.setattr(rules, "WAR_MIN_SOLDIERS", 20)
+    monkeypatch.setattr(rules, "WAR_MIN_SHARE", 0.10)
+    a, b, _ = _hostile_pair(sim, 0, 120)
+    a.resources.update(gold=500, food=500, ore=200)
+    sim.diplomacy._issue_orders(sim.tick)
+    assert a.soldier_target >= 20, "it raises the twenty it needs, not just a share of its people"
+
+
+def test_the_strategist_is_told_what_army_war_needs(sim, monkeypatch):
+    from civsim.diplomacy import rules
+    from civsim.strategy import stance_context
+    monkeypatch.setattr(rules, "WAR_MIN_SOLDIERS", 20)
+    monkeypatch.setattr(rules, "WAR_MIN_SHARE", 0.10)
+    civ = sim.civs[0]
+    civ.population = 150
+    you = stance_context(sim, civ)["you"]
+    assert you["soldiers_needed_to_declare_war"] == 20
+    assert you["max_soldiers"] == int(sim.diplomacy.mobilization_cap(civ) * 150)
+
+
+def test_allied_deals_deliver_fifteen_percent_more_than_was_sent(sim):
+    from civsim.diplomacy import rules
+    from civsim.diplomacy.model import Deal
+    a, b = sim.civs[0], sim.civs[1]
+    for civ in (a, b):
+        civ.resources.update(food=100, wood=100)
+    sim.diplomacy.deals.append(Deal(1, a.id, b.id, ("food", 2.0), ("wood", 2.0), sim.tick))
+    sim.diplomacy._run_deals(sim.tick, [])
+    assert b.resources["food"] == pytest.approx(102) and a.resources["wood"] == pytest.approx(102)
+    sim.diplomacy.relation(a.id, b.id).status = "alliance"
+    sim.diplomacy._run_deals(sim.tick, [])
+    assert rules.ALLY_TRADE_BONUS == 0.15
+    assert b.resources["food"] == pytest.approx(104.3) and a.resources["wood"] == pytest.approx(104.3)
+    assert a.resources["food"] == pytest.approx(96), "the sender still gives only what was agreed"

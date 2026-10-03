@@ -23,7 +23,7 @@
       "id": "animal_husbandry", "name": "Animal Husbandry", "era": 0, "prereqs": ["agriculture"],
       "cost": {"science": 45, "food": 40},
       "effects": {"yield_mult": {"food": 0.1}, "growth": 0.15},
-      "description": "+10% food, +15% population growth"
+      "description": "+10% food, +15% population growth; unlocks Stables"
     },
     {
       "id": "writing", "name": "Writing", "era": 1, "prereqs": ["pottery"],
@@ -130,8 +130,8 @@
     {
       "id": "military_academy", "name": "Military Academy", "era": 4, "prereqs": ["education", "iron_working"],
       "cost": {"science": 3700, "wood": 150, "gold": 120},
-      "effects": {"commander_xp": 0.5, "commander_start": 1},
-      "description": "Commanders gain experience 50% faster and new ones start at level 2; unlocks Academy"
+      "effects": {"commander_xp": 0.5, "commander_start": 1, "officer_appointment": 1},
+      "description": "Commanders gain experience 50% faster and new ones start at level 2; trained officers can be appointed for gold, two levels higher; unlocks Academy"
     },
     {
       "id": "navigation", "name": "Navigation", "era": 4, "prereqs": ["boatbuilding", "mathematics"],

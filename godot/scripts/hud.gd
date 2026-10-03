@@ -11,7 +11,8 @@ const MAX_HEADLINES := 8
 const ROUTINE_WINDOW := 100  # days over which routine events are counted for the summary line
 # Events worth a line of their own. Everything else is only counted.
 const HEADLINE_KINDS := ["war", "diplomacy", "region", "era"]
-const ROUTINE_LABELS := {"capture": "buildings captured", "tech": "discoveries", "trade": "trade changes"}
+const ROUTINE_LABELS := {"capture": "buildings captured", "village": "village changes", "tech": "discoveries",
+	"trade": "trade changes"}
 const MAX_TECHS_LISTED := 6  # the most recent ones; the full list no longer fits a card
 const RESOURCE_LABELS := {"food": "Food", "wood": "Wood", "stone": "Stone", "ore": "Ore", "gold": "Gold", "water": "Water"}
 const STANCE_COLORS := {"trade": "#7ccf7c", "ally": "#6fb7ff", "ignore": "#8a93a0", "aggression": "#e07a6a"}
@@ -32,6 +33,8 @@ var _connected := false
 var _tick := 0
 var _seed := 0
 var _paused := false
+var _waiting_for: Array = []  # civ ids whose strategist the clock is being held for
+var _armies := {}  # civ id -> that civ's armies, from the latest tick
 var _speed := 2.0
 var _civ_info := {}  # civ id -> static info from init
 var _tech_names := {}
@@ -191,6 +194,7 @@ func setup(init: Dictionary) -> void:
 
 func set_status(status: Dictionary) -> void:
 	_paused = status["paused"]
+	_waiting_for = status.get("waiting_for", [])
 	_speed = float(status["speed"])
 	_refresh_status()
 
@@ -206,6 +210,12 @@ func update(tick: int, data: Dictionary) -> void:
 		_deals["%d:%d" % [mini(int(deal["a"]), int(deal["b"])), maxi(int(deal["a"]), int(deal["b"]))]] = deal
 	for civ: Dictionary in data["civs"]:
 		_latest[int(civ["id"])] = civ
+	_armies.clear()
+	for army: Dictionary in data["armies"]:
+		var owner := int(army["civ"])
+		if not _armies.has(owner):
+			_armies[owner] = []
+		_armies[owner].append(army)
 	_refresh_cards()
 	if _diplomacy_panel.visible:
 		_diplomacy.text = _diplomacy_text_panel(data)
@@ -337,7 +347,13 @@ func request_speed(factor: float) -> void:
 
 
 func _refresh_status() -> void:
-	_paused_banner.visible = _connected and _paused
+	# The banner says why the days are not passing: paused, or held for a strategist's answer.
+	var holding: Array[String] = []
+	for civ_id in _waiting_for:
+		if _civ_info.has(int(civ_id)):
+			holding.append(str(_civ_info[int(civ_id)]["name"]))
+	_paused_banner.visible = _connected and (_paused or not holding.is_empty())
+	_paused_banner.text = "PAUSED" if _paused or holding.is_empty() else "Waiting for %s to decide" % " and ".join(holding)
 	if not _connected:
 		_status.text = "Waiting for sim on ws://127.0.0.1:8765 ..."
 		return
@@ -444,13 +460,28 @@ func _card_text(info: Dictionary, civ: Dictionary) -> String:
 	return "\n".join(lines)
 
 
+## "12 archers, 8 swordsmen", largest first.
+func _unit_mix(units: Dictionary) -> String:
+	var order := units.keys()
+	order.sort_custom(func(a: String, b: String) -> bool: return int(units[a]) > int(units[b]))
+	var parts: Array[String] = []
+	for unit_id: String in order:
+		parts.append("%d %s" % [int(units[unit_id]), _unit_names.get(unit_id, unit_id).to_lower()])
+	return ", ".join(parts)
+
+
 func _army_text(civ: Dictionary) -> String:
-	var text := "Army %d   strength %d" % [int(civ["soldiers"]), int(civ["army_strength"])]
-	var mix: Array[String] = []
-	for unit_id: String in civ["units"]:
-		mix.append("%d %s" % [int(civ["units"][unit_id]), _unit_names.get(unit_id, unit_id).to_lower()])
-	if not mix.is_empty():
-		text += "\n[color=#8a93a0]%s[/color]" % ", ".join(mix)
+	# The total is every soldier the civ has; below it, each army with exactly what is in it.
+	var text := "Soldiers %d in all   strength %d" % [int(civ["soldiers"]), int(civ["army_strength"])]
+	var total_mix := _unit_mix(civ["units"])
+	if total_mix != "":
+		text += "\n[color=#8a93a0]%s[/color]" % total_mix
+	for army: Dictionary in _armies.get(int(civ["id"]), []):
+		var who := "Garrison"
+		if army["role"] == "field":
+			var commander: Variant = army["commander"]
+			who = "Army under %s (level %d)" % [commander["name"], int(commander["level"])] if commander != null else "Army, no commander"
+		text += "\n   [color=#8a93a0]%s:[/color] %d  [color=#8a93a0]%s[/color]" % [who, int(army["size"]), _unit_mix(army["units"])]
 	var problems: Array[String] = []
 	if civ["unpaid"]:
 		problems.append("unpaid")
@@ -458,6 +489,20 @@ func _army_text(civ: Dictionary) -> String:
 		problems.append("no ore")
 	if not problems.is_empty():
 		text += "   [color=#e07a6a](%s)[/color]" % ", ".join(problems)
+	text += "\n[color=#8a93a0]Commanders:[/color] %d of %d" % [int(civ["commanders"]), int(civ["commander_cap"])]
+	var posted: Array[String] = []
+	for officer: Dictionary in civ["commanders_in_reserve"]:
+		if officer["post"] != null:
+			posted.append("%s (level %d) holds %s" % [officer["name"], int(officer["level"]), officer["post"]])
+	if not posted.is_empty():
+		text += "\n   " + "\n   ".join(posted)
+	if int(civ["wounded"]) > 0:
+		text += "\n[color=#8a93a0]Wounded and recovering:[/color] %d" % int(civ["wounded"])
+	if not civ["captives"].is_empty():
+		var held: Array[String] = []
+		for captive: Dictionary in civ["captives"]:
+			held.append("%s (level %d, of %s)" % [captive["name"], int(captive["level"]), _civ_info[int(captive["home"])]["name"]])
+		text += "\n[color=#8a93a0]Holding prisoner:[/color] %s" % ", ".join(held)
 	if int(civ["distrusted_for"]) > 0:
 		text += "\n[color=#e07a6a]Distrusted for betrayal: %s left[/color]" % _days(int(civ["distrusted_for"]))
 	return text

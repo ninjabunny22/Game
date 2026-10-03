@@ -51,7 +51,9 @@ class RuleBrain:
         warlike = you["weights"]["military"] >= 1.15
         at_war = any(n["relation"] == "war" for n in context["neighbors"])
         thirst = you["water"]["urgency"]
-        can_declare = you["diplomacy_points"] >= context["diplomacy_costs"]["declare_war"]
+        # No war without the influence to declare it and the people to raise an army worth the name.
+        can_declare = (you["diplomacy_points"] >= context["diplomacy_costs"]["declare_war"]
+                       and you["max_soldiers"] >= you["soldiers_needed_to_declare_war"])
         # Is anyone with water to spare willing to deal? If so, there is no call to fight for it.
         supplier = any(n["water_rich"] and n["their_stance_toward_you"] in ("trade", "ally")
                        for n in context["neighbors"])

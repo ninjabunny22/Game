@@ -145,6 +145,13 @@ class Diplomacy:
             self.natives.update(tick, events)
         self._issue_orders(tick)
 
+    def war_army(self, civ) -> float:
+        """Soldiers a civ must have under arms before it will declare war on another civ."""
+        return max(rules.WAR_MIN_SOLDIERS, rules.WAR_MIN_SHARE * civ.population)
+
+    def war_ready(self, civ) -> bool:
+        return civ.soldiers >= self.war_army(civ)
+
     def _resolve_pair(self, a: int, b: int, tick: int, events: list) -> None:
         relation = self.relations[(a, b)]
         civ_a, civ_b = self.civs[a], self.civs[b]
@@ -180,7 +187,8 @@ class Diplomacy:
                 self._alliance_breaks[(hostile[0].id, other.id)] = tick
                 self._log(tick, events, "diplomacy", [hostile[0], other],
                           f"{hostile[0].name} breaks its alliance with {other.name}")
-            declarer = next((civ for civ in hostile if civ.diplomacy_points >= rules.WAR_COST), None)
+            declarer = next((civ for civ in hostile
+                             if civ.diplomacy_points >= rules.WAR_COST and self.war_ready(civ)), None)
             target = civ_b if declarer is civ_a else civ_a
             if declarer and tick >= relation.truce_until and self.in_reach(declarer.id, target.id, tick):
                 declarer.diplomacy_points -= rules.WAR_COST
@@ -323,7 +331,9 @@ class Diplomacy:
                 sent = min(rate, giver.resources[res])
                 giver.resources[res] -= sent
                 room = self.mods[receiver_id].storage[res] - receiver.resources[res]
-                receiver.resources[res] += max(0.0, min(sent, room))
+                # Allies trade on better terms: more arrives than was sent.
+                arrives = sent * (1 + rules.ALLY_TRADE_BONUS) if self.relation(deal.a, deal.b).status == "alliance" else sent
+                receiver.resources[res] += max(0.0, min(arrives, room))
                 deal.missed[giver_id] = deal.missed.get(giver_id, 0) + 1 if sent < 0.5 * rate else 0
                 if deal.missed[giver_id] >= rules.DEAL_MISS_LIMIT:
                     defaulter = giver
@@ -403,6 +413,9 @@ class Diplomacy:
                       f"{captor.name} takes {region.capital_name}; all of {region.name} falls with it")
         if loser is None:
             return
+        military = getattr(self, "military", None)
+        if military is not None:
+            military.capital_fell(captor, loser, region.capital, tick, events)
         loser.settlements = [s for s in loser.settlements if s.tile != region.capital]
         recompute_capacity(loser, world)
         if not loser.settlements:
@@ -563,6 +576,8 @@ class Diplomacy:
                     # Muster ahead of a war once the declaration itself is affordable, or if threatened.
                     if theirs.stance is Stance.AGGRESSION or civ.diplomacy_points >= rules.WAR_COST:
                         mobilisation = max(mobilisation, rules.MUSTER * cap)
+                    if mine.stance is Stance.AGGRESSION:  # and enough to be allowed to declare at all
+                        mobilisation = max(mobilisation, min(cap, 1.05 * self.war_army(civ) / max(civ.population, 1.0)))
                     if (mine.stance is Stance.AGGRESSION and civ.march_target is None
                             and not self.in_reach(civ.id, other_id, tick)):
                         civ.march_target = other_id
@@ -572,8 +587,9 @@ class Diplomacy:
             civ.imports = dict.fromkeys(RESOURCES, 0.0)
         for deal in self.deals:
             for giver, receiver, res, rate in deal.flows():
+                allied = self.relation(deal.a, deal.b).status == "alliance"
                 self.civs[giver].exports[res] += rate
-                self.civs[receiver].imports[res] += rate
+                self.civs[receiver].imports[res] += rate * (1 + rules.ALLY_TRADE_BONUS if allied else 1)
 
     def _log(self, tick: int, events: list, kind: str, civs: list, text: str) -> None:
         self.history.append({"tick": tick, "civs": [civ.id for civ in civs], "text": text})

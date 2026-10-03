@@ -170,8 +170,10 @@ def test_llm_driven_run_forms_a_deal_and_fights_a_war():
         context = json.loads(user[user.index("{"): user.rindex("}") + 1])
         me = context["you"]["name"]
         stances = []
+        # The villain picks on a neighbour it can actually get at.
+        reachable = [n for n in context["neighbors"] if n["in_reach"]] or context["neighbors"]
         for n in context["neighbors"]:
-            if me == villain and n == context["neighbors"][0]:
+            if me == villain and n == reachable[0]:
                 stances.append(entry(n["name"], "aggression", troop_commitment=1.0))
             else:
                 give, want = ("food", "wood") if me < n["name"] else ("wood", "food")  # so offers complement

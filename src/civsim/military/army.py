@@ -11,12 +11,13 @@ CASUALTIES_PER_LEVEL = 0.02  # ... and takes this off its losses
 
 @dataclass
 class Commander:
-    """Leads a field army. Skill comes only from combat actually seen."""
+    """Leads a field army, or holds a capital while in reserve. Skill grows with combat seen."""
 
     name: str
     experience: float = 0.0
     battles: int = 0
     wins: int = 0
+    post: int | None = None  # tile of the capital a reserve commander is stationed at
 
     @property
     def level(self) -> int:
@@ -29,6 +30,15 @@ class Commander:
     @property
     def casualty_reduction(self) -> float:
         return CASUALTIES_PER_LEVEL * (self.level - 1)
+
+
+@dataclass
+class Captive:
+    """A commander taken in defeat, held by the civ that caught him."""
+
+    commander: Commander
+    home: int  # the civ he served
+    since: int  # tick he was taken
 
 
 @dataclass
@@ -50,6 +60,13 @@ class Army:
     siege_progress: float = 0.0
     path_tick: int = -10_000  # when the path was last planned
     leaderless_until: int = 0  # tick from which a commanderless field army gets a new one
+    # Pursuit of a routed enemy: its id, where and until when the chase runs.
+    pursuing: int | None = None
+    pursuit_origin: int = -1
+    pursuit_until: int = 0
+    disordered_until: int = 0  # a pursuer is out of formation during the chase and for a while after
+    rout_size: float = 0.0  # soldiers this army had when it broke
+    boat: bool = False  # crossing open water having put out from one of its civ's harbours
 
     @property
     def size(self) -> float:
@@ -92,4 +109,7 @@ class Villager:
     tile: int
     task: str = "idle"  # idle | build | gather
     target: int | None = None
+    building: int = 0  # id of the building a builder is putting up (a tile may have several sites)
+    gathers: str | None = None  # the resource a gathering villager is working
+    mounted: bool = False  # riding a horse from the stables: does more on the land he works
     path: list[int] = field(default_factory=list)

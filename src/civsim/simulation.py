@@ -11,7 +11,7 @@ deterministic.
 import itertools
 import random
 
-from .civ import CivAI, Civilization, Settlement, assign_personalities
+from .civ import CivAI, Civilization, Settlement, Villages, assign_personalities
 from .config import SimConfig
 from .diplomacy import Diplomacy, Natives
 from .economy import (
@@ -20,6 +20,7 @@ from .economy import (
     load_building_defs,
     manage_villagers,
     produce,
+    tend_horses,
     recompute_capacity,
 )
 from .economy.rules import START_POPULATION, START_RESOURCES
@@ -54,6 +55,8 @@ class Simulation:
                                  lambda: next(self._ids))
         self.diplomacy.military = self.military
         self.natives = Natives(self.world, self.civs, self.diplomacy, self.rng)
+        self.villages = Villages(self.world, self.civs, lambda: next(self._ids), self.config.seed)
+        self.villages.update(0, [])  # the towns around the starting capitals
         self.diplomacy.natives = self.natives
         for civ in self.civs:
             manage_villagers(civ, self.world, self.modifiers[civ.id], lambda: next(self._ids))
@@ -76,10 +79,12 @@ class Simulation:
             self.modifiers[civ.id] = mods
             self.ai.plan(civ, mods, self.tick, events)
             manage_villagers(civ, self.world, mods, lambda: next(self._ids))
+            tend_horses(civ)
             produce(civ, mods, self.building_defs)
             advance_construction(civ, mods, self.building_defs, events)
             advance_research(civ, self.tech_tree, events)
         self.diplomacy.update(self.tick, events)
+        self.villages.update(self.tick, events)
         self._schedule_checkins()
         self.events = events
         return events
@@ -101,6 +106,17 @@ class Simulation:
         for request in self.take_requests():
             self.submit(request, brain.decide(request))
         return events
+
+    def waiting_for(self) -> list[int]:
+        """Civs whose next check-in falls on the coming tick while their last is still unanswered.
+
+        The clock must not move until they answer, or that civ would miss a decision.
+        """
+        spacing = CHECKIN_INTERVAL // len(self.civs)
+        answered = {request.civ_id for request, _ in self._inbox}
+        return [civ.id for civ in self.civs
+                if civ.alive and civ.id in self._awaiting and civ.id not in answered
+                and (self.tick + 1 - civ.id * spacing) % CHECKIN_INTERVAL == 0]
 
     def _schedule_checkins(self) -> None:
         """Every civ checks in once per interval; they are staggered so the calls don't arrive at once."""

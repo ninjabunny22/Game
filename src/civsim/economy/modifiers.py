@@ -6,7 +6,7 @@ Buildings and techs share one effects vocabulary (see data/*.json):
   science_mult, build_speed, growth, expand_cost, build_slots, demolition_refund,
   military (army strength), defense (strength when holding own land),
   purification (water per owned coast tile), water_mult, water_use, bridges, boats,
-  boat_range, commander_xp, commander_start, capture_speed, casualties, mobilization,
+  boat_range, commander_xp, commander_start, officer_appointment, capture_speed, casualties, mobilization,
   home_speed, reinforce, villager_speed, deal_fee
 """
 
@@ -48,6 +48,7 @@ class Modifiers:
     water_use: float = 0.0  # change to what each person drinks (negative = less)
     commander_xp: float = 0.0  # extra experience commanders gain, as a fraction
     commander_start: int = 0  # levels above 1 that new commanders start at
+    officer_appointment: int = 0  # > 0: trained officers can be appointed directly, for gold
     capture_speed: float = 0.0  # extra speed at which armies take enemy tiles
     casualties: float = 0.0  # change to battle losses (negative = fewer)
     mobilization: float = 0.0  # added to the share of the population that can be under arms

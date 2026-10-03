@@ -6,6 +6,8 @@ public facts and a rough comparison of its army to their own. Only allies see
 intel: exact army numbers, where the army is committed, and what is in store.
 """
 
+import math
+
 from ..diplomacy.rules import ALLIANCE_COST, DEAL_FEE, SURPLUS_FILL, WAR_COST
 from ..economy import water_balance, water_urgency
 from ..economy.rules import RESOURCES
@@ -81,6 +83,9 @@ def stance_context(sim, civ) -> dict:
             "territory": len(civ.territory),
             "capitals": [s.name for s in civ.settlements],
             "soldiers": int(civ.soldiers),
+            # War cannot be declared with fewer soldiers than this; max_soldiers is the most it can raise.
+            "soldiers_needed_to_declare_war": math.ceil(diplomacy.war_army(civ)),
+            "max_soldiers": int(diplomacy.mobilization_cap(civ) * civ.population),
             "army": {unit_id: int(count) for unit_id, count in civ.unit_counts().items() if count >= 1},
             "commanders": [{"name": c.name, "level": c.level}
                            for c in civ.commanders + [a.commander for a in civ.armies if a.commander]],

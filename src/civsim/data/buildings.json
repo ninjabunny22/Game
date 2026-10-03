@@ -101,6 +101,12 @@
     "effects": {"military": 0.15},
     "color": "#7d2b2b", "height": 0.75
   },
+  "stables": {
+    "name": "Stables", "category": "military", "placement": "center", "requires_tech": "animal_husbandry", "max_count": 2,
+    "cost": {"wood": 90, "stone": 30}, "build_time": 20, "upkeep": {"food": 0.15, "water": 0.05},
+    "effects": {},
+    "color": "#8a5a2b", "height": 0.6
+  },
   "walls": {
     "name": "Walls", "category": "military", "placement": "center", "requires_tech": "masonry", "max_count": 3,
     "cost": {"stone": 90, "wood": 20}, "build_time": 22, "upkeep": {"stone": 0.18, "gold": 0.3},

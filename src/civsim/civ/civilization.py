@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 
 from ..economy.rules import RESOURCES
-from ..military.army import Army, Commander, Villager
+from ..military.army import Army, Captive, Commander, Villager
 from .personality import Personality
 
 
@@ -19,6 +19,8 @@ class Building:
     complete: bool = False
     active: bool = True  # False while its upkeep goes unpaid
     unpaid_ticks: int = 0  # consecutive ticks it has been inactive
+    id: int = 0  # given when the building is first seen by the simulation; a tile can hold several
+    village: int | None = None  # the village or town it belongs to
 
 
 @dataclass
@@ -71,6 +73,10 @@ class Civilization:
     armies: list[Army] = field(default_factory=list)
     commanders: list[Commander] = field(default_factory=list)  # not currently leading an army
     villagers: list[Villager] = field(default_factory=list)
+    horses: float = 0.0  # in the stables without a rider; cavalry and mounted villagers have theirs
+    horse_progress: float = 0.0  # toward the next foal
+    wounded: float = 0.0  # soldiers out of action: they neither fight nor work until they recover
+    captives: list[Captive] = field(default_factory=list)  # enemy commanders this civ holds
 
     # Standing orders from the diplomacy layer, executed by the economy and the AI.
     soldier_target: float = 0.0
@@ -113,10 +119,19 @@ class Civilization:
 
     @property
     def workforce(self) -> float:
-        return max(0.0, self.population - self.soldiers)
+        return max(0.0, self.population - self.soldiers - self.wounded)
 
-    def occupied(self) -> set[int]:
-        return {b.tile for b in self.buildings} | {s.tile for s in self.settlements}
+    @property
+    def herd(self) -> float:
+        """Every horse the civ has: in the stables, under cavalry, and under villagers."""
+        cavalry = sum(army.units.get("cavalry", 0.0) for army in self.armies)
+        return self.horses + cavalry + sum(1 for villager in self.villagers if villager.mounted)
+
+    def buildings_by_tile(self) -> dict[int, list[Building]]:
+        tiles: dict[int, list[Building]] = {}
+        for building in self.buildings:
+            tiles.setdefault(building.tile, []).append(building)
+        return tiles
 
     def count(self, building_type: str) -> int:
         """Buildings of this type, including ones still under construction."""

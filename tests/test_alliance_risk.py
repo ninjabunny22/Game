@@ -9,6 +9,8 @@ from civsim.strategy import RuleBrain, prompt, stance_context
 from civsim.strategy.checkin import CheckinRequest
 from civsim.strategy.context import army_band
 
+pytestmark = pytest.mark.usefixtures("no_war_minimum")  # these tests are about other rules
+
 
 @pytest.fixture
 def sim() -> Simulation:

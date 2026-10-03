@@ -60,7 +60,9 @@ def add_rivers(world: WorldMap, rng: random.Random) -> None:
     """Rivers rise in the high ground and run downhill until they reach the sea, a lake or another river.
 
     Length falls out of the terrain, so it differs from river to river and seed
-    to seed; a river grows in size the further it is from its source.
+    to seed; a river grows in size the further it is from its source. Each tile
+    records the tile its water flows into, so a river is one unbroken course: it
+    may run beside another, or join it, but never doubles back to touch itself.
     """
     highland = [i for i, b in enumerate(world.biomes) if b in (Biome.MOUNTAIN, Biome.HILLS)]
     sources: list[int] = []
@@ -79,6 +81,10 @@ def add_rivers(world: WorldMap, rng: random.Random) -> None:
                 break
             path.append(tile)
             options = [n for n in world.neighbors(tile) if n not in visited]
+            # Keep clear of the river's own earlier course: no coiling up on flat ground.
+            clear = [n for n in options
+                     if not any(m in visited and m != tile for m in world.neighbors(n))]
+            options = clear or options
             if not options:
                 break
             # Steepest way down, with a little noise so rivers meander across flat ground.
@@ -87,7 +93,13 @@ def add_rivers(world: WorldMap, rng: random.Random) -> None:
         if arrived and len(path) >= MIN_RIVER_LENGTH:
             for distance, river_tile in enumerate(path):
                 size = min(MAX_RIVER_SIZE, 1 + distance // TILES_PER_SIZE_STEP)
-                world.rivers[river_tile] = max(world.rivers.get(river_tile, 0), size)
+                world.rivers[river_tile] = size
+                world.river_flow[river_tile] = path[distance + 1] if distance + 1 < len(path) else tile
+            # A tributary swells the river it joins, all the way down to the sea.
+            joined = tile
+            while joined in world.rivers:
+                world.rivers[joined] = min(MAX_RIVER_SIZE, world.rivers[joined] + 1)
+                joined = world.river_flow[joined]
 
 
 def _count(world: WorldMap, rng: random.Random, typical: int) -> int:

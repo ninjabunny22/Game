@@ -25,12 +25,12 @@ def test_demolishing_frees_the_tile_and_refunds_part_of_the_cost(sim):
     library = Building("library", tile, 1.0, True)
     civ.buildings.append(library)
     civ.resources.update(wood=0, stone=0)
-    assert tile in civ.occupied()
+    assert tile in civ.buildings_by_tile()
 
     events: list = []
     demolish(civ, library, sim.modifiers[civ.id], sim.building_defs, events)
     cost = sim.building_defs["library"].cost
-    assert library not in civ.buildings and tile not in civ.occupied()
+    assert library not in civ.buildings and tile not in civ.buildings_by_tile()
     assert civ.resources["wood"] == pytest.approx(DEMOLITION_REFUND * cost["wood"])
     assert civ.resources["stone"] == pytest.approx(DEMOLITION_REFUND * cost["stone"])
     assert events == [{"civ": civ.id, "kind": "demolition", "text": f"{civ.name} demolished a Library"}]
@@ -67,27 +67,28 @@ def test_a_full_territory_gives_up_its_least_useful_building_for_a_much_better_o
     civ = sim.civs[0]
     mods = sim.modifiers[civ.id]
     civ.known_techs = ["pottery"]
-    # Fill every buildable tile with lumber camps, then make housing the pressing need.
-    civ.buildings = [Building("lumber_camp", t, 1.0, True) for t in buildable_tiles(sim, civ)]
+    # Fill every slot of every buildable tile, then make housing the pressing need.
+    everywhere = [t for t in sorted(civ.territory) if BIOME_INFO[sim.world.biomes[t]].buildable]
+    civ.buildings = [Building(kind, t, 1.0, True) for t in everywhere for kind in ("lumber_camp", "quarry", "mine")]
     house = sim.building_defs["house"]
     assert find_site(civ, sim.world, house) is None
     civ.population = mods.housing
     civ.resources.update(wood=mods.storage["wood"], food=200)
-    camps = civ.count("lumber_camp")
+    before = len(civ.buildings)
 
     events: list = []
     needs = sim.ai.assess_needs(civ, mods)
     sim.ai._choose_project(civ, mods, needs, tick=100, events=events)
-    assert civ.count("lumber_camp") == camps - 1
-    assert civ.count("house") == 1, "the house goes up on the freed tile"
+    assert len(civ.buildings) == before, "one building went and one came"
+    assert civ.count("house") == 1, "the house goes up in the freed slot"
     assert any(e["kind"] == "demolition" for e in events)
-    tiles = [b.tile for b in civ.buildings]
-    assert len(tiles) == len(set(tiles))
+    assert all(len(there) <= 3 for there in civ.buildings_by_tile().values())
+    after_first = len(civ.buildings)
 
     # Not again until the cooldown has passed.
     civ.buildings[-1].complete = True
     sim.ai._choose_project(civ, mods, sim.ai.assess_needs(civ, mods), tick=101, events=events)
-    assert civ.count("lumber_camp") == camps - 1
+    assert len(civ.buildings) == after_first and civ.count("house") == 1
 
 
 def test_nothing_is_demolished_for_a_marginal_gain(sim):
@@ -105,7 +106,7 @@ def test_nothing_is_demolished_for_a_marginal_gain(sim):
     assert len(civ.buildings) == before and not events
 
     freed = sim.ai._make_room(civ, mods, farm, 2.5 * last_house, needs, tick=100, events=events)
-    assert freed is not None and freed not in civ.occupied()
+    assert freed is not None and freed not in civ.buildings_by_tile()
     assert sim.world.yields[freed].get("food", 0) > 0, "the freed tile suits the new building"
     assert len(civ.buildings) == before - 1
 
