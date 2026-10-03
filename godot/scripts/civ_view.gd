@@ -1,11 +1,46 @@
 extends Node3D
-## Everything that sits on the terrain: resource deposits, settlements and buildings.
-## Buildings are blocks in their type's colour on a plinth in the owner's colour;
-## they rise out of the ground while under construction. Arcs between capitals show
+## Everything that sits on the terrain: resource deposits, capitals and buildings.
+## Buildings and capitals are low-poly models whose roofs and banners are painted in
+## their owner's colour; they rise out of the ground while under construction. Where
+## two building types share a model, a small pennant in the type's colour tells them
+## apart, and models with nothing to paint fly their owner's flag instead. Arcs between capitals show
 ## what holds between two civs: a trade deal (green), an alliance (blue), a war (red).
 
-const BUILDING_WIDTH := 0.62
+const BUILDING_WIDTH := 0.62  # of the plain block used if a model is missing
 const PLINTH_HEIGHT := 0.12
+
+## Building type -> the model that stands for it.
+##   size:   how much of the tile it covers
+##   tinted: the model has parts in the faction colour (otherwise it flies the owner's flag)
+##   marker: it shares its model with another type, so it carries a pennant in its own colour
+const BUILDING_MODELS := {
+	"house": {"model": "building_home_A_green", "alt": "building_home_B_green", "size": 0.78, "tinted": true},
+	"farm": {"model": "building_grain", "size": 0.95},
+	"lumber_camp": {"model": "building_lumbermill_green", "size": 0.9, "tinted": true},
+	"quarry": {"model": "building_mine_green", "size": 0.9, "tinted": true, "marker": true},
+	"mine": {"model": "building_mine_green", "size": 0.9, "tinted": true},
+	"granary": {"model": "building_windmill_green", "size": 0.85, "tinted": true},
+	"lumber_yard": {"model": "resource_lumber", "size": 0.8},
+	"stone_yard": {"model": "resource_stone", "size": 0.7},
+	"ore_depot": {"model": "crate_A_big", "size": 0.55, "marker": true},
+	"treasury": {"model": "building_tavern_green", "size": 0.85, "tinted": true, "marker": true},
+	"cistern": {"model": "building_well_green", "size": 0.6, "tinted": true},
+	"reservoir": {"model": "building_well_green", "size": 0.8, "tinted": true, "marker": true},
+	"library": {"model": "building_church_green", "size": 0.8, "tinted": true},
+	"university": {"model": "building_church_green", "size": 0.95, "tinted": true, "marker": true},
+	"market": {"model": "building_market_green", "size": 0.95, "tinted": true},
+	"bank": {"model": "building_tavern_green", "size": 0.95, "tinted": true, "marker": true},
+	"workshop": {"model": "building_blacksmith_green", "size": 0.9, "tinted": true},
+	"factory": {"model": "building_blacksmith_green", "size": 0.98, "tinted": true, "marker": true},
+	"aqueduct": {"model": "building_bridge_A", "size": 0.95, "lift": 0.45},
+	"harbour": {"model": "building_watermill_green", "size": 0.9, "tinted": true},
+	"barracks": {"model": "building_barracks_green", "size": 0.95, "tinted": true},
+	"academy": {"model": "building_archeryrange_green", "size": 0.95, "tinted": true},
+	"walls": {"model": "wall_straight", "size": 0.98},
+	"fortress": {"model": "building_tower_B_green", "size": 0.9, "tinted": true},
+}
+const CAPITAL_MODEL := "building_castle_green"  # a civ's own capital
+const TOWN_MODEL := "building_tower_A_green"  # every other region capital
 const LINK_COLORS := {"deal": Color(0.35, 0.9, 0.4), "alliance": Color(0.35, 0.65, 1.0), "war": Color(1.0, 0.25, 0.2),
 	"neutral": Color(0.75, 0.75, 0.78, 0.45)}
 const LINK_WIDTH := 0.45
@@ -17,6 +52,7 @@ var _civ_colors: Array = []
 var _nodes := {}  # "civ:x:y" -> Node3D
 var _body_meshes := {}  # building type -> BoxMesh
 var _plinth_meshes := {}  # civ id -> BoxMesh
+var _models: RefCounted  # models.gd
 var _regions := {}  # region id -> static info from init
 var _native_color := Color(0.6, 0.55, 0.48)
 var _native_name := ""
@@ -26,7 +62,8 @@ var _detail := 0  # 0 whole-map view, 1 closer, 2 full detail
 var _link_material: StandardMaterial3D
 
 
-func setup(terrain: Node3D, init: Dictionary, civ_colors: Array) -> void:
+func setup(terrain: Node3D, init: Dictionary, civ_colors: Array, models: RefCounted) -> void:
+	_models = models
 	for child in get_children():
 		child.queue_free()
 	_nodes.clear()
@@ -196,10 +233,66 @@ func _name_link(key: String, text: String, at: Vector3, color: Color) -> void:
 
 func _make_building(civ_id: int, building: Dictionary) -> Node3D:
 	var type: String = building["type"]
-	var height := float(_building_defs[type]["height"])
+	var x := int(building["x"])
+	var y := int(building["y"])
 	var root := Node3D.new()
-	root.position = _terrain.tile_position(int(building["x"]), int(building["y"]))
+	root.position = _terrain.tile_position(x, y)
+	var color: Color = _civ_colors[civ_id]
+	var spec: Dictionary = BUILDING_MODELS.get(type, {})
+	var model: Node3D = null
+	if not spec.is_empty():
+		var name: String = spec["model"]
+		if spec.has("alt") and (x + y) % 2 == 1:
+			name = spec["alt"]  # two looks for the commonest building, so a town is not all one house
+		var material: Material = _models.tinted_material(color) if spec.get("tinted", false) else _models.base_material()
+		model = _models.instance(name, material, float(spec["size"]))
+	if model == null:
+		_add_block(root, civ_id, type)
+	else:
+		# Face one of four ways, the same way every time for a given tile.
+		model.rotation.y = (x * 7 + y * 13) % 4 * PI / 2
+		model.position.y = float(spec.get("lift", 0.0))
+		root.add_child(model)
+		var top: float = _models.height(spec["model"], float(spec["size"])) + float(spec.get("lift", 0.0))
+		if not spec.get("tinted", false):
+			_add_flag(root, color)
+		if spec.get("marker", false):
+			_add_marker(root, Color.html(_building_defs[type]["color"]), top)
+	add_child(root)
+	return root
 
+
+## Nothing on the model shows whose it is: plant the owner's flag at the corner of the tile.
+func _add_flag(root: Node3D, color: Color) -> void:
+	var flag: Node3D = _models.instance("flag_green", _models.tinted_material(color), 0.42)
+	if flag != null:
+		flag.position = Vector3(0.36, 0.0, 0.36)
+		root.add_child(flag)
+
+
+## A pennant in the building type's own colour, for types that share a model.
+func _add_marker(root: Node3D, color: Color, top: float) -> void:
+	var pole := MeshInstance3D.new()
+	var pole_mesh := CylinderMesh.new()
+	pole_mesh.top_radius = 0.02
+	pole_mesh.bottom_radius = 0.02
+	pole_mesh.height = 0.5
+	pole_mesh.material = _flat_material(Color(0.25, 0.2, 0.15))
+	pole.mesh = pole_mesh
+	pole.position = Vector3(-0.3, top + 0.05, -0.3)
+	root.add_child(pole)
+	var pennant := MeshInstance3D.new()
+	var pennant_mesh := BoxMesh.new()
+	pennant_mesh.size = Vector3(0.26, 0.17, 0.03)
+	pennant_mesh.material = _flat_material(color)
+	pennant.mesh = pennant_mesh
+	pennant.position = Vector3(-0.17, top + 0.21, -0.3)
+	root.add_child(pennant)
+
+
+## The plain block used when a building has no model, or its model failed to load.
+func _add_block(root: Node3D, civ_id: int, type: String) -> void:
+	var height := float(_building_defs[type]["height"])
 	if not _body_meshes.has(type):
 		var body_mesh := BoxMesh.new()
 		body_mesh.size = Vector3(BUILDING_WIDTH, height, BUILDING_WIDTH)
@@ -209,7 +302,6 @@ func _make_building(civ_id: int, building: Dictionary) -> Node3D:
 	body.mesh = _body_meshes[type]
 	body.position.y = PLINTH_HEIGHT + height / 2.0
 	root.add_child(body)
-
 	if not _plinth_meshes.has(civ_id):
 		var plinth_mesh := BoxMesh.new()
 		plinth_mesh.size = Vector3(0.94, PLINTH_HEIGHT, 0.94)
@@ -220,42 +312,28 @@ func _make_building(civ_id: int, building: Dictionary) -> Node3D:
 	plinth.position.y = PLINTH_HEIGHT / 2.0
 	root.add_child(plinth)
 
-	add_child(root)
-	return root
 
-
-## A region capital: a keep with a flag in its holder's colour and its name above.
+## A region capital. A civ's own capital is a castle, clearly the largest thing on the
+## map; every other capital is a tall tower. Both wear their holder's colour (the
+## native faction's, for a capital no civ holds), with the name above.
 func _make_capital(color: Color, caption: String, x: int, y: int, is_main: bool) -> Node3D:
 	var root := Node3D.new()
 	root.position = _terrain.tile_position(x, y)
-	var size := 1.0 if is_main else 0.8
-
-	var keep := MeshInstance3D.new()
-	var keep_mesh := BoxMesh.new()
-	keep_mesh.size = Vector3(0.9 * size, 1.3 * size, 0.9 * size)
-	keep_mesh.material = _flat_material(color.lightened(0.35))
-	keep.mesh = keep_mesh
-	keep.position.y = 0.65 * size
-	root.add_child(keep)
-
-	var pole_height := 3.2 * size
-	var pole := MeshInstance3D.new()
-	var pole_mesh := CylinderMesh.new()
-	pole_mesh.top_radius = 0.05
-	pole_mesh.bottom_radius = 0.05
-	pole_mesh.height = pole_height
-	pole_mesh.material = _flat_material(Color(0.9, 0.9, 0.9))
-	pole.mesh = pole_mesh
-	pole.position.y = 1.3 * size + pole_height / 2.0
-	root.add_child(pole)
-
-	var flag := MeshInstance3D.new()
-	var flag_mesh := BoxMesh.new()
-	flag_mesh.size = Vector3(1.1 * size, 0.7 * size, 0.06)
-	flag_mesh.material = _flat_material(color)
-	flag.mesh = flag_mesh
-	flag.position = Vector3(0.6 * size, 1.3 * size + pole_height - 0.4, 0.0)
-	root.add_child(flag)
+	var model_name := CAPITAL_MODEL if is_main else TOWN_MODEL
+	var footprint := 1.7 if is_main else 1.05
+	var model: Node3D = _models.instance(model_name, _models.tinted_material(color), footprint)
+	var top := 3.0
+	if model != null:
+		root.add_child(model)
+		top = _models.height(model_name, footprint)
+	else:  # no model: the old keep
+		var keep := MeshInstance3D.new()
+		var keep_mesh := BoxMesh.new()
+		keep_mesh.size = Vector3(0.9, 1.3, 0.9)
+		keep_mesh.material = _flat_material(color.lightened(0.35))
+		keep.mesh = keep_mesh
+		keep.position.y = 0.65
+		root.add_child(keep)
 
 	var label := Label3D.new()
 	label.text = caption
@@ -265,7 +343,7 @@ func _make_capital(color: Color, caption: String, x: int, y: int, is_main: bool)
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	label.no_depth_test = true
 	label.modulate = color.lightened(0.5)
-	label.position.y = 1.3 * size + pole_height + 1.2
+	label.position.y = top + 1.3
 	root.add_child(label)
 	root.set_meta("label", label)
 	root.set_meta("main", is_main)

@@ -68,6 +68,24 @@ The overlay is built for watching:
 - **Territory** is tinted in a band along each civ's border, leaving the land's
   own colours inside. `B` toggles the region borders.
 
+**Models and water.** Buildings, capitals, trees and mountains are low-poly
+models from the KayKit Medieval Hexagon Pack by Kay Lousberg (CC0; see
+`godot/assets/kaykit/LICENSE.txt`). They are loaded straight from their glTF
+files at run time (`scripts/models.gd`), so nothing needs importing in the
+editor.
+
+- Every model shares one small texture, and the faction-coloured parts all sit
+  in one rectangle of it. That rectangle is repainted per owner, so roofs and
+  banners take any civ's exact colour, and a neutral tan for the Hinterfolk.
+- Each building type maps to a model in `BUILDING_MODELS` (`civ_view.gd`).
+  Types that share a model carry a small pennant in the type's colour; models
+  with nothing to repaint (fields, walls, stockpiles) fly their owner's flag.
+- A civ's own capital is a castle; every other region capital is a tower.
+- Forest tiles are scattered with trees and mountain tiles with peaks.
+- The sea and lakes use a small shader: three bands of colour by depth, a foam
+  line at the shore and a gentle swell. Rivers are curved ribbons with a
+  flowing surface.
+
 Start-up options, as environment variables: `CIVSIM_VIEW="x,y,distance"` starts
 the camera on a tile, `CIVSIM_DIPLOMACY=1` opens the diplomacy panel, and
 `CIVSIM_CARD=<civ id>` opens that civ's card.
