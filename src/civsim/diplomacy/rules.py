@@ -16,6 +16,15 @@ ALLIANCE_COST = 40
 ALLIANCE_UPKEEP = 0.1
 ALLY_DEFENSE = 0.15
 ALLY_SCIENCE = 0.1
+EVEN_SPLIT_BAND = 0.05  # allies whose shares of the spoils are all this close to equal split evenly
+
+# Betrayal: breaking an alliance by aggression and attacking that former ally soon after.
+BETRAYAL_WINDOW = 50  # ticks between the break and the declaration for it to count
+SURPRISE_TICKS = 10  # opening ticks in which the betrayed civ has no home bonus and no militia ...
+SURPRISE_CAPTURE = 1.5  # ... and the betrayer takes tiles this much faster
+DISTRUST_TICKS = 50  # how long other civs hold a betrayal against the betrayer
+DISTRUST_FEE_FACTOR = 4  # a distrusted civ pays this many times the usual fee to open a deal
+DISTRUST_RATE_FACTOR = 0.5  # and is sent only this share of what its partner offered
 
 # War
 WAR_COST = 50

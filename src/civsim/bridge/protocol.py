@@ -142,6 +142,8 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
             "army_strength": round(diplomacy.strength(civ), 1),
             "unpaid": civ.unpaid,
             "unsupplied": civ.unsupplied,
+            # Ticks for which others still hold a betrayal against this civ (0 = in good standing).
+            "distrusted_for": max(0, diplomacy.distrust_until.get(civ.id, 0) - sim.tick),
             # Strategic layer: stance toward each other civ (keyed by civ id), and why.
             "stances": {str(other): diplomacy.intent(civ.id, other).stance.value for other in diplomacy.others(civ.id)},
             "reason": civ.last_reason,
@@ -155,6 +157,10 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
             "truce": sim.tick < relation.truce_until,
             "war": {
                 "aggressors": sorted(war.aggressors),
+                "declarer": war.declarer,
+                "defending": war.defending,  # set if one side was drawn in by an alliance
+                "betrayer": war.betrayer,  # set if the declarer broke an alliance to attack
+                "surprise": sim.tick < war.surprise_until,
                 "tiles_taken": {str(civ_id): count for civ_id, count in war.tiles_taken.items()},
                 "casualties": {str(civ_id): round(lost) for civ_id, lost in war.casualties.items()},
             } if war else None,

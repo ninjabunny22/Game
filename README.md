@@ -9,6 +9,14 @@ LLM strategic layer and LLM-invented techs).
 
 ## Run it
 
+Double-click `CivSim.command` in Finder (or run `./CivSim.command`). It starts
+Ollama if it is not already running, starts the simulation, and opens the Godot
+viewer once the simulation is ready. Closing the Godot window stops the
+simulation, and Ollama too if the launcher started it. Arguments are passed to
+the sim, for example `./CivSim.command --seed 42`. Logs go to `logs/`.
+
+To run the pieces by hand:
+
 ```sh
 python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
@@ -117,7 +125,26 @@ The brain only sets intent. `diplomacy/diplomacy.py` executes it every tick:
   for 10 ticks cancels the deal. Gold can be traded like any resource.
 - **Alliance.** Mutual `ally` forms one for 40 gold each plus 0.1 gold per
   tick: +15% defence and +10% science per ally. It lapses when either side
-  turns away.
+  turns away. Allies see each other's intel at check-ins (exact army numbers,
+  how troops are committed, stock and cap of every resource); about anyone
+  else a strategist only gets a rough army comparison and public facts. An
+  alliance is a defensive pact: when a civ is attacked, its
+  allies are at war with the attacker at once, at no cost, for as long as that
+  war and the alliance last (a civ allied to both sides stays out). Wars a
+  civ starts are optional for its allies: one joins by taking `aggression`
+  toward the same enemy, and one that stays out gets nothing. When allies are
+  at war with the same enemy, a capture by either
+  is joint: the tile and building go to the civ whose army took them, but the
+  resources that come with it (the stock in a captured storage building, and
+  tribute on surrender) are split by army strength at that moment. Shares
+  within 5 points of equal (45-55% for two allies) are split evenly.
+- **Betrayal.** Ending an alliance and declaring war on that former ally
+  within 50 ticks is betrayal. For the first 10 ticks the betrayed
+  civ has no home bonus and no militia and the betrayer captures 50% faster.
+  For 50 ticks afterwards nobody forms a new alliance with the betrayer, and a
+  new trade deal costs it four times the fee and brings in half the partner's
+  offer; a further betrayal while distrusted adds another 50. Ending an
+  alliance without attacking carries no penalty.
 - **War.** `aggression` declares war (50 gold) once the two territories are
   within 4 tiles; until then the aggressor's border expands toward the target.
   There are no units on the map. Troop commitment mobilises up to 35% of the

@@ -58,6 +58,14 @@ class War:
     progress: dict[int, float] = field(default_factory=dict)  # civ id -> capture progress, in tiles
     tiles_taken: dict[int, int] = field(default_factory=dict)
     casualties: dict[int, float] = field(default_factory=dict)
+    declarer: int | None = None  # who started it
+    # Set when one side was pulled in by an alliance: `guardian` fights the
+    # declarer because the declarer attacked its ally `defending`.
+    guardian: int | None = None
+    defending: int | None = None
+    # Set when the declarer broke an alliance with the other side to start this war.
+    betrayer: int | None = None
+    surprise_until: int = 0
 
 
 @dataclass

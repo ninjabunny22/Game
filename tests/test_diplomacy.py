@@ -262,3 +262,207 @@ def test_buildings_on_a_tile_follow_the_tile_both_ways(sim):
     assert not [bld for bld in a.buildings if bld.tile in (done, unfinished)]
     assert {bld.type for bld in b.buildings if bld.tile in (done, unfinished)} == {"university", "house"}
     assert all(sim.world.owner[bld.tile] == b.id for bld in b.buildings)
+
+
+# -- allies sharing the spoils ------------------------------------------------
+
+def joint_war(sim, strengths: dict[int, float]):
+    """Civs 0 and 2 allied, both at war with civ 1, with the given army sizes."""
+    a, enemy, ally = sim.civs[0], sim.civs[1], sim.civs[2]
+    for civ in (a, ally):
+        make_neighbours(sim, civ, enemy)
+        civ.resources["gold"] = 300
+    sim.diplomacy.set_intents(a.id, {ally.id: Intent(Stance.ALLY), enemy.id: Intent(Stance.AGGRESSION, commitment=0.5)})
+    sim.diplomacy.set_intents(ally.id, {a.id: Intent(Stance.ALLY), enemy.id: Intent(Stance.AGGRESSION, commitment=0.5)})
+    events_of(sim, 12)
+    assert sim.diplomacy.relation(a.id, ally.id).status == "alliance"
+    assert sim.diplomacy.relation(a.id, enemy.id).war and sim.diplomacy.relation(ally.id, enemy.id).war
+    for civ_id, soldiers in strengths.items():
+        sim.civs[civ_id].population = 500
+        sim.civs[civ_id].soldiers = soldiers
+        sim.civs[civ_id].unpaid = sim.civs[civ_id].unsupplied = False
+    return a, enemy, ally
+
+
+@pytest.mark.parametrize("mine, theirs, expected", [
+    (70, 30, 0.70),   # clear gap: proportional
+    (30, 70, 0.30),
+    (52, 48, 0.50),   # close: treated as even
+    (55, 45, 0.50),   # edge of the band
+    (56, 44, 0.56),   # just outside it
+    (0, 0, 0.50),     # nobody under arms
+])
+def test_spoils_are_split_by_current_strength_with_an_even_band(sim, mine, theirs, expected):
+    a, enemy, ally = joint_war(sim, {0: mine, 2: theirs})
+    shares = sim.diplomacy.spoils_shares(a, enemy)
+    assert shares[a.id] == pytest.approx(expected)
+    assert sum(shares.values()) == pytest.approx(1.0)
+    assert sim.diplomacy.spoils_shares(ally, enemy)[ally.id] == pytest.approx(1 - expected), "same split whoever captures"
+
+
+def test_a_capture_is_only_joint_with_allies_fighting_the_same_enemy(sim):
+    a, enemy, bystander = sim.civs[0], sim.civs[1], sim.civs[2]
+    make_neighbours(sim, a, enemy)
+    for civ in (a, bystander):
+        civ.resources["gold"] = 300
+    sim.diplomacy.set_intents(a.id, {bystander.id: Intent(Stance.ALLY), enemy.id: Intent(Stance.AGGRESSION, commitment=0.5)})
+    sim.diplomacy.set_intents(bystander.id, {a.id: Intent(Stance.ALLY)})
+    events_of(sim, 12)
+    assert sim.diplomacy.relation(a.id, bystander.id).status == "alliance"
+    assert sim.diplomacy.relation(bystander.id, enemy.id).status == "peace"
+    bystander.soldiers = 500
+    assert sim.diplomacy.spoils_shares(a, enemy) == {a.id: 1.0}, "an ally who is not in the war gets nothing"
+
+
+def test_captured_stores_are_shared_but_the_building_goes_to_the_captor(sim):
+    a, enemy, ally = joint_war(sim, {0: 30, 2: 90})
+    relation = sim.diplomacy.relation(a.id, enemy.id)
+    tile = next(t for t in sorted(enemy.territory) if t != enemy.capital.tile
+                and t not in set(sim.world.neighbors(enemy.capital.tile, diagonal=True))
+                and BIOME_INFO[sim.world.biomes[t]].buildable)
+    enemy.buildings.append(Building("granary", tile, 1.0, True))
+    enemy.resources["food"] = 250
+    sim.modifiers[enemy.id].storage["food"] = 600.0  # so this granary (300) holds half the stock
+    a.resources["food"] = ally.resources["food"] = 0
+    held = 250 * 300 / 600
+
+    events: list = []
+    sim.diplomacy._capture_tile(relation, a, enemy, tile, sim.tick, events)
+    assert [b.type for b in a.buildings if b.tile == tile] == ["granary"], "the weaker ally took it, so it owns it"
+    assert not [b for b in ally.buildings if b.tile == tile] and tile in a.territory
+    assert a.resources["food"] == pytest.approx(0.25 * held)
+    assert ally.resources["food"] == pytest.approx(0.75 * held), "the stronger ally gets the larger share"
+    assert enemy.resources["food"] == pytest.approx(250 - held)
+    assert "shared by strength" in events[0]["text"]
+
+    # Power shifts; the next capture uses the new balance.
+    a.soldiers, ally.soldiers = 90, 30
+    assert sim.diplomacy.spoils_shares(a, enemy)[a.id] == pytest.approx(0.75)
+
+
+def test_tribute_on_surrender_is_shared_the_same_way(sim):
+    a, enemy, ally = joint_war(sim, {0: 80, 2: 20})
+    relation = sim.diplomacy.relation(a.id, enemy.id)
+    for civ in (a, ally):
+        for res in civ.resources:
+            civ.resources[res] = 0
+    enemy.resources.update(wood=200, stone=100)
+    sim.diplomacy._surrender(relation, a, enemy, sim.tick, [])
+    assert a.resources["wood"] == pytest.approx(0.8 * 100) and ally.resources["wood"] == pytest.approx(0.2 * 100)
+    assert a.resources["stone"] == pytest.approx(0.8 * 50) and ally.resources["stone"] == pytest.approx(0.2 * 50)
+    assert enemy.resources["wood"] == pytest.approx(100)
+
+
+def test_a_lone_captor_still_keeps_everything(sim):
+    a, b = sim.civs[0], sim.civs[1]
+    make_neighbours(sim, a, b)
+    a.resources["gold"] = 100
+    sim.diplomacy.set_intents(a.id, {b.id: Intent(Stance.AGGRESSION, commitment=0.5)})
+    events_of(sim, 12)
+    assert sim.diplomacy.spoils_shares(a, b) == {a.id: 1.0}
+
+
+# -- alliances as defensive pacts --------------------------------------------
+
+def ally_up(sim, x, y):
+    for civ in (x, y):
+        civ.resources["gold"] = max(civ.resources["gold"], 300)
+    sim.diplomacy.set_intents(x.id, {y.id: Intent(Stance.ALLY)})
+    sim.diplomacy.set_intents(y.id, {x.id: Intent(Stance.ALLY)})
+    events_of(sim, 1)
+    assert sim.diplomacy.relation(x.id, y.id).status == "alliance"
+
+
+def test_an_attacked_civs_ally_is_drawn_into_the_war(sim):
+    attacker, victim, guardian, bystander = sim.civs
+    ally_up(sim, victim, guardian)
+    make_neighbours(sim, attacker, victim)
+    attacker.resources["gold"] = 100
+    gold = guardian.resources["gold"]
+    sim.diplomacy.set_intents(attacker.id, {victim.id: Intent(Stance.AGGRESSION, commitment=0.5)})
+    texts = events_of(sim, 12)
+
+    assert sim.diplomacy.relation(attacker.id, victim.id).status == "war"
+    relation = sim.diplomacy.relation(attacker.id, guardian.id)
+    assert relation.status == "war", "the ally has no say in a defensive war"
+    assert (relation.war.declarer, relation.war.guardian, relation.war.defending) == (attacker.id, guardian.id, victim.id)
+    assert any("in defence of its ally" in t for t in texts)
+    assert guardian.resources["gold"] >= gold - 12 * 0.2, "joining costs nothing beyond alliance upkeep"
+    assert sim.diplomacy.relation(attacker.id, bystander.id).status == "peace"
+    assert guardian.id in sim.diplomacy.spoils_shares(victim, attacker), "and it shares in what the defence wins"
+
+    # It lasts past the usual minimum even though the guardian was never hostile itself...
+    events_of(sim, rules.MIN_WAR + 20)
+    assert sim.diplomacy.relation(attacker.id, guardian.id).status == "war"
+
+    # ...and ends when the war it was called into ends.
+    sim.diplomacy.set_intents(attacker.id, {victim.id: Intent(Stance.IGNORE)})
+    texts = events_of(sim, 3)
+    assert sim.diplomacy.relation(attacker.id, victim.id).status == "peace"
+    assert sim.diplomacy.relation(attacker.id, guardian.id).status == "peace"
+    assert any("stands down" in t for t in texts)
+
+
+def test_an_aggressors_ally_is_free_to_stay_out_or_join(sim):
+    attacker, victim, partner, _ = sim.civs
+    ally_up(sim, attacker, partner)
+    make_neighbours(sim, attacker, victim)
+    make_neighbours(sim, partner, victim)
+    sim.diplomacy.set_intents(attacker.id, {victim.id: Intent(Stance.AGGRESSION, commitment=0.5),
+                                            partner.id: Intent(Stance.ALLY)})
+    events_of(sim, 12)
+    assert sim.diplomacy.relation(attacker.id, victim.id).status == "war"
+    assert sim.diplomacy.relation(partner.id, victim.id).status == "peace", "no duty to join a war your ally started"
+    assert sim.diplomacy.spoils_shares(attacker, victim) == {attacker.id: 1.0}, "and no share for staying out"
+
+    sim.diplomacy.set_intents(partner.id, {victim.id: Intent(Stance.AGGRESSION, commitment=0.5),
+                                           attacker.id: Intent(Stance.ALLY)})
+    events_of(sim, 12)
+    assert sim.diplomacy.relation(partner.id, victim.id).status == "war", "it may opt in"
+    assert set(sim.diplomacy.spoils_shares(attacker, victim)) == {attacker.id, partner.id}
+
+
+def test_leaving_the_alliance_ends_the_obligation(sim):
+    attacker, victim, guardian, _ = sim.civs
+    ally_up(sim, victim, guardian)
+    make_neighbours(sim, attacker, victim)
+    attacker.resources["gold"] = 100
+    sim.diplomacy.set_intents(attacker.id, {victim.id: Intent(Stance.AGGRESSION, commitment=0.5)})
+    events_of(sim, 12)
+    assert sim.diplomacy.relation(attacker.id, guardian.id).status == "war"
+
+    sim.diplomacy.set_intents(guardian.id, {victim.id: Intent(Stance.IGNORE)})
+    events_of(sim, 3)
+    assert sim.diplomacy.relation(victim.id, guardian.id).status == "peace"
+    assert sim.diplomacy.relation(attacker.id, guardian.id).status == "peace"
+    assert sim.diplomacy.relation(attacker.id, victim.id).status == "war", "the original war goes on"
+
+
+def test_a_civ_allied_to_both_sides_stays_out(sim):
+    attacker, victim, friend, _ = sim.civs
+    ally_up(sim, victim, friend)
+    ally_up(sim, attacker, friend)
+    make_neighbours(sim, attacker, victim)
+    sim.diplomacy.set_intents(attacker.id, {victim.id: Intent(Stance.AGGRESSION, commitment=0.5),
+                                            friend.id: Intent(Stance.ALLY)})
+    events_of(sim, 12)
+    assert sim.diplomacy.relation(attacker.id, victim.id).status == "war"
+    assert sim.diplomacy.relation(attacker.id, friend.id).status == "alliance"
+    assert sim.diplomacy.relation(victim.id, friend.id).status == "alliance"
+
+
+def test_allying_with_a_civ_under_attack_means_joining_its_defence(sim):
+    attacker, victim, newcomer, _ = sim.civs
+    make_neighbours(sim, attacker, victim)
+    attacker.resources["gold"] = 100
+    sim.diplomacy.set_intents(attacker.id, {victim.id: Intent(Stance.AGGRESSION, commitment=0.5)})
+    events_of(sim, 12)
+    assert sim.diplomacy.relation(attacker.id, newcomer.id).status == "peace"
+
+    ally_up(sim, victim, newcomer)
+    assert sim.diplomacy.relation(attacker.id, newcomer.id).status == "war"
+
+    # Allying with the aggressor carries no such duty.
+    other = sim.civs[3]
+    ally_up(sim, attacker, other)
+    assert sim.diplomacy.relation(victim.id, other.id).status == "peace"

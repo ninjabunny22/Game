@@ -35,6 +35,8 @@ class Diplomacy:
         self.history: list[dict] = []  # {"tick", "civs", "text"}, oldest first
         self._next_deal_id = 1
         self._reach_cache: dict[tuple[int, int], tuple[int, bool]] = {}
+        self._alliance_breaks: dict[tuple[int, int], int] = {}  # (breaker, former ally) -> tick it broke the alliance
+        self.distrust_until: dict[int, int] = {}  # betrayer -> tick until which others hold it against them
 
     # -- queries -------------------------------------------------------------
 
@@ -83,6 +85,10 @@ class Diplomacy:
             self._reach_cache[key] = cached
         return cached[1]
 
+    def distrusted(self, civ_id: int, tick: int) -> bool:
+        """True while other civs still hold a betrayal against this one."""
+        return tick < self.distrust_until.get(civ_id, 0)
+
     def recent_history(self, civ_id: int, limit: int) -> list[dict]:
         return [entry for entry in self.history if civ_id in entry["civs"]][-limit:]
 
@@ -119,6 +125,17 @@ class Diplomacy:
             war = relation.war
             war.aggressors = {civ.id for civ in hostile}
             age = tick - war.start
+            if war.guardian is not None:
+                # A defensive obligation lasts exactly as long as the ally is under attack and still an ally.
+                if (self.relation(war.defending, war.declarer).status == "war"
+                        and self.relation(war.guardian, war.defending).status == "alliance"):
+                    return
+                guardian, defended = self.civs[war.guardian], self.civs[war.defending]
+                war.guardian = war.defending = None
+                if not hostile:
+                    self._end_war(relation, tick, events, rules.TRUCE,
+                                  f"{guardian.name} stands down, its duty to {defended.name} discharged")
+                return  # otherwise it carries on as an ordinary war
             if age >= rules.MAX_WAR:
                 self._end_war(relation, tick, events, rules.TRUCE,
                               f"{civ_a.name} and {civ_b.name} are exhausted and stop fighting")
@@ -130,37 +147,85 @@ class Diplomacy:
             if relation.status == "alliance":
                 other = civ_b if hostile[0] is civ_a else civ_a
                 self._set_status(relation, "peace", tick)
+                self._alliance_breaks[(hostile[0].id, other.id)] = tick
                 self._log(tick, events, "diplomacy", [hostile[0], other],
                           f"{hostile[0].name} breaks its alliance with {other.name}")
             declarer = next((civ for civ in hostile if civ.resources["gold"] >= rules.WAR_COST), None)
             if declarer and tick >= relation.truce_until and self.in_reach(a, b, tick):
                 target = civ_b if declarer is civ_a else civ_a
                 declarer.resources["gold"] -= rules.WAR_COST
-                self.deals = [d for d in self.deals if {d.a, d.b} != {a, b}]
-                self._set_status(relation, "war", tick)
-                relation.war = War(a, b, tick, aggressors={civ.id for civ in hostile},
-                                   progress={a: 0.0, b: 0.0}, tiles_taken={a: 0, b: 0}, casualties={a: 0.0, b: 0.0})
+                self._start_war(declarer, target, tick, aggressors={civ.id for civ in hostile})
                 self._log(tick, events, "war", [declarer, target], f"{declarer.name} declares war on {target.name}")
+                broke = self._alliance_breaks.pop((declarer.id, target.id), None)
+                if broke is not None and tick - broke <= rules.BETRAYAL_WINDOW:
+                    self._betray(relation.war, declarer, target, tick, events)
+                for ally in self.allies(target.id):
+                    self._join_defence(self.civs[ally], target, declarer, tick, events)
             return
 
         friendly = to_b.stance in FRIENDLY and to_a.stance in FRIENDLY
         if relation.status == "alliance":
             if not friendly:
                 self._set_status(relation, "peace", tick)
+                # Walking away is no offence in itself, but attacking soon afterwards is betrayal.
+                for civ, intent, other in ((civ_a, to_b, civ_b), (civ_b, to_a, civ_a)):
+                    if intent.stance not in FRIENDLY:
+                        self._alliance_breaks[(civ.id, other.id)] = tick
                 self._log(tick, events, "diplomacy", [civ_a, civ_b],
                           f"The alliance between {civ_a.name} and {civ_b.name} lapses")
             else:
                 for civ in (civ_a, civ_b):
                     civ.resources["gold"] = max(0.0, civ.resources["gold"] - rules.ALLIANCE_UPKEEP)
         elif (to_b.stance is Stance.ALLY and to_a.stance is Stance.ALLY
+              and not self.distrusted(a, tick) and not self.distrusted(b, tick)  # nobody allies with a betrayer
               and min(civ_a.resources["gold"], civ_b.resources["gold"]) >= rules.ALLIANCE_COST):
             for civ in (civ_a, civ_b):
                 civ.resources["gold"] -= rules.ALLIANCE_COST
             self._set_status(relation, "alliance", tick)
             self._log(tick, events, "diplomacy", [civ_a, civ_b], f"{civ_a.name} and {civ_b.name} form an alliance")
+            # The new ally takes on any war in which its partner is the one under attack.
+            for partner, newcomer in ((civ_a, civ_b), (civ_b, civ_a)):
+                for enemy in self.enemies(partner.id):
+                    if self.relation(partner.id, enemy).war.declarer == enemy:
+                        self._join_defence(newcomer, partner, self.civs[enemy], tick, events)
 
         if friendly and self.deal_between(a, b) is None:
             self._try_deal(civ_a, civ_b, to_b, to_a, relation, tick, events)
+
+    def _start_war(self, declarer, target, tick: int, aggressors: set[int],
+                   guardian: int | None = None, defending: int | None = None) -> None:
+        a, b = sorted((declarer.id, target.id))
+        relation = self.relations[(a, b)]
+        self.deals = [d for d in self.deals if {d.a, d.b} != {a, b}]
+        self._set_status(relation, "war", tick)
+        relation.war = War(a, b, tick, aggressors=aggressors, progress={a: 0.0, b: 0.0}, tiles_taken={a: 0, b: 0},
+                           casualties={a: 0.0, b: 0.0}, declarer=declarer.id, guardian=guardian, defending=defending)
+
+    def _join_defence(self, guardian, victim, aggressor, tick: int, events: list) -> None:
+        """An ally of a civ that was attacked is at war with the attacker, whether it likes it or not.
+
+        Wars an ally starts carry no such duty: joining those is the ally's own
+        choice, made by taking an aggressive stance toward the same enemy.
+        """
+        if guardian is aggressor:
+            return
+        relation = self.relation(guardian.id, aggressor.id)
+        if relation.status != "peace":
+            return  # already fighting, or allied to both sides and so staying out
+        self._start_war(aggressor, guardian, tick, aggressors={aggressor.id},
+                        guardian=guardian.id, defending=victim.id)
+        self._log(tick, events, "war", [guardian, aggressor, victim],
+                  f"{guardian.name} joins the war against {aggressor.name} in defence of its ally {victim.name}")
+
+    def _betray(self, war: War, betrayer, victim, tick: int, events: list) -> None:
+        """The declarer broke an alliance to start this war: it gets a surprise opening and a bad name."""
+        war.betrayer = betrayer.id
+        war.surprise_until = tick + rules.SURPRISE_TICKS
+        # A betrayal while already distrusted adds to the time rather than restarting it.
+        self.distrust_until[betrayer.id] = max(self.distrust_until.get(betrayer.id, 0), tick) + rules.DISTRUST_TICKS
+        self._log(tick, events, "war", [betrayer, victim],
+                  f"{betrayer.name} betrays its ally {victim.name}, catching it off guard; "
+                  f"others will distrust {betrayer.name} for {self.distrust_until[betrayer.id] - tick} ticks")
 
     def _set_status(self, relation: Relation, status: str, tick: int) -> None:
         relation.status = status
@@ -175,13 +240,21 @@ class Diplomacy:
             return
         a_rate = self._deal_rate(civ_a, civ_b, a_offer, b_offer)
         b_rate = self._deal_rate(civ_b, civ_a, b_offer, a_offer)
+        # A betrayer gets worse terms: its partner sends less, and opening the deal costs it more.
+        shunned = {civ.id: self.distrusted(civ.id, tick) for civ in (civ_a, civ_b)}
+        if shunned[civ_b.id]:
+            a_rate = round(a_rate * rules.DISTRUST_RATE_FACTOR, 2)
+        if shunned[civ_a.id]:
+            b_rate = round(b_rate * rules.DISTRUST_RATE_FACTOR, 2)
         if a_rate < rules.MIN_RATE or b_rate < rules.MIN_RATE:
             return
-        fee = 0 if relation.status == "alliance" else rules.DEAL_FEE
-        if min(civ_a.resources["gold"], civ_b.resources["gold"]) < fee:
+        base_fee = 0 if relation.status == "alliance" else rules.DEAL_FEE
+        fees = {civ.id: base_fee if not shunned[civ.id] else rules.DISTRUST_FEE_FACTOR * rules.DEAL_FEE
+                for civ in (civ_a, civ_b)}
+        if any(civ.resources["gold"] < fees[civ.id] for civ in (civ_a, civ_b)):
             return
         for civ in (civ_a, civ_b):
-            civ.resources["gold"] -= fee
+            civ.resources["gold"] -= fees[civ.id]
         deal = Deal(self._next_deal_id, civ_a.id, civ_b.id, (a_offer.give, a_rate), (b_offer.give, b_rate), tick)
         self._next_deal_id += 1
         self.deals.append(deal)
@@ -231,10 +304,16 @@ class Diplomacy:
         # Each side pushes into the other when its attack beats the other's defence.
         for attacker, defender in (sides, sides[::-1]):
             attack = strength[attacker.id] * (1.0 if attacker.id in war.aggressors else rules.COUNTER_ATTACK)
-            militia = rules.MILITIA * defender.population * (1 + self.mods[defender.id].military)
-            defence = (strength[defender.id] + militia) * (1 + rules.HOME_BONUS + self.mods[defender.id].defense)
+            # A betrayed civ is caught off guard at first: no militia has mustered and its
+            # home ground is no help, because the attacker knows the defences.
+            surprised = attacker.id == war.betrayer and tick < war.surprise_until
+            militia = 0.0 if surprised else rules.MILITIA * defender.population * (1 + self.mods[defender.id].military)
+            home = 0.0 if surprised else rules.HOME_BONUS
+            defence = (strength[defender.id] + militia) * (1 + home + self.mods[defender.id].defense)
             if attack > defence:
                 gain = rules.CAPTURE_RATE * (attack - defence) / (attack + defence)
+                if surprised:
+                    gain *= rules.SURPRISE_CAPTURE
                 war.progress[attacker.id] = min(war.progress[attacker.id] + gain, 2 * max(rules.TILE_DEFENSE.values()))
 
         # Both sides lose troops; the weaker side loses more.
@@ -308,25 +387,59 @@ class Diplomacy:
         produces no more of that resource until it is back under.
         """
         note = ""
+        shares = self.spoils_shares(attacker, defender)
         for res, capacity in bdef.stores.items():
-            share = defender.resources[res] * min(1.0, capacity / self.mods[defender.id].storage[res])
-            defender.resources[res] -= share
-            attacker.resources[res] += share
+            held = defender.resources[res] * min(1.0, capacity / self.mods[defender.id].storage[res])
+            defender.resources[res] -= held
+            for civ_id, share in shares.items():
+                self.civs[civ_id].resources[res] += share * held
             # Caps move with the building; keep them in step until modifiers refresh next tick.
             self.mods[defender.id].storage[res] -= capacity
             self.mods[attacker.id].storage[res] += capacity
-            note += f" holding {share:.0f} {res}"
-        return note
+            note += f" holding {held:.0f} {res}"
+        return note + self._split_note(shares)
+
+    def spoils_shares(self, captor, enemy) -> dict[int, float]:
+        """How the divisible gains of a capture are divided: civ id -> share, summing to 1.
+
+        A capture is joint when the captor has allies who are also at war with
+        the same enemy. The spoils are then split by army strength as it stands
+        right now, so the split follows the balance of power through the war.
+        Shares that are all close to equal are made exactly equal, so a tiny edge
+        does not tip the split.
+        """
+        partners = [captor] + [
+            self.civs[ally] for ally in self.allies(captor.id) if self.relation(ally, enemy.id).status == "war"
+        ]
+        even = 1 / len(partners)
+        strengths = {civ.id: self.strength(civ) for civ in partners}
+        total = sum(strengths.values())
+        if total <= 0:
+            return dict.fromkeys(strengths, even)
+        shares = {civ_id: strength / total for civ_id, strength in strengths.items()}
+        if all(abs(share - even) <= rules.EVEN_SPLIT_BAND + 1e-9 for share in shares.values()):
+            return dict.fromkeys(strengths, even)
+        return shares
+
+    def _split_note(self, shares: dict[int, float]) -> str:
+        if len(shares) == 1:
+            return ""
+        parts = ", ".join(f"{self.civs[civ_id].name} {share:.0%}" for civ_id, share in shares.items())
+        return f" (shared by strength: {parts})"
 
     def _surrender(self, relation: Relation, winner, loser, tick: int, events: list) -> None:
+        shares = self.spoils_shares(winner, loser)
         for res in RESOURCES:
             taken = rules.TRIBUTE * loser.resources[res]
             loser.resources[res] -= taken
-            room = self.mods[winner.id].storage[res] - winner.resources[res]
-            winner.resources[res] += max(0.0, min(taken, room))
+            for civ_id, share in shares.items():
+                civ = self.civs[civ_id]
+                room = self.mods[civ_id].storage[res] - civ.resources[res]
+                civ.resources[res] += max(0.0, min(share * taken, room))
         taken = relation.war.tiles_taken[winner.id]
         self._end_war(relation, tick, events, rules.SURRENDER_TRUCE,
-                      f"{loser.name} surrenders to {winner.name}, having lost {taken} tiles, and pays tribute")
+                      f"{loser.name} surrenders to {winner.name}, having lost {taken} tiles, and pays tribute"
+                      + self._split_note(shares))
         self.intents[(loser.id, winner.id)] = Intent(tick=tick)
 
     def _end_war(self, relation: Relation, tick: int, events: list, truce: int, text: str) -> None:

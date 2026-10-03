@@ -12,6 +12,7 @@ from ..economy.rules import RESOURCES
 from ..llm import LLMClient, LLMError
 from . import prompt
 from .checkin import CheckinRequest, default_offer
+from .context import BAND_RATIO
 
 log = logging.getLogger(__name__)
 
@@ -57,7 +58,11 @@ class RuleBrain:
         offer = default_offer(you)
         stances = []
         for n in context["neighbors"]:
-            edge = you["military_power"] / max(n["military_power"], 1)
+            # Exact for allies; for everyone else only the rough comparison is known.
+            if n["intel"]:
+                edge = you["military_power"] / max(n["intel"]["military_power"], 1)
+            else:
+                edge = 1 / BAND_RATIO[n["army_vs_yours"]]
             entry = {"civ": n["name"], "stance": "ignore", "give": "none", "give_per_tick": 0,
                      "want": "none", "want_per_tick": 0, "troop_commitment": 0}
             if n["relation"] == "war":

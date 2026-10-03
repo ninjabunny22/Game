@@ -13,6 +13,7 @@ from ..diplomacy.rules import (
     ALLIANCE_UPKEEP,
     DEAL_DURATION,
     DEAL_FEE,
+    DISTRUST_TICKS,
     MAX_RATE,
     MIN_RATE,
     WAR_COST,
@@ -93,10 +94,10 @@ def _stance_prompt(context: dict) -> tuple[str, str, dict]:
 Every {CHECKIN_INTERVAL} ticks you choose one stance toward each other civilization. Your advisers carry it out between check-ins; you only set intent.
 
 Stances:
-- trade: offer one resource ("give") and ask for another ("want"). A deal opens only if they also choose trade or ally toward you. Each side then sends what it offered every tick for {DEAL_DURATION} ticks. Opening costs {DEAL_FEE} gold. "storage" is the most you can hold of each resource. Give something from your "surplus"; want something from your "lacking", ideally something in their "surplus". Gold can be given or wanted like any resource.
-- ally: an alliance forms only if they also choose ally. It gives both sides stronger defence and faster science, costs {ALLIANCE_COST} gold to form and {ALLIANCE_UPKEEP} gold per tick, and trade terms still apply.
+- trade: offer one resource ("give") and ask for another ("want"). A deal opens only if they also choose trade or ally toward you. Each side then sends what it offered every tick for {DEAL_DURATION} ticks. Opening costs {DEAL_FEE} gold. "storage" is the most you can hold of each resource. Give something from your "surplus"; want something from your "lacking". Gold can be given or wanted like any resource.
+- ally: an alliance forms only if they also choose ally. It gives both sides stronger defence and faster science, costs {ALLIANCE_COST} gold to form and {ALLIANCE_UPKEEP} gold per tick, and trade terms still apply. An alliance is a defensive pact: if your ally is attacked you are automatically at war with the attacker until that war ends, and the same holds for them. A war your ally starts is your choice: choose aggression toward the same civilization to join it and share the spoils by army strength, or stay out and get nothing. Allies share "intel": exact army numbers, where their troops are committed and what they hold in store. About everyone else you only know "army_vs_yours", a rough comparison of their army to yours.
 - ignore: no dealings.
-- aggression: go to war for their land. Declaring costs {WAR_COST} gold, and soldiers cost gold, ore and food every tick. It only works if "in_reach" is true and there is no truce; otherwise your border creeps toward them first. "troop_commitment" from 0.1 to 1.0 is how much of your "military_power" to raise. Attacking a neighbour whose "military_power" is higher than yours loses land. A neighbour whose capital is reached surrenders and pays tribute.
+- aggression: go to war for their land. Declaring costs {WAR_COST} gold, and soldiers cost gold, ore and food every tick. It only works if "in_reach" is true and there is no truce; otherwise your border creeps toward them first. "troop_commitment" from 0.1 to 1.0 is how much of your "military_power" to raise. Attacking a neighbour whose "army_vs_yours" is stronger loses land. A neighbour whose capital is reached surrenders and pays tribute. Choosing aggression toward an ally is betrayal: the alliance breaks and you catch them off guard for the opening of the war, but for {DISTRUST_TICKS} ticks afterwards ("distrusted_ticks_left") nobody will form an alliance with you and trade costs you more and brings in less.
 
 Resources are {", ".join(RESOURCES)}. Amounts per tick are between {MIN_RATE} and {MAX_RATE}. For stances that do not use a field, put "none" or 0.
 

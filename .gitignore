@@ -6,3 +6,6 @@ __pycache__/
 # Godot
 godot/.godot/
 *.import
+
+# Launcher logs
+logs/

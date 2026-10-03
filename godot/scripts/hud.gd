@@ -227,6 +227,8 @@ func _army_text(civ: Dictionary) -> String:
 		problems.append("no ore")
 	if not problems.is_empty():
 		text += "   [color=#e07a6a](%s)[/color]" % ", ".join(problems)
+	if int(civ["distrusted_for"]) > 0:
+		text += "\n[color=#e07a6a]Distrusted for betrayal: %d ticks left[/color]" % int(civ["distrusted_for"])
 	return text
 
 
