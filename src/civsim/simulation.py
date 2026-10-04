@@ -42,6 +42,7 @@ class Simulation:
         self.tech_tree = TechTree.load()
         self.world = generate_map(config.seed, config.width, config.height)
         self.civs = self._create_civs()
+        self.world.civs = self.civs  # placement rules look across borders
         self.ai = CivAI(self.world, self.building_defs, self.tech_tree, self.rng)
         self.modifiers = {
             civ.id: compute_modifiers(civ, self.building_defs, self.tech_tree) for civ in self.civs

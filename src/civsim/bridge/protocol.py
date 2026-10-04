@@ -92,7 +92,8 @@ def init_message(sim: Simulation) -> str:
             type_id: {"name": dtype.name, "color": dtype.color} for type_id, dtype in DEPOSIT_TYPES.items()
         },
         "buildings": {
-            bdef.id: {"name": bdef.name, "color": bdef.color, "height": bdef.height,
+            # "size": tiles a side of the square the building stands on.
+            bdef.id: {"name": bdef.name, "color": bdef.color, "height": bdef.height, "size": bdef.size,
                       "requires_tech": bdef.requires_tech, "upkeep": bdef.upkeep}
             for bdef in sim.building_defs.values()
         },
@@ -153,8 +154,9 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
             "settlements": [
                 {"name": s.name, "x": s.tile % world.width, "y": s.tile // world.width} for s in civ.settlements
             ],
-            # A tile can hold several buildings, so each has its own id; "village" is the
-            # id of the village or town it belongs to.
+            # "x", "y" is the building's tile: the middle of an odd-sized building's square,
+            # and the corner nearest the origin of an even-sized one. "village" is the id of
+            # the village or town it belongs to.
             "buildings": [
                 {"id": b.id, "type": b.type, "x": b.tile % world.width, "y": b.tile // world.width,
                  "village": b.village,

@@ -12,7 +12,7 @@ const DIR := "res://assets/characters/"
 const TEAM_MATERIALS := {
 	"Commander": ["cloth_team"], "Villager": ["tunic_moss"], "Rider": ["tunic_moss", "saddle_blanket"],
 	"Stable": ["cloth_team"], "Boat": ["cloth_team"], "Harbour": ["cloth_team"],
-	"Knight": ["cloth_team"], "Castle": ["cloth_team"], "CapitalCastle": ["cloth_team"],
+	"Knight": ["cloth_team"], "Archer": ["cloth_team"], "Castle": ["cloth_team"], "CapitalCastle": ["cloth_team"],
 }
 
 ## Parts of a model that are left out: the stable comes on a wide plate of grass, which would

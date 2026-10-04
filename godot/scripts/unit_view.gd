@@ -4,8 +4,9 @@ extends Node3D
 ## An army with a commander is shown as the commander, an animated model in the
 ## civ's colour that stands, walks or strikes according to what the army is doing,
 ## with the count of each unit type written above. An army without one is shown as
-## a single figure of its dominant unit type: a mounted knight, animated and in the
-## civ's colour, for cavalry, and a plain figure (spear, sword and shield, bow) for the rest. An army that has put out from a harbour is shown as a ship until it
+## a single figure of its dominant unit type: a mounted knight for cavalry and an archer
+## for archers, animated and in the civ's colour, and a plain figure (spear, sword and
+## shield) for the rest. An army that has put out from a harbour is shown as a ship until it
 ## lands. Villagers are animated too: walking, hammering at a building, working the
 ## land or drawing water; one with a horse from the stables is shown riding.
 ##
@@ -13,12 +14,19 @@ extends Node3D
 ## in its civ's colour with its size, garrisons and villagers are left out, and
 ## nothing is captioned; the figures and the full captions appear closer in.
 
-const FIGURE_SCALE := 1.7
-const COMMANDER_HEIGHT := 2.1  # in tiles
-const VILLAGER_HEIGHT := 1.05
-const RIDER_HEIGHT := 1.55
-const KNIGHT_HEIGHT := 1.75
-const BOAT_LENGTH := 2.2
+# Everything is drawn to fit the tile grid: figures stand well under a tile tall, beside
+# buildings that fill one tile.
+const FIGURE_SCALE := 0.65
+const COMMANDER_HEIGHT := 0.8  # in tiles
+const VILLAGER_HEIGHT := 0.45
+const RIDER_HEIGHT := 0.62
+const KNIGHT_HEIGHT := 0.72
+const ARCHER_HEIGHT := 0.6
+## Unit types with a model of their own for an army without a commander: [model, height].
+const SOLDIER_MODELS := {"cavalry": ["Knight", KNIGHT_HEIGHT], "archer": ["Archer", ARCHER_HEIGHT]}
+const STRIKES := ["attack", "shoot"]  # what a model's fighting animation may be called
+const BOAT_LENGTH := 0.95
+const GARRISON_SPOT := Vector3(0.5, 0, 1.3)  # before the castle gate, not inside the walls
 const AT_ARMS := ["fighting", "besieging"]  # army states shown as striking
 const MOVE_SPEED := 6.0  # how fast figures glide toward their tile, in tiles per second
 const SKIN := Color(0.87, 0.72, 0.58)
@@ -73,7 +81,7 @@ func update(armies: Array, villagers: Array) -> void:
 		entry["size"] = int(army["size"])
 		entry["caption"] = _army_caption(army)
 		_show_army(entry)
-		_aim(entry, _spot(int(army["x"]), int(army["y"]), Vector3(0.25, 0, 0.25) if army["role"] == "garrison" else Vector3.ZERO))
+		_aim(entry, _spot(int(army["x"]), int(army["y"]), GARRISON_SPOT if army["role"] == "garrison" else Vector3.ZERO))
 	_drop_missing(_armies, seen)
 
 	seen = {}
@@ -99,7 +107,7 @@ func update(armies: Array, villagers: Array) -> void:
 		var fan := Vector3(-0.3 + 0.3 * (n % 3), 0, 0.3 - 0.3 * (n / 3 % 3))
 		_aim(_villagers[id], _spot(int(villager["x"]), int(villager["y"]), fan))
 		_villagers[id]["afloat"] = bool(villager.get("afloat", false))  # aboard ship: not drawn
-		_villagers[id]["node"].visible = _detail >= 1 and not _villagers[id]["afloat"]
+		_villagers[id]["node"].visible = not _villagers[id]["afloat"]
 		# What it does once it has stopped walking.
 		var doing := "idle"
 		if villager["at_work"] and villager["task"] == "build":
@@ -116,8 +124,7 @@ func set_detail(detail: int) -> void:
 	for entry: Dictionary in _armies.values():
 		_show_army(entry)
 	for entry: Dictionary in _villagers.values():
-		entry["node"].visible = detail >= 1 and not entry.get("afloat", false)
-		_characters.set_active(entry["node"], detail >= 1)
+		entry["node"].visible = not entry.get("afloat", false)
 
 
 ## Far: field armies are a marker and a number, garrisons are hidden. Closer: the
@@ -142,14 +149,14 @@ func _show_army(entry: Dictionary) -> void:
 	elif _detail == 1:
 		label.visible = is_field
 		label.text = str(entry.get("size", 0))
-		label.pixel_size = 0.022
-		label.position.y = 3.2
+		label.pixel_size = 0.011
+		label.position.y = 1.3
 	else:
 		# Up close: exactly what is in the army, and who leads it.
 		label.visible = entry.get("caption", "") != ""
 		label.text = entry.get("caption", "")
-		label.pixel_size = 0.016
-		label.position.y = 3.4
+		label.pixel_size = 0.007
+		label.position.y = 1.3
 
 
 func _process(delta: float) -> void:
@@ -170,8 +177,10 @@ func _process(delta: float) -> void:
 				var action := "walk" if moving else "idle"
 				if moving and offset.length() > 1.5 and _characters.can_play(figure, "trot"):
 					action = "trot"  # a mounted figure with ground to make up
-				if state in AT_ARMS and _characters.can_play(figure, "attack"):
-					action = "attack"
+				if state in AT_ARMS:
+					for strike: String in STRIKES:
+						if _characters.can_play(figure, strike):
+							action = strike
 				_characters.play(figure, action)
 			elif entry.get("mounted", false):
 				_characters.play(node, ("trot" if offset.length() > 1.5 else "walk") if moving else "idle")
@@ -223,8 +232,9 @@ func _make_army(civ: int, army: Dictionary, look: String) -> Dictionary:
 		figure = _characters.instance("Commander", color, COMMANDER_HEIGHT)
 		if figure == null:
 			figure = _commander_figure(color)  # the model is missing: the old placeholder
-	elif str(army["dominant"]) == "cavalry":
-		figure = _characters.instance("Knight", color, KNIGHT_HEIGHT)
+	elif SOLDIER_MODELS.has(str(army["dominant"])):
+		var soldier: Array = SOLDIER_MODELS[str(army["dominant"])]
+		figure = _characters.instance(soldier[0], color, soldier[1])
 	if figure == null:
 		figure = _soldier_figure(str(army["dominant"]), color)
 	root.add_child(figure)
@@ -258,8 +268,6 @@ func _make_villager(civ: int, task: String, look: String, mounted: bool) -> Dict
 	var color: Color = _civ_colors[civ]
 	var model: Node3D = _characters.instance("Rider", color, RIDER_HEIGHT) if mounted else _characters.instance("Villager", color, VILLAGER_HEIGHT)
 	if model != null:
-		model.visible = _detail >= 1
-		_characters.set_active(model, _detail >= 1)
 		add_child(model)
 		return {"node": model, "look": look, "target": Vector3.ZERO}
 	var figure := Node3D.new()

@@ -24,11 +24,14 @@ from ..economy import (
     BuildingDef,
     Modifiers,
     demolish,
+    everything_built,
     find_site,
     food_need,
+    footprint,
     place,
     placement_problem,
     recompute_capacity,
+    survey_ground,
     water_growth_factor,
 )
 from ..economy.rules import LAKE_WATER, RESOURCES, RIVER_WATER, SETTLEMENT_YIELDS, WORK_RATE
@@ -214,11 +217,13 @@ class CivAI:
         options.sort(key=lambda option: (-option[0], option[1], option[2]))
 
         civ.goal = None
+        ground = None  # where there is room to build, worked out once for all the options
         for score, kind, target, cost in options:
             if score < MIN_SCORE:
                 break
             if kind == "build":
-                site = find_site(civ, self.world, self.building_defs[target])
+                ground = ground or survey_ground(civ, self.world)
+                site = find_site(civ, self.world, self.building_defs[target], ground)
                 if site is None and civ.can_afford(cost):
                     site = self._make_room(civ, mods, self.building_defs[target], score, needs, tick, events)
                 if site is None:
@@ -258,9 +263,10 @@ class CivAI:
 
     def _make_room(self, civ: Civilization, mods: Modifiers, wanted: BuildingDef, score: float, needs: dict,
                    tick: int, events: list) -> int | None:
-        """With no room left, clear the civ's least useful building if `wanted` is far better.
+        """With no room left, clear the least useful ground the wanted building could stand on,
+        if `wanted` is far better than everything standing there.
 
-        Returns the tile with the freed slot, or None if nothing is worth giving up.
+        Returns the tile to build on, or None if nothing is worth giving up.
         """
         if tick - civ.last_demolition < DEMOLITION_COOLDOWN:
             return None
@@ -268,28 +274,41 @@ class CivAI:
         resource = wanted.placement.partition(":")[2]
         cx, cy = world.xy(civ.capital.tile)
 
-        def worth(building: Building) -> tuple[float, float, int]:
-            # Value of the last copy of its type; among equals, give up the most remote one.
+        def worth(building: Building) -> float:
+            # Value of the last copy of its type.
             bdef = self.building_defs[building.type]
-            x, y = world.xy(building.tile)
-            return (self._building_score(civ, bdef, needs, civ.count(bdef.id) - 1),
-                    -math.hypot(x - cx, y - cy), building.tile)
+            return self._building_score(civ, bdef, needs, civ.count(bdef.id) - 1)
 
-        # Only a building whose going would leave a place the wanted one may stand.
-        candidates = [
-            b for b in civ.buildings
-            if b.complete and b.type != wanted.id
-            and placement_problem(civ, world, wanted, b.tile, without=b) is None
-            and (not resource or world.yields[b.tile].get(resource, 0) > 0)
-        ]
-        if not candidates:
+        # A site is the square the wanted building would stand on at some building's tile;
+        # everything of the civ's own on that square would have to go.
+        built = everything_built(civ, world)
+        best, best_key = None, None
+        for anchor in civ.buildings:
+            ground = footprint(world, wanted.id, anchor.tile)
+            if ground is None:
+                continue
+            victims: list[Building] = []
+            for part in ground:
+                standing = built.get(part)
+                if standing is not None and not any(standing is v for v in victims):
+                    victims.append(standing)
+            if any(not v.complete or v.type == wanted.id or v not in civ.buildings for v in victims):
+                continue
+            if placement_problem(civ, world, wanted, anchor.tile, without=victims, built=built) is not None:
+                continue
+            if resource and not any(world.yields[part].get(resource, 0) > 0 for part in ground):
+                continue
+            # Among equals, give up the most remote ground.
+            x, y = world.xy(anchor.tile)
+            key = (sum(worth(v) for v in victims), -math.hypot(x - cx, y - cy), anchor.tile)
+            if best_key is None or key < best_key:
+                best, best_key = (anchor.tile, victims), key
+        if best is None or score < REPLACE_ADVANTAGE * best_key[0]:
             return None
-        victim = min(candidates, key=worth)
-        if score < REPLACE_ADVANTAGE * worth(victim)[0]:
-            return None
-        demolish(civ, victim, mods, self.building_defs, events)
+        for victim in best[1]:
+            demolish(civ, victim, mods, self.building_defs, events)
         civ.last_demolition = tick
-        return victim.tile
+        return best[0]
 
     def _building_need(self, bdef: BuildingDef, needs: dict) -> float:
         if bdef.stores:

@@ -6,7 +6,7 @@
     "color": "#c8a26b", "height": 0.5
   },
   "farm": {
-    "name": "Farm", "category": "food", "placement": "yield:food",
+    "name": "Farm", "size": 2, "category": "food", "placement": "yield:food",
     "cost": {"wood": 15}, "build_time": 10, "upkeep": {"wood": 0.03, "water": 0.08},
     "effects": {"yield_mult": {"food": 0.12}},
     "color": "#e6d36a", "height": 0.3
@@ -84,13 +84,13 @@
     "color": "#8c5a5a", "height": 0.7
   },
   "aqueduct": {
-    "name": "Aqueduct", "category": "growth", "placement": "center", "requires_tech": "engineering", "max_count": 3,
+    "name": "Aqueduct", "size": 2, "category": "growth", "placement": "center", "requires_tech": "engineering", "max_count": 3,
     "cost": {"stone": 80, "ore": 15}, "build_time": 24, "upkeep": {"stone": 0.15},
     "effects": {"housing": 20, "growth": 0.15, "water_mult": 0.2},
     "color": "#b9d7e8", "height": 1.0
   },
   "university": {
-    "name": "University", "category": "science", "placement": "center", "requires_tech": "education",
+    "name": "University", "size": 2, "category": "science", "placement": "center", "requires_tech": "education",
     "cost": {"wood": 60, "stone": 80, "gold": 40}, "build_time": 28, "upkeep": {"gold": 0.36},
     "effects": {"science": 2.0},
     "color": "#3d6fb3", "height": 1.1
@@ -102,7 +102,7 @@
     "color": "#7d2b2b", "height": 0.75
   },
   "stables": {
-    "name": "Stables", "category": "military", "placement": "center", "requires_tech": "animal_husbandry", "max_count": 2,
+    "name": "Stables", "size": 2, "category": "military", "placement": "center", "requires_tech": "animal_husbandry", "max_count": 2,
     "cost": {"wood": 90, "stone": 30}, "build_time": 20, "upkeep": {"food": 0.15, "water": 0.05},
     "effects": {},
     "color": "#8a5a2b", "height": 0.6
@@ -114,37 +114,37 @@
     "color": "#6b6b73", "height": 0.9
   },
   "bank": {
-    "name": "Bank", "category": "wealth", "placement": "center", "requires_tech": "banking", "max_count": 4,
+    "name": "Bank", "size": 2, "category": "wealth", "placement": "center", "requires_tech": "banking", "max_count": 4,
     "cost": {"wood": 60, "stone": 80, "gold": 60}, "build_time": 24, "upkeep": {"wood": 0.05},
     "effects": {"income": {"gold": 0.8}, "store": {"gold": 200}},
     "color": "#c9a227", "height": 0.9
   },
   "academy": {
-    "name": "Academy", "category": "military", "placement": "center", "requires_tech": "military_academy", "max_count": 2,
+    "name": "Academy", "size": 2, "category": "military", "placement": "center", "requires_tech": "military_academy", "max_count": 2,
     "cost": {"wood": 80, "stone": 80, "gold": 60}, "build_time": 26, "upkeep": {"gold": 0.4},
     "effects": {"commander_xp": 0.25, "military": 0.05},
     "color": "#8e3b46", "height": 1.0
   },
   "harbour": {
-    "name": "Harbour", "category": "food", "placement": "coast", "requires_tech": "navigation", "max_count": 2,
+    "name": "Harbour", "size": 2, "category": "food", "placement": "coast", "requires_tech": "navigation", "max_count": 2,
     "cost": {"wood": 120, "stone": 50}, "build_time": 24, "upkeep": {"wood": 0.08},
     "effects": {"yield_mult": {"food": 0.1}, "income": {"gold": 0.4}, "boat_range": 1},
     "color": "#3f7f9f", "height": 0.5
   },
   "fortress": {
-    "name": "Fortress", "category": "military", "placement": "center", "requires_tech": "fortification", "max_count": 2,
+    "name": "Fortress", "size": 3, "category": "military", "placement": "center", "requires_tech": "fortification", "max_count": 2,
     "cost": {"stone": 220, "ore": 60, "wood": 60}, "build_time": 34, "upkeep": {"stone": 0.1, "gold": 0.2},
     "effects": {"defense": 0.2},
     "color": "#55555f", "height": 1.3
   },
   "reservoir": {
-    "name": "Reservoir", "category": "infrastructure", "placement": "center", "requires_tech": "waterworks",
+    "name": "Reservoir", "size": 2, "category": "infrastructure", "placement": "center", "requires_tech": "waterworks",
     "cost": {"stone": 120, "wood": 40}, "build_time": 22, "upkeep": {"stone": 0.04},
     "effects": {"store": {"water": 600}},
     "color": "#3a8fc4", "height": 0.4
   },
   "factory": {
-    "name": "Factory", "category": "industry", "placement": "center", "requires_tech": "steam_power", "max_count": 4,
+    "name": "Factory", "size": 2, "category": "industry", "placement": "center", "requires_tech": "steam_power", "max_count": 4,
     "cost": {"wood": 150, "stone": 150, "ore": 150}, "build_time": 36, "upkeep": {"wood": 0.2, "ore": 0.1, "water": 0.15},
     "effects": {"yield_mult": {"wood": 0.1, "stone": 0.1, "ore": 0.1}, "build_speed": 0.1},
     "color": "#70605a", "height": 1.2

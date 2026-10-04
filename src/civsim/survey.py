@@ -9,16 +9,16 @@ Per game it reports
   by the crossing rule), how often an army put out and whether it did so from land near a
   working harbour, and villager-ticks on open water;
 - armies with nowhere to go: army-ticks spent with no route to their goal;
-- large buildings (harbour, stables): how many stand at the end, how many share their tile or
-  stand on a capital's tile (none, by the placement rule), and how many have another building
-  or a capital on one of the eight tiles around them, which their models overhang.
+- buildings: how many stand at the end and how many are larger than one tile, how many tiles
+  lie under more than one building or buildings stand on a castle's ground (none, by the
+  placement rule), and how much of the civs' land is built on.
 """
 
 import argparse
 from concurrent.futures import ProcessPoolExecutor
 
 from .config import SimConfig
-from .economy import EXCLUSIVE, ports
+from .economy import castle_ground, footprint, ports
 from .simulation import Simulation
 from .strategy import make_brain
 
@@ -57,21 +57,24 @@ def survey(seed: int, ticks: int) -> dict:
                     counts["embarkations_from_port"] += any(
                         tile in harbour_land[civ.id] for tile in [before, *world.neighbors(army.tile)])
 
-    capitals = set(world.capital_tiles) | {s.tile for civ in sim.civs for s in civ.settlements}
-    built = {tile for civ in sim.civs for tile in civ.buildings_by_tile()}
-    large = {"harbour": 0, "stables": 0, "sharing_tile": 0, "on_capital": 0,
-             "building_alongside": 0, "capital_alongside": 0}
+    # Every building stands on its own square of tiles: count the tiles under more than one
+    # building, the buildings on a castle's ground, and how full the civs' land is.
+    under: dict[int, int] = {}
+    large = {"buildings": 0, "multi_tile": 0, "harbour": 0, "stables": 0, "overlapping_tiles": 0,
+             "on_castle_ground": 0, "land_tiles": 0, "built_tiles": 0}
     for civ in sim.civs:
-        on_tile = civ.buildings_by_tile()
+        large["land_tiles"] += len(civ.territory)
         for building in civ.buildings:
-            if building.type not in EXCLUSIVE:
-                continue
-            large[building.type] += 1
-            large["sharing_tile"] += len(on_tile[building.tile]) > 1
-            large["on_capital"] += building.tile in capitals
-            around = set(world.neighbors(building.tile, diagonal=True))
-            large["building_alongside"] += bool(around & built)
-            large["capital_alongside"] += bool(around & capitals)
+            ground = footprint(world, building.type, building.tile)
+            large["buildings"] += 1
+            large["multi_tile"] += len(ground) > 1
+            if building.type in large:
+                large[building.type] += 1
+            large["on_castle_ground"] += any(castle_ground(world, tile) for tile in ground)
+            for tile in ground:
+                under[tile] = under.get(tile, 0) + 1
+    large["built_tiles"] = len(under)
+    large["overlapping_tiles"] = sum(1 for count in under.values() if count > 1)
     return {"seed": seed, "ticks": ticks, "first_harbour_tick": first_harbour, **counts, "large": large}
 
 
@@ -88,11 +91,13 @@ def report(results: list[dict]) -> str:
               f"army-ticks on open water: {total['army_ticks_afloat']}, aboard ship: {total['army_ticks_aboard']}",
               f"times an army put out: {total['embarkations']}, from land near a working harbour: "
               f"{total['embarkations_from_port']}", "",
-              "seed    harbours  stables  sharing-tile  on-capital  building-alongside  capital-alongside"]
+              "seed    buildings  multi-tile  harbours  stables  overlapping-tiles  on-castle-ground  land-built"]
     for r in results:
         large = r["large"]
-        lines.append(f"{r['seed']:<7d} {large['harbour']:8d}  {large['stables']:7d}  {large['sharing_tile']:12d}  "
-                     f"{large['on_capital']:10d}  {large['building_alongside']:18d}  {large['capital_alongside']:17d}")
+        share = 100 * large["built_tiles"] / max(1, large["land_tiles"])
+        lines.append(f"{r['seed']:<7d} {large['buildings']:9d}  {large['multi_tile']:10d}  {large['harbour']:8d}  "
+                     f"{large['stables']:7d}  {large['overlapping_tiles']:17d}  {large['on_castle_ground']:16d}  "
+                     f"{share:9.0f}%")
     return "\n".join(lines)
 
 

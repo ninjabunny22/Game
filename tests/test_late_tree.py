@@ -5,7 +5,7 @@ import pytest
 from civsim.civ import Building
 from civsim.config import SimConfig
 from civsim.diplomacy import Intent, Stance, rules
-from civsim.economy import compute_modifiers, find_site, manage_villagers, produce
+from civsim.economy import compute_modifiers, find_site, footprint, manage_villagers, produce
 from civsim.economy.rules import MAX_MOBILIZATION, WATER_PER_POP
 from civsim.map import BOAT_RANGE, step_cost
 from civsim.military import Army, Commander
@@ -64,7 +64,7 @@ def test_a_harbour_must_stand_on_the_water(sim):
     harbour = sim.building_defs["harbour"]
     site = find_site(civ, world, harbour)
     if site is not None:
-        assert any(world.is_water(n) for n in world.neighbors(site))
+        assert any(world.is_water(n) for part in footprint(world, "harbour", site) for n in world.neighbors(part))
     inland = {t for t in civ.territory if not any(world.is_water(n) for n in world.neighbors(t))}
     civ.territory = inland | {civ.capital.tile}
     assert find_site(civ, world, harbour) is None

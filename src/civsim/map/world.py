@@ -37,6 +37,7 @@ class WorldMap:
         self.regions: list = []
         self.capital_tiles: dict[int, int] = {}
         self.territory_rev = 0
+        self.civs: list = []  # everyone on the map, set by the simulation
 
     def idx(self, x: int, y: int) -> int:
         return y * self.width + x

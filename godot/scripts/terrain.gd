@@ -458,11 +458,16 @@ func _add_forests(forests: Array[int], models: RefCounted) -> void:
 			_trees.append({"multimesh": multimesh, "index": i, "place": places[i], "felled": false})
 
 
-## Fells the trees within `radius` of `centre`, so a large building there stands clear.
+## Fells the trees in the square reaching `radius` each way from `centre`, so a building there stands clear.
 ## The clearing is remembered by `key`; remove_clearing puts the trees back.
 func set_clearing(key: String, centre: Vector3, radius: float) -> void:
-	_clearings[key] = [Vector2(centre.x, centre.z), radius]
-	_apply_clearings()
+	var at := Vector2(centre.x, centre.z)
+	_clearings[key] = [at, radius]
+	for tree: Dictionary in _trees:  # a new clearing only ever fells: no need to look at the others
+		var place: Transform3D = tree["place"]
+		if not tree["felled"] and absf(place.origin.x - at.x) <= radius and absf(place.origin.z - at.y) <= radius:
+			tree["felled"] = true
+			(tree["multimesh"] as MultiMesh).set_instance_transform(int(tree["index"]), place.scaled_local(Vector3.ZERO))
 
 
 func remove_clearing(key: String) -> void:
@@ -476,7 +481,8 @@ func _apply_clearings() -> void:
 		var at := Vector2(place.origin.x, place.origin.z)
 		var felled := false
 		for clearing: Array in _clearings.values():
-			if at.distance_to(clearing[0]) <= float(clearing[1]):
+			var centre: Vector2 = clearing[0]
+			if absf(at.x - centre.x) <= float(clearing[1]) and absf(at.y - centre.y) <= float(clearing[1]):
 				felled = true
 				break
 		if felled != tree["felled"]:

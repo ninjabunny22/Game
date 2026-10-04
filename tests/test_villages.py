@@ -8,7 +8,7 @@ from civsim.bridge import protocol
 from civsim.civ import VILLAGE_RANGE, Building
 from civsim.config import SimConfig
 from civsim.economy import advance_construction, manage_villagers
-from civsim.economy.buildings import TILE_SLOTS, find_site
+from civsim.economy.buildings import find_site
 from civsim.map import BIOME_INFO
 from civsim.simulation import Simulation
 from civsim.strategy import RuleBrain
@@ -36,26 +36,33 @@ def tile_at(sim, civ, low, high=None):
 
 # -- slots -------------------------------------------------------------------
 
-def test_a_tile_holds_three_buildings_and_never_two_of_a_type(sim):
+def test_a_tile_holds_one_building(sim):
     civ = sim.civs[0]
-    assert TILE_SLOTS == 3
     house, market = sim.building_defs["house"], sim.building_defs["market"]
     first = find_site(civ, sim.world, house)
-    assert first == civ.capital.tile, "capitals take buildings like any other tile"
+    assert reach(sim, first, civ.capital.tile) == 2, "right beside the castle, which has its own ground"
     civ.buildings.append(Building("house", first))
-    assert find_site(civ, sim.world, house) != first, "not a second house on the same tile"
-    assert find_site(civ, sim.world, market) == first, "but a market fits beside it"
-    civ.buildings += [Building("market", first), Building("library", first)]
-    assert find_site(civ, sim.world, sim.building_defs["granary"]) != first, "three is the limit"
+    assert find_site(civ, sim.world, house) != first
+    assert find_site(civ, sim.world, market) != first, "nothing shares a tile"
 
 
-def test_tiles_already_built_on_are_filled_before_new_ground_is_broken(sim):
+def test_sites_beside_what_is_built_are_taken_before_new_ground_is_broken(sim):
     civ = sim.civs[0]
-    far = tile_at(sim, civ, 3)
+    far = tile_at(sim, civ, 5)
+    workshop = sim.building_defs["workshop"]
+    assert reach(sim, find_site(civ, sim.world, workshop), civ.capital.tile) == 2
     civ.buildings.append(Building("house", far))
-    for s in civ.settlements:  # the capitals are full
-        civ.buildings += [Building(kind, s.tile) for kind in ("market", "library", "granary")]
-    assert find_site(civ, sim.world, sim.building_defs["workshop"]) == far
+    # Fill the ground beside the castles: the next site is beside the far house.
+    for _ in range(200):
+        site = find_site(civ, sim.world, workshop)
+        if min(reach(sim, site, s.tile) for s in civ.settlements) > 2 and reach(sim, site, far) == 1:
+            break
+        civ.buildings.append(Building("granary", site))
+    else:
+        raise AssertionError("never built beside the far house")
+    assert all(reach(sim, b.tile, far) <= 1 or any(reach(sim, b.tile, o.tile) <= 1 or
+               min(reach(sim, b.tile, s.tile) for s in civ.settlements) <= 2 for o in civ.buildings if o is not b)
+               for b in civ.buildings), "the town grew outward from what stood, never off on its own"
 
 
 def test_buildings_on_one_tile_each_need_their_own_villager(sim):
@@ -198,7 +205,7 @@ def test_long_games_keep_villages_consistent():
                 if not civ.alive:
                     continue
                 for there in civ.buildings_by_tile().values():
-                    assert len(there) <= TILE_SLOTS and len({b.type for b in there}) == len(there)
+                    assert len(there) == 1
                 for b in civ.buildings:
                     assert b.id and villages[b.village].civ == civ.id
             for village in villages.values():

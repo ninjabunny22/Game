@@ -81,30 +81,29 @@ editor.
 - Each building type maps to a model in `BUILDING_MODELS` (`civ_view.gd`).
   Types that share a model carry a small pennant in the type's colour; models
   with nothing to repaint (fields, walls, stockpiles) fly their owner's flag.
-- **Figures.** Commanders, knights, villagers, mounted villagers, the stables, the harbour,
+- **Figures.** Commanders, knights, archers, villagers, mounted villagers, the stables, the harbour,
   the ship and the two castles are separate models in `godot/assets/characters` (`Commander.glb`,
-  `Knight.glb`, `Villager.glb`, `Rider.glb`, `Stable.glb`, `Harbour.glb`, `Boat.glb`, `Castle.glb`,
+  `Knight.glb`, `Archer.glb`, `Villager.glb`, `Rider.glb`, `Stable.glb`, `Harbour.glb`, `Boat.glb`, `Castle.glb`,
   `CapitalCastle.glb`), loaded at run time by
   `scripts/characters.gd` and put in their civ's colour by swapping one named
   material. A commander stands, walks or strikes with what his army is doing;
   a villager walks, hammers at a building, works the land or draws water; a
-  rider stands, walks or trots. A cavalry army without a commander is a knight,
-  who stands, walks or trots (his file has no attack animation, so in a fight he
-  keeps whichever of those fits); other armies without a commander are still the
+  rider stands, walks or trots. A cavalry army without a commander is a knight
+  and an archer army an archer; each plays its `idle`, `walk`, `trot` and fighting
+  (`attack` or `shoot`) animation where its file has one, and otherwise keeps
+  whichever of the others fits. Other armies without a commander are still the
   plain figures. If a model file is missing the old placeholder is drawn instead.
-  The stables and the harbour are drawn two tiles wide so they read beside a
-  commander, have their tile to themselves, and come without the plate of grass
-  their files include; the harbour is turned so its quay faces the water.
-- A civ's own capital is the large castle (`CapitalCastle.glb`, 3 tiles wide); every
-  other region capital is the smaller one (`Castle.glb`, 2 tiles). Each is made of
-  thousands of small parts, welded into one mesh when first loaded. Trees under a
-  castle, harbour or stables are felled while it stands.
-- A tile holds up to three buildings. Closer in they are drawn one by one,
-  sharing the tile (around the castle or tower on a capital's tile), and each
-  village is named. From the whole-map view each village is drawn as a single
-  cluster that grows through three sizes (under 6, 6 to 19, 20 or more
-  buildings; a village holds at most 40), and a capital's town as a ring of houses around its castle or
-  tower. The switch follows the same zoom levels as villagers and labels.
+- **One scale.** Everything is drawn to fit the tile grid. A building fills the
+  square of tiles the sim gives it (1, 2 or 3 tiles a side by type), figures
+  stand well under a tile tall, and trees on built ground are felled. The same
+  things are drawn at every zoom; only armies change, to a marker with their
+  size in the whole-map view. The harbour is turned so its quay faces the water.
+- A civ's own capital is the large castle (`CapitalCastle.glb`); every other
+  region capital is the smaller one (`Castle.glb`). A castle stands on its
+  capital's tile and the eight around it. Each is made of thousands of small
+  parts, welded into one mesh when first loaded.
+- Buildings are drawn one by one at every zoom, each on its own ground; a
+  village's name appears closer in.
 - Forest tiles are scattered with trees and mountain tiles with peaks.
 - The sea and lakes use a small shader: three bands of colour by depth, a foam
   line at the shore and a gentle swell. Rivers are curved ribbons with a
@@ -446,19 +445,21 @@ those on a captured tile change sides and wait for their new owner's orders.
 
 ## Villages and building slots
 
-- **Slots.** A tile holds up to 3 buildings, capitals included, and never two
-  of the same type. A Harbour or Stables takes a whole tile to itself, and never
-  a capital's tile. Stables can never stand on a capital's tile, a civ's own or
-  any other region's, by any route: every placement goes through one rule
-  (`placement_problem` and `place` in `economy/buildings.py`), demolition only
-  makes room where that rule allows, and stables found on a capital's tile when
-  it changes hands are not handed on. Everything else still works on whole tiles: capturing a
-  tile takes every building on it, and movement, pathfinding and water access
-  are unchanged. Each building has its own id, and one villager builds one
-  building even where several go up on the same tile.
-- **Filling before spreading.** When choosing a site a civ prefers tiles that
-  are already built on, or a capital's tile, to breaking new ground; buildings
-  placed by yield weigh that against the yield of the tile.
+- **One building to a tile, each its own size.** A building stands on a square
+  of tiles, `size` a side in `data/buildings.json`: most are 1, farms, stables,
+  harbours, aqueducts, reservoirs, universities, banks, academies and factories
+  are 2x2, and a fortress is 3x3. No two buildings' ground overlaps, across
+  borders too. A capital's castle has its tile and the eight around it, and
+  nothing is built there. Stables can never stand on a capital's tile by any
+  route: every placement goes through one rule (`placement_problem` and `place`
+  in `economy/buildings.py`), and anything found on a castle's ground when it
+  changes hands is not handed on. A building belongs to its own tile (the
+  middle of an odd-sized square, the corner nearest the origin of an even one)
+  for capture, villages and builders.
+- **Growing outward.** When choosing a site a civ prefers ground beside
+  something already built, or beside a castle, to breaking new ground;
+  buildings placed by yield weigh that against the yield. With no room left it
+  clears whatever stands on the least useful square the new building would fit.
 - **Villages.** Every capital a civ holds is the centre of its own town. A
   building joins the nearest village or town of its civ within 4 tiles that
   still has room (a town holds 60 buildings, a village 40); if there is none
