@@ -146,7 +146,7 @@ def test_cavalry_stood_down_return_their_horses_and_cavalry_killed_do_not(sim):
     assert civ.herd == pytest.approx(10 - lost["cavalry"])
 
 
-def test_an_army_takes_ship_only_when_it_puts_out_near_its_own_working_harbour(sim):
+def test_an_army_takes_ship_when_its_civ_has_a_working_harbour(sim):
     world = sim.world
     civ = sim.civs[0]
     mods = sim.modifiers[civ.id]
@@ -155,29 +155,27 @@ def test_an_army_takes_ship_only_when_it_puts_out_near_its_own_working_harbour(s
                       for n in world.neighbors(t) if world.is_open_water(n))
     army = Army(999, civ.id, shore, "field", units={"spearman": 20.0}, state="marching")
     civ.armies.append(army)
-    army.path, army.move_points = [sea], 10.0
-    sim.military._march(civ, army)
-    assert army.tile == sea and not army.boat, "it crosses all the same, but no harbour means no ship to show"
 
-    # A harbour three tiles along the shore is near enough; four is not.
-    x, y = world.xy(shore)
-    harbour = Building("harbour", world.idx(x + 4, y) if x + 4 < world.width else world.idx(x - 4, y), 1.0, True)
+    def put_out() -> bool:
+        army.tile, army.path, army.move_points = shore, [sea], 10.0
+        sim.military._march(civ, army)
+        assert army.tile == sea, "it crosses either way: that is the Navigation tech's business"
+        return army.boat
+
+    assert not put_out(), "no harbour, no ship to show"
+    harbour = Building("harbour", civ.capital.tile, 1.0, True)  # wherever it stands
     civ.buildings.append(harbour)
-    army.tile, army.path, army.move_points = shore, [sea], 10.0
-    sim.military._march(civ, army)
-    assert not army.boat, "four tiles from the harbour is too far"
-    harbour.tile = world.idx(x + 3, y) if x + 4 < world.width else world.idx(x - 3, y)
     harbour.active = False
-    army.tile, army.path, army.move_points = shore, [sea], 10.0
-    sim.military._march(civ, army)
-    assert not army.boat, "a harbour whose upkeep is unpaid launches nothing"
+    assert not put_out(), "a harbour whose upkeep is unpaid launches nothing"
     harbour.active = True
-    army.tile, army.path, army.move_points = shore, [sea, shore], 10.0
+    harbour.complete = False
+    assert not put_out(), "nor does one still being built"
+    harbour.complete = True
+    assert put_out()
+    army.path, army.move_points = [shore], 10.0
     sim.military._march(civ, army)
     assert army.tile == shore and not army.boat, "back on land it is on foot again"
-    army.path, army.move_points = [sea], 10.0
-    sim.military._march(civ, army)
-    assert army.tile == sea and army.boat
+    assert put_out()
     state = json.loads(protocol.tick_message(sim, False, 1.0))["data"]
     shown = next(a for a in state["armies"] if a["id"] == 999)
     assert shown["afloat"] and shown["boat"]

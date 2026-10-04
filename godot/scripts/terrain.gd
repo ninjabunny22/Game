@@ -86,11 +86,15 @@ var _is_land := PackedByteArray()
 var _native_color := Color(0.6, 0.55, 0.48)
 var _region_lines: MeshInstance3D
 var _water_material: ShaderMaterial
+var _trees: Array = []  # every forest tree: {multimesh, index, place, felled}
+var _clearings := {}  # key -> [centre, radius]: where trees are felled for a large building
 
 
 func build(map: Dictionary, biomes: Array, native_color: Color, models: RefCounted) -> void:
 	for child in get_children():
 		child.queue_free()
+	_trees.clear()
+	_clearings.clear()
 	map_width = int(map["width"])
 	map_height = int(map["height"])
 
@@ -449,7 +453,37 @@ func _add_forests(forests: Array[int], models: RefCounted) -> void:
 				var pz := float(tile / map_width) + (_hash(tile * 29 + n * 37) - 0.5) * 0.8
 				var basis := Basis(Vector3.UP, roll * TAU).scaled(Vector3.ONE * (0.75 + 0.45 * _hash(tile * 3 + n * 71)))
 				places.append(Transform3D(basis, Vector3(px, height_at(px, pz) + 0.05, pz)))
-		_scatter(tree_mesh, places, models.base_material())
+		var multimesh := _scatter(tree_mesh, places, models.base_material())
+		for i in places.size():
+			_trees.append({"multimesh": multimesh, "index": i, "place": places[i], "felled": false})
+
+
+## Fells the trees within `radius` of `centre`, so a large building there stands clear.
+## The clearing is remembered by `key`; remove_clearing puts the trees back.
+func set_clearing(key: String, centre: Vector3, radius: float) -> void:
+	_clearings[key] = [Vector2(centre.x, centre.z), radius]
+	_apply_clearings()
+
+
+func remove_clearing(key: String) -> void:
+	if _clearings.erase(key):
+		_apply_clearings()
+
+
+func _apply_clearings() -> void:
+	for tree: Dictionary in _trees:
+		var place: Transform3D = tree["place"]
+		var at := Vector2(place.origin.x, place.origin.z)
+		var felled := false
+		for clearing: Array in _clearings.values():
+			if at.distance_to(clearing[0]) <= float(clearing[1]):
+				felled = true
+				break
+		if felled != tree["felled"]:
+			tree["felled"] = felled
+			# A felled tree is shrunk to nothing rather than removed, so it can come back.
+			var shown: Transform3D = place.scaled_local(Vector3.ZERO) if felled else place
+			(tree["multimesh"] as MultiMesh).set_instance_transform(int(tree["index"]), shown)
 
 
 ## Peaks on the mountain tiles: not one per tile, which would be a wall, but enough to read as a range.
@@ -474,9 +508,9 @@ func _add_mountains(mountains: Array[int], models: RefCounted) -> void:
 
 
 ## Many copies of one mesh, drawn in a single batch.
-func _scatter(mesh: Mesh, places: Array[Transform3D], material: Material) -> void:
+func _scatter(mesh: Mesh, places: Array[Transform3D], material: Material) -> MultiMesh:
 	if places.is_empty():
-		return
+		return null
 	var multimesh := MultiMesh.new()
 	multimesh.transform_format = MultiMesh.TRANSFORM_3D
 	multimesh.mesh = mesh
@@ -487,6 +521,7 @@ func _scatter(mesh: Mesh, places: Array[Transform3D], material: Material) -> voi
 	instance.multimesh = multimesh
 	instance.material_override = material
 	add_child(instance)
+	return multimesh
 
 
 ## A repeatable pseudo-random number in [0, 1) for an integer.

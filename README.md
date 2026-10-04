@@ -427,9 +427,9 @@ those on a captured tile change sides and wait for their new owner's orders.
   villager: villagers are never killed.
 - **Ships.** Whether an army can cross open water is still the Navigation
   tech's business (6 tiles, one more per Harbour), sea and lakes alike. An
-  army that steps onto open water within 3 tiles of one of its civ's own
-  working Harbours is drawn as a ship until it lands; one that sets out from
-  anywhere else crosses just the same but is drawn as before.
+  army whose civ has a working Harbour is drawn as a ship from the moment it
+  steps onto open water until it lands. An army of a civ with no working
+  Harbour crosses just the same but is drawn as before.
 
 ## Villages and building slots
 

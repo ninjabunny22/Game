@@ -50,7 +50,6 @@ RALLY_TICKS = 30  # rest at the capital after a rout before marching again
 REPLACEMENT_TICKS = 30
 
 # Pursuit: the winner of a battle chases the routed army if it can keep up.
-HARBOUR_REACH = 3  # an army leaving land within this many tiles of its civ's harbour is seen to take ship
 PURSUIT_DAYS = 8  # how long a chase lasts at most
 PURSUIT_RANGE = 6  # ... and how far from the battlefield it goes
 PURSUIT_THREAT_RADIUS = 3  # no chase with another enemy army this close
@@ -456,12 +455,14 @@ class Military:
             if army.move_points < cost:
                 return
             army.move_points -= cost
-            # Putting out onto open water near one of its own working harbours, an army is seen to
-            # take ship. (Whether it can cross at all is the Navigation tech's business, not the harbour's.)
+            # An army of a civ with a working harbour is seen to take ship when it puts out onto open
+            # water: its ships come round from the harbour to wherever it embarks. (Whether it can
+            # cross at all is the Navigation tech's business, not the harbour's.) In play armies
+            # almost never leave land right beside a harbour, so tying the ship to one meant none
+            # was ever seen.
             if world.is_open_water(step):
                 if not world.is_open_water(army.tile):
-                    army.boat = any(b.type == "harbour" and b.complete and b.active
-                                    and self._reach(b.tile, army.tile) <= HARBOUR_REACH for b in civ.buildings)
+                    army.boat = any(b.type == "harbour" and b.complete and b.active for b in civ.buildings)
             else:
                 army.boat = False
             army.tile = army.path.pop(0)

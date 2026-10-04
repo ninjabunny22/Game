@@ -177,6 +177,8 @@ func update(civs: Array, regions: Array) -> void:
 				seen[key] = true
 				if not _nodes.has(key):
 					_nodes[key] = _make_building(civ_id, building, slot, there.size(), around)
+					if _nodes[key].has_meta("clearing"):  # a large building: fell the trees it would stand in
+						_terrain.set_clearing(key, _nodes[key].position, float(_nodes[key].get_meta("clearing")))
 				var node: Node3D = _nodes[key]
 				var size: float = node.get_meta("size")
 				var grown: float = 1.0 if building["complete"] else lerpf(0.15, 1.0, float(building["progress"]))
@@ -194,6 +196,7 @@ func update(civs: Array, regions: Array) -> void:
 				_nodes[key] = _make_village(civ_id, village, tier, footprint)
 	for key: String in _nodes.keys():
 		if not seen.has(key):
+			_terrain.remove_clearing(key)
 			_nodes[key].queue_free()
 			_nodes.erase(key)
 
@@ -346,6 +349,8 @@ func _make_building(civ_id: int, building: Dictionary, slot: int, count: int, ar
 			if spec.get("faces_water", false):
 				model.rotation.y = _toward_water(x, y) + WATER_SIDE
 				root.position = _terrain.tile_position(x, y)  # on the shore itself, not pushed to a corner
+			if spec.get("full_size", false):
+				root.set_meta("clearing", float(spec["size"]) * 0.5 + 0.15)
 			root.add_child(model)
 			add_child(root)
 			return root
