@@ -59,6 +59,7 @@ class Army:
     move_points: float = 0.0
     siege_progress: float = 0.0
     path_tick: int = -10_000  # when the path was last planned
+    no_route: int | None = None  # the goal there was no way to when last planned
     leaderless_until: int = 0  # tick from which a commanderless field army gets a new one
     # Pursuit of a routed enemy: its id, where and until when the chase runs.
     pursuing: int | None = None
@@ -66,7 +67,7 @@ class Army:
     pursuit_until: int = 0
     disordered_until: int = 0  # a pursuer is out of formation during the chase and for a while after
     rout_size: float = 0.0  # soldiers this army had when it broke
-    boat: bool = False  # crossing open water having put out from one of its civ's harbours
+    boat: bool = False  # aboard ship on open water, having put out from near one of its civ's harbours
 
     @property
     def size(self) -> float:

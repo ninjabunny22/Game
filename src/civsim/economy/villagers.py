@@ -10,6 +10,7 @@ come from the worker allocation). They are never killed; capture converts them.
 from collections.abc import Callable
 
 from ..map import WorldMap, find_path
+from .harbours import ports
 from ..military.army import Villager
 
 POP_PER_VILLAGER = 25
@@ -42,7 +43,7 @@ def manage_villagers(civ, world: WorldMap, mods, next_id: Callable[[], int]) -> 
         if not free:
             break
         nearest = min(free, key=lambda v: (_distance(world, v.tile, building.tile), v.id))
-        _send(nearest, world, mods, "build", building.tile)
+        _send(civ, nearest, world, mods, "build", building.tile)
         nearest.building = building.id
 
     # Anyone with nothing to do goes out to work the land.
@@ -50,7 +51,7 @@ def manage_villagers(civ, world: WorldMap, mods, next_id: Callable[[], int]) -> 
         if villager.task == "idle":
             site = _work_site(civ, world, villager)
             if site is not None:
-                _send(villager, world, mods, "gather", site)
+                _send(civ, villager, world, mods, "gather", site)
                 villager.gathers = max(civ.workers, key=lambda res: (civ.workers[res], res))
 
     for villager in civ.villagers:
@@ -83,10 +84,14 @@ def _release(villager: Villager) -> None:
     villager.path = []
 
 
-def _send(villager: Villager, world: WorldMap, mods, task: str, target: int) -> None:
-    path = find_path(world, villager.tile, target, bool(mods.bridges), bool(mods.boats), max_nodes=3000)
+def _send(civ, villager: Villager, world: WorldMap, mods, task: str, target: int) -> None:
+    # Like an army, a villager takes ship only from land near one of the civ's working harbours.
+    path = find_path(world, villager.tile, target, bool(mods.bridges), bool(mods.boats), max_nodes=3000,
+                     ports=ports(civ, world))
     if path is None:
-        path = _straight_line(world, villager.tile, target)  # cut off by water: get there anyway, never stuck
+        # Cut off by water, or too far to find a way: it is carried there all the same, so no
+        # building site is ever left without a builder. (On open water a villager is not drawn.)
+        path = _straight_line(world, villager.tile, target)
     villager.task = task
     villager.target = target
     villager.path = path

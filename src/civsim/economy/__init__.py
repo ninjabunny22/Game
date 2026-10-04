@@ -1,5 +1,16 @@
 from .horses import stables, tend_horses
-from .buildings import BuildingDef, advance_construction, demolish, find_site, load_building_defs
+from .buildings import (
+    EXCLUSIVE,
+    BuildingDef,
+    advance_construction,
+    demolish,
+    find_site,
+    load_building_defs,
+    may_stand,
+    place,
+    placement_problem,
+)
+from .harbours import HARBOUR_REACH, ports
 from .modifiers import Modifiers, compute_modifiers
 from .production import food_need, produce, recompute_capacity, water_balance, water_growth_factor, water_urgency
 from .rules import RESOURCES

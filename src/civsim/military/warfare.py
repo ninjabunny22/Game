@@ -31,6 +31,7 @@ import random
 from collections.abc import Callable
 
 from ..diplomacy import rules
+from ..economy.harbours import ports
 from ..economy.rules import MIN_POPULATION
 from ..map import WorldMap, find_path, region_neighbours, step_cost
 from .army import XP_PER_LEVEL_STEP, Army, Captive, Commander
@@ -367,6 +368,7 @@ class Military:
 
     def _plan(self, civ, army: Army, tick: int) -> None:
         capital = civ.capital.tile
+        others: list[int] = []  # for an attacker: every capital the enemy holds, nearest first
         if army.state == "returning" or (army.state == "retreating" and army.target_region is not None):
             if army.tile == capital:
                 self._disband(civ, army)
@@ -388,7 +390,8 @@ class Military:
             rested = tick >= self._rally.get(army.id, 0)
             if war and civ.id in war.aggressors and rested and army.size >= MIN_FIELD_ARMY:
                 # Make for the nearest capital the enemy holds: taking it takes its region.
-                goal = min((s.tile for s in enemy.settlements), key=lambda t: (self._gap(army.tile, t), t))
+                others = sorted((s.tile for s in enemy.settlements), key=lambda t: (self._gap(army.tile, t), t))
+                goal = others[0]
                 if army.state == "idle":
                     army.state = "marching"
             else:
@@ -402,10 +405,28 @@ class Military:
             army.path = []
             return
         stale = tick - army.path_tick >= REPLAN_TICKS
-        if stale or not army.path or army.path[-1] != goal:
-            mods = self.mods[civ.id]
-            army.path = find_path(self.world, army.tile, goal, bool(mods.bridges), bool(mods.boats)) or []
+        if not stale and army.no_route == goal:
+            return  # no way there when last looked: do not search again every tick
+        if stale or not army.path or army.path[-1] not in (goal, *others):
+            # The nearest enemy capital may lie across water the army cannot take ship for:
+            # then it makes for the nearest one it can get to, and failing that goes home.
+            path = None
+            for target in (goal, *others[1:]):
+                path = self._route(civ, army.tile, target)
+                if path is not None:
+                    break
+            army.no_route = goal if path is None else None
+            if path is None and capital not in (goal, army.tile):
+                path = self._route(civ, army.tile, capital)
+            army.path = path or []
             army.path_tick = tick
+
+    def _route(self, civ, start: int, goal: int, max_nodes: int = 6000) -> list[int] | None:
+        """The way an army of this civ would go. Open water needs boats, and can only be put out
+        onto from land near one of the civ's working harbours."""
+        mods = self.mods[civ.id]
+        return find_path(self.world, start, goal, bool(mods.bridges), bool(mods.boats), max_nodes,
+                         ports(civ, self.world))
 
     def _gap(self, a: int, b: int) -> int:
         ax, ay = self.world.xy(a)
@@ -449,22 +470,19 @@ class Military:
                 army.move_points = 0.0  # waiting does not bank movement
                 return
             cost = step_cost(world, step, bool(mods.bridges), bool(mods.boats))
-            if cost is None:
+            embarking = world.is_open_water(step) and not world.is_open_water(army.tile)
+            if cost is None or (embarking and army.tile not in ports(civ, world)):
+                # No way on: the harbour it was to sail from may have been lost since the
+                # route was planned. It stays ashore and plans again.
                 army.path = []
+                army.path_tick = -10_000
                 return
             if army.move_points < cost:
                 return
             army.move_points -= cost
-            # An army of a civ with a working harbour is seen to take ship when it puts out onto open
-            # water: its ships come round from the harbour to wherever it embarks. (Whether it can
-            # cross at all is the Navigation tech's business, not the harbour's.) In play armies
-            # almost never leave land right beside a harbour, so tying the ship to one meant none
-            # was ever seen.
-            if world.is_open_water(step):
-                if not world.is_open_water(army.tile):
-                    army.boat = any(b.type == "harbour" and b.complete and b.active for b in civ.buildings)
-            else:
-                army.boat = False
+            # On open water an army is aboard ship: it can only have put out from land near one
+            # of its civ's working harbours, and stays aboard until it lands.
+            army.boat = world.is_open_water(step)
             army.tile = army.path.pop(0)
 
     # -- battles -------------------------------------------------------------
@@ -668,9 +686,7 @@ class Military:
         if escaped:
             self._end_pursuit(army, tick)
             return
-        mods = self.mods[civ.id]
-        army.path = find_path(self.world, army.tile, quarry.tile, bool(mods.bridges), bool(mods.boats),
-                              max_nodes=1500) or []
+        army.path = self._route(civ, army.tile, quarry.tile, max_nodes=1500) or []
         self._march(civ, army)
         if self._reach(army.tile, quarry.tile) > 1:
             return

@@ -26,6 +26,8 @@ from ..economy import (
     demolish,
     find_site,
     food_need,
+    place,
+    placement_problem,
     recompute_capacity,
     water_growth_factor,
 )
@@ -224,7 +226,7 @@ class CivAI:
                 civ.goal = Goal("build", target, cost)
                 if civ.can_afford(cost):
                     civ.pay(cost)
-                    civ.buildings.append(Building(target, site))
+                    place(civ, self.world, self.building_defs[target], site)
                     civ.goal = None
             else:
                 border = self._border(civ, mods)
@@ -273,11 +275,11 @@ class CivAI:
             return (self._building_score(civ, bdef, needs, civ.count(bdef.id) - 1),
                     -math.hypot(x - cx, y - cy), building.tile)
 
-        has_one = {b.tile for b in civ.buildings if b.type == wanted.id}  # no two of a type on a tile
+        # Only a building whose going would leave a place the wanted one may stand.
         candidates = [
             b for b in civ.buildings
-            if b.complete and b.type != wanted.id and b.tile not in has_one
-            and BIOME_INFO[world.biomes[b.tile]].buildable
+            if b.complete and b.type != wanted.id
+            and placement_problem(civ, world, wanted, b.tile, without=b) is None
             and (not resource or world.yields[b.tile].get(resource, 0) > 0)
         ]
         if not candidates:

@@ -347,7 +347,11 @@ def test_armies_cannot_cross_open_water_without_boats(sim):
     sim.modifiers[a.id].boats = 1
     army.path = [lake]
     sim.military._march(a, army)
-    assert army.tile == lake
+    assert army.tile == shore and army.path == [], "boats still need a harbour to put out from"
+    a.buildings.append(Building("harbour", shore, 1.0, True))
+    army.path = [lake]
+    sim.military._march(a, army)
+    assert army.tile == lake and army.boat
 
 
 # -- what the viewer is told --------------------------------------------------

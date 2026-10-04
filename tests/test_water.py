@@ -346,8 +346,14 @@ def test_war_across_open_water_needs_boats(sim):
 
     assert not sim.diplomacy._nearest_tiles(a, b), "six tiles of deep sea: out of reach"
     sim.modifiers[a.id].boats = 1
+    assert not sim.diplomacy._nearest_tiles(a, b), "boats with no harbour to sail from cross nothing"
+    a.buildings.append(Building("harbour", row + 21, 1.0, True))
     assert sim.diplomacy._nearest_tiles(a, b) == [row + 28]
     assert not sim.diplomacy._nearest_tiles(b, a), "the side without boats still cannot cross"
+    # An army goes the same way: by ship from the harbour, or not at all.
+    assert sim.military._route(a, row + 20, row + 28) == [row + x for x in range(21, 29)]
+    a.buildings[-1].active = False
+    assert sim.military._route(a, row + 20, row + 28) is None
 
 
 def test_rivers_are_harder_to_capture_without_bridges(sim):

@@ -7,7 +7,7 @@ import pytest
 from civsim.bridge import protocol
 from civsim.civ import Building
 from civsim.config import SimConfig
-from civsim.economy import food_need, produce, tend_horses
+from civsim.economy import food_need, placement_problem, produce, tend_horses
 from civsim.economy.rules import (HERD_PER_STABLE, HORSE_BREED_TICKS, HORSE_FOOD, HORSE_WATER, MOUNTED_WORKERS,
                                   WORK_RATE)
 from civsim.economy.villagers import convert_villagers
@@ -24,8 +24,10 @@ def sim() -> Simulation:
 
 
 def with_stables(sim, civ, count=1):
-    for i in range(count):
-        civ.buildings.append(Building("stables", civ.settlements[i % len(civ.settlements)].tile, 1.0, True))
+    stables = sim.building_defs["stables"]
+    for _ in range(count):
+        tile = next(t for t in sorted(civ.territory) if placement_problem(civ, sim.world, stables, t) is None)
+        civ.buildings.append(Building("stables", tile, 1.0, True))
 
 
 def test_stables_are_a_building_unlocked_by_animal_husbandry(sim):
@@ -146,7 +148,7 @@ def test_cavalry_stood_down_return_their_horses_and_cavalry_killed_do_not(sim):
     assert civ.herd == pytest.approx(10 - lost["cavalry"])
 
 
-def test_an_army_takes_ship_when_its_civ_has_a_working_harbour(sim):
+def test_an_army_takes_ship_only_from_land_near_a_working_harbour(sim):
     world = sim.world
     civ = sim.civs[0]
     mods = sim.modifiers[civ.id]
@@ -156,29 +158,40 @@ def test_an_army_takes_ship_when_its_civ_has_a_working_harbour(sim):
     army = Army(999, civ.id, shore, "field", units={"spearman": 20.0}, state="marching")
     civ.armies.append(army)
 
-    def put_out() -> bool:
-        army.tile, army.path, army.move_points = shore, [sea], 10.0
+    def puts_out() -> bool:
+        army.tile, army.path, army.move_points, army.boat = shore, [sea], 10.0, False
         sim.military._march(civ, army)
-        assert army.tile == sea, "it crosses either way: that is the Navigation tech's business"
-        return army.boat
+        assert army.boat == (army.tile == sea), "on open water it is always aboard ship"
+        return army.tile == sea
 
-    assert not put_out(), "no harbour, no ship to show"
-    harbour = Building("harbour", civ.capital.tile, 1.0, True)  # wherever it stands
+    assert not puts_out(), "boats alone are not enough: with no harbour nothing leaves the land"
+    assert army.path == [], "and it gives the route up rather than waiting at the shore for ever"
+    # A harbour three tiles along is near enough; four is not.
+    x, y = world.xy(shore)
+    step = 1 if x + 4 < world.width else -1
+    harbour = Building("harbour", world.idx(x + 4 * step, y), 1.0, True)
     civ.buildings.append(harbour)
+    assert not puts_out(), "four tiles from the harbour is too far"
+    harbour.tile = world.idx(x + 3 * step, y)
     harbour.active = False
-    assert not put_out(), "a harbour whose upkeep is unpaid launches nothing"
+    assert not puts_out(), "a harbour whose upkeep is unpaid launches nothing"
     harbour.active = True
     harbour.complete = False
-    assert not put_out(), "nor does one still being built"
+    assert not puts_out(), "nor does one still being built"
     harbour.complete = True
-    assert put_out()
+    assert puts_out()
     army.path, army.move_points = [shore], 10.0
     sim.military._march(civ, army)
     assert army.tile == shore and not army.boat, "back on land it is on foot again"
-    assert put_out()
+    assert puts_out()
     state = json.loads(protocol.tick_message(sim, False, 1.0))["data"]
     shown = next(a for a in state["armies"] if a["id"] == 999)
     assert shown["afloat"] and shown["boat"]
+    # Already at sea when the harbour is lost, it sails on and lands: nothing is left adrift.
+    harbour.active = False
+    army.path, army.move_points = [shore], 10.0
+    sim.military._march(civ, army)
+    assert army.tile == shore
 
 
 def test_protocol_reports_horses_and_riders(sim):

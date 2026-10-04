@@ -1,6 +1,7 @@
 """Shortest paths over the tile grid, using the one crossing rule in WorldMap."""
 
 import heapq
+from collections.abc import Collection
 
 from .biomes import Biome
 from .world import WorldMap
@@ -17,10 +18,12 @@ def step_cost(world: WorldMap, tile: int, bridges: bool, boats: bool) -> float |
 
 
 def find_path(world: WorldMap, start: int, goal: int, bridges: bool = False, boats: bool = False,
-              max_nodes: int = 6000) -> list[int] | None:
+              max_nodes: int = 6000, ports: Collection[int] | None = None) -> list[int] | None:
     """Cheapest route from start to goal as the tiles to step onto, in order (start excluded).
 
-    Open water is impassable without boats and rivers are slow without bridges.
+    Open water is impassable without boats and rivers are slow without bridges. With
+    `ports` given, open water can only be entered from one of those land tiles (the
+    ones near a working harbour); once afloat a traveller may land anywhere.
     Returns [] if already there and None if there is no route.
     """
     if start == goal:
@@ -46,9 +49,10 @@ def find_path(world: WorldMap, start: int, goal: int, bridges: bool = False, boa
         if cost > best.get(tile, float("inf")):
             continue
         expanded += 1
+        ashore = ports is not None and tile not in ports and not world.is_open_water(tile)
         for n in world.neighbors(tile):
             step = step_cost(world, n, bridges, boats)
-            if step is None:
+            if step is None or (ashore and world.is_open_water(n)):
                 continue
             new_cost = cost + step
             if new_cost < best.get(n, float("inf")):

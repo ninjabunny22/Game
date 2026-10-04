@@ -28,6 +28,7 @@ python3 -m venv .venv
 .venv/bin/python -m civsim --llm rules     # no language model: built-in deterministic strategy
 .venv/bin/python -m civsim --headless --seed 42 --ticks 1500 --llm rules   # no server, prints a summary
 .venv/bin/python -m pytest
+.venv/bin/python -m civsim.survey                # eight full games: counts ships, crossings and large-building overlaps
 ```
 
 By default the strategic layer talks to a local [Ollama](https://ollama.com)
@@ -80,19 +81,24 @@ editor.
 - Each building type maps to a model in `BUILDING_MODELS` (`civ_view.gd`).
   Types that share a model carry a small pennant in the type's colour; models
   with nothing to repaint (fields, walls, stockpiles) fly their owner's flag.
-- **Figures.** Commanders, villagers, mounted villagers, the stables, the harbour and
-  the ship are separate models in `godot/assets/characters` (`Commander.glb`,
-  `Villager.glb`, `Rider.glb`, `Stable.glb`, `Harbour.glb`, `Boat.glb`), loaded at run time by
+- **Figures.** Commanders, knights, villagers, mounted villagers, the stables, the harbour,
+  the ship and the two castles are separate models in `godot/assets/characters` (`Commander.glb`,
+  `Knight.glb`, `Villager.glb`, `Rider.glb`, `Stable.glb`, `Harbour.glb`, `Boat.glb`, `Castle.glb`,
+  `CapitalCastle.glb`), loaded at run time by
   `scripts/characters.gd` and put in their civ's colour by swapping one named
   material. A commander stands, walks or strikes with what his army is doing;
   a villager walks, hammers at a building, works the land or draws water; a
-  rider stands, walks or trots. Armies without a commander are still the plain
-  figures. If a model file is missing the old placeholder is drawn instead.
-  The stables and the harbour are drawn larger than one tile so they read
-  beside a commander, keep that size when they share a tile, and come without
-  the plate of grass their files include; the harbour is turned so its quay
-  faces the water.
-- A civ's own capital is a castle; every other region capital is a tower.
+  rider stands, walks or trots. A cavalry army without a commander is a knight,
+  who stands, walks or trots (his file has no attack animation, so in a fight he
+  keeps whichever of those fits); other armies without a commander are still the
+  plain figures. If a model file is missing the old placeholder is drawn instead.
+  The stables and the harbour are drawn two tiles wide so they read beside a
+  commander, have their tile to themselves, and come without the plate of grass
+  their files include; the harbour is turned so its quay faces the water.
+- A civ's own capital is the large castle (`CapitalCastle.glb`, 3 tiles wide); every
+  other region capital is the smaller one (`Castle.glb`, 2 tiles). Each is made of
+  thousands of small parts, welded into one mesh when first loaded. Trees under a
+  castle, harbour or stables are felled while it stands.
 - A tile holds up to three buildings. Closer in they are drawn one by one,
   sharing the tile (around the castle or tower on a capital's tile), and each
   village is named. From the whole-map view each village is drawn as a single
@@ -229,8 +235,8 @@ expansion and war reach, and is meant for unit movement later. Lakes and deep
 sea can never be claimed. Without Bridge Building a river tile costs three
 times as much to claim or to capture; with it, rivers cost nothing extra.
 Without Boatbuilding, lakes and deep sea block expansion and attack entirely;
-with it a civ can claim land and wage war across up to 6 tiles of open water.
-Boats are transport only.
+with it a civ can claim land across up to 6 tiles of open water. Armies, and so
+war, need more than boats: see **Ships** below. Boats are transport only.
 
 **Demolition.** A civ tears down its own buildings in two cases: one whose
 upkeep has gone unpaid for 60 ticks, and, when it has no free slot left, its
@@ -300,7 +306,7 @@ them.
   offer; a further betrayal while distrusted adds another 50. Ending an
   alliance without attacking carries no penalty.
 - **War.** `aggression` declares war (100 diplomacy points) once the two territories are
-  within 4 tiles (further across water with boats); until then the aggressor's
+  within 4 tiles (further across water, by ship from a harbour); until then the aggressor's
   border expands toward the target. Troop commitment mobilises up to 35% of the
   population as soldiers. Wars end when a civ's own capital falls, when
   neither side is aggressive (after 50 ticks), or after 400 ticks.
@@ -321,7 +327,9 @@ them, each under a commander.
   counters) x quality (military techs, pay, ore) x commander skill.
 - **Movement.** An aggressor's army paths to the nearest enemy capital; a
   defender's marches to meet armies on or at the edge of its land. Paths use the crossing rule: rivers slow
-  an army without Bridge Building, open water needs Boatbuilding. Cavalry-only
+  an army without Bridge Building, open water needs Boatbuilding and a harbour to sail from. An
+  attacker that cannot get to the nearest enemy capital makes for the nearest one it can reach, and
+  failing that goes home. Cavalry-only
   armies move two tiles a tick, others one, slower over forest, hills and
   mountains.
 - **Battles.** Armies of warring civs within one tile of each other fight every
@@ -425,16 +433,26 @@ those on a captured tile change sides and wait for their new owner's orders.
   no more villagers mount, so the army has first call on the herd. A mounted
   villager on a captured tile loses the horse and carries on as a plain
   villager: villagers are never killed.
-- **Ships.** Whether an army can cross open water is still the Navigation
-  tech's business (6 tiles, one more per Harbour), sea and lakes alike. An
-  army whose civ has a working Harbour is drawn as a ship from the moment it
-  steps onto open water until it lands. An army of a civ with no working
-  Harbour crosses just the same but is drawn as before.
+- **Ships.** An army crosses open water (sea and lakes alike) only by ship, and
+  can only put out from land within 3 tiles of one of its civ's working Harbours
+  (`economy/harbours.py`); it is drawn as a ship from then until it lands, and
+  may land anywhere. With no such harbour it cannot cross: its route goes round
+  by land or it stays on its landmass, and war cannot be declared across water
+  it could not cross. The range numbers are unchanged (6 tiles with
+  Boatbuilding, one more per Harbour, four more with Navigation). An army already
+  at sea when its harbour is lost sails on and lands. Villagers take ship the
+  same way and are not drawn while at sea; one with no way to its work is still
+  carried there, unseen, so that no building site is left without a builder.
 
 ## Villages and building slots
 
 - **Slots.** A tile holds up to 3 buildings, capitals included, and never two
-  of the same type. Everything else still works on whole tiles: capturing a
+  of the same type. A Harbour or Stables takes a whole tile to itself, and never
+  a capital's tile. Stables can never stand on a capital's tile, a civ's own or
+  any other region's, by any route: every placement goes through one rule
+  (`placement_problem` and `place` in `economy/buildings.py`), demolition only
+  makes room where that rule allows, and stables found on a capital's tile when
+  it changes hands are not handed on. Everything else still works on whole tiles: capturing a
   tile takes every building on it, and movement, pathfinding and water access
   are unchanged. Each building has its own id, and one villager builds one
   building even where several go up on the same tile.

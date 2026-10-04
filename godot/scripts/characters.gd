@@ -1,7 +1,7 @@
 extends RefCounted
 ## Loads the models in res://assets/characters straight from their .glb files at run
-## time: the rigged, animated Commander, Villager and Rider, and the static Stable,
-## Harbour and Boat. Each file is read once; every figure on the map is a copy of that.
+## time: the rigged, animated Commander, Villager, Rider and Knight, and the static Stable,
+## Harbour, Boat, Castle and CapitalCastle. Each file is read once; every figure on the map is a copy of that.
 ##
 ## The models carry plain named materials rather than a texture, so a figure is put in
 ## its civ's colour by swapping the material of that name (the commander's cloth, the
@@ -12,11 +12,19 @@ const DIR := "res://assets/characters/"
 const TEAM_MATERIALS := {
 	"Commander": ["cloth_team"], "Villager": ["tunic_moss"], "Rider": ["tunic_moss", "saddle_blanket"],
 	"Stable": ["cloth_team"], "Boat": ["cloth_team"], "Harbour": ["cloth_team"],
+	"Knight": ["cloth_team"], "Castle": ["cloth_team"], "CapitalCastle": ["cloth_team"],
 }
 
 ## Parts of a model that are left out: the stable comes on a wide plate of grass, which would
 ## either bury the neighbouring tiles or force the building itself to be drawn tiny.
-const LEFT_OUT := {"Stable": ["grass"], "Harbour": ["grass", "dirt"]}
+const LEFT_OUT := {"Stable": ["grass"], "Harbour": ["grass", "dirt"], "Castle": ["grass"], "CapitalCastle": ["grass"]}
+## Models made of thousands of small parts that never move: each is welded into one mesh
+## with a surface per material when it is loaded, or every castle on the map would cost
+## thousands of draw calls.
+const WELDED := ["Castle", "CapitalCastle"]
+## Models that stand on their own origin rather than the middle of their bounding box: the
+## knight's lance reaches far out in front, and centring the box would push the horse back.
+const ON_ORIGIN := ["Knight"]
 
 var _prototypes := {}  # name -> {"scene": Node3D, "aabb": AABB}, or {} if it failed to load
 var _tints := {}  # "material name:colour" -> Material
@@ -37,6 +45,8 @@ func instance(model: String, color: Color, height: float, across := 0.0) -> Node
 	copy.scale = Vector3.ONE * factor
 	# Stand it on the ground, centred on its spot.
 	var centre := aabb.get_center()
+	if model in ON_ORIGIN:
+		centre = Vector3.ZERO
 	copy.position = Vector3(-centre.x, -aabb.position.y, -centre.z) * factor
 	holder.add_child(copy)
 	_tint(copy, TEAM_MATERIALS.get(model, []), color)
@@ -57,6 +67,11 @@ func _notification(what: int) -> void:
 
 func has(model: String) -> bool:
 	return not _load(model).is_empty()
+
+
+## True if the figure has an animation of that name.
+func can_play(holder: Node3D, animation: String) -> bool:
+	return holder.has_meta("player") and (holder.get_meta("player") as AnimationPlayer).has_animation(animation)
 
 
 ## Switch a figure to the named animation, if it has one and is not already playing it.
@@ -101,6 +116,8 @@ func _load(model: String) -> Dictionary:
 		var scene := document.generate_scene(state)
 		if scene is Node3D:
 			_strip(scene, LEFT_OUT.get(model, []))
+			if model in WELDED:
+				scene = _weld(scene)
 			var boxes: Array = []
 			_measure(scene, Transform3D.IDENTITY, boxes)
 			if not boxes.is_empty():
@@ -128,6 +145,63 @@ func _strip(node: Node, names: Array) -> void:
 		if material == null or not material.resource_name in names:
 			return
 	(node as MeshInstance3D).mesh = null
+
+
+## One mesh holding everything in `scene` where it stands, a surface per material. Only
+## positions and normals are kept: these models are flat-coloured, with no textures.
+func _weld(scene: Node3D) -> Node3D:
+	var groups := {}  # Material -> [vertices, normals, indices]
+	_gather(scene, Transform3D.IDENTITY, groups)
+	var mesh := ArrayMesh.new()
+	for material: Material in groups:
+		var arrays := []
+		arrays.resize(Mesh.ARRAY_MAX)
+		arrays[Mesh.ARRAY_VERTEX] = groups[material][0]
+		arrays[Mesh.ARRAY_NORMAL] = groups[material][1]
+		arrays[Mesh.ARRAY_INDEX] = groups[material][2]
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		mesh.surface_set_material(mesh.get_surface_count() - 1, material)
+	var welded := Node3D.new()
+	var instance := MeshInstance3D.new()
+	instance.mesh = mesh
+	welded.add_child(instance)
+	scene.free()
+	return welded
+
+
+func _gather(node: Node, parent: Transform3D, groups: Dictionary) -> void:
+	var xform := parent
+	if node is Node3D:
+		xform = parent * (node as Node3D).transform
+	if node is MeshInstance3D and (node as MeshInstance3D).mesh != null:
+		var mesh: Mesh = (node as MeshInstance3D).mesh
+		var turn := xform.basis.inverse().transposed()  # what carries normals
+		var mirrored := xform.basis.determinant() < 0.0
+		for surface in mesh.get_surface_count():
+			var material: Material = mesh.surface_get_material(surface)
+			var arrays := mesh.surface_get_arrays(surface)
+			var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+			if material == null or vertices.is_empty():
+				continue
+			if not groups.has(material):
+				groups[material] = [PackedVector3Array(), PackedVector3Array(), PackedInt32Array()]
+			var group: Array = groups[material]
+			var base: int = group[0].size()
+			var normals: Variant = arrays[Mesh.ARRAY_NORMAL]
+			for i in vertices.size():
+				group[0].append(xform * vertices[i])
+				group[1].append((turn * normals[i]).normalized() if normals != null else Vector3.UP)
+			var indices: Variant = arrays[Mesh.ARRAY_INDEX]
+			var count: int = indices.size() if indices != null else vertices.size()
+			for i in range(0, count - 2, 3):
+				var a: int = indices[i] if indices != null else i
+				var b: int = indices[i + 1] if indices != null else i + 1
+				var c: int = indices[i + 2] if indices != null else i + 2
+				group[2].append(base + a)
+				group[2].append(base + (c if mirrored else b))
+				group[2].append(base + (b if mirrored else c))
+	for child in node.get_children():
+		_gather(child, xform, groups)
 
 
 func _measure(node: Node, parent: Transform3D, boxes: Array) -> void:

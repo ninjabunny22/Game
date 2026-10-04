@@ -41,20 +41,25 @@ const BUILDING_MODELS := {
 	"factory": {"model": "building_blacksmith_green", "size": 0.98, "tinted": true, "marker": true},
 	"aqueduct": {"model": "building_bridge_A", "size": 0.95, "lift": 0.45},
 	# A quay with a warehouse and a ship alongside; it is turned so the quay is on the water.
-	"harbour": {"scene": "Harbour", "size": 3.6, "full_size": true, "faces_water": true,
+	# Like the stables it has its tile to itself (the sim places nothing else there).
+	"harbour": {"scene": "Harbour", "size": 2.0, "full_size": true, "faces_water": true,
 		"model": "building_watermill_green", "tinted": true},
 	"barracks": {"model": "building_barracks_green", "size": 0.95, "tinted": true},
 	"academy": {"model": "building_archeryrange_green", "size": 0.95, "tinted": true},
 	"walls": {"model": "wall_straight", "size": 0.98},
 	"fortress": {"model": "building_tower_B_green", "size": 0.9, "tinted": true},
 	# Its own model, from assets/characters: a long building that has to read beside a commander,
-	# so it is drawn larger than its tile and keeps its size when it shares the tile.
+	# so it is drawn larger than its tile, which it has to itself.
 	"stables": {"scene": "Stable", "size": 2.0, "full_size": true},
 }
-const CAPITAL_MODEL := "building_castle_green"  # a civ's own capital
-const TOWN_MODEL := "building_tower_A_green"  # every other region capital
-const CAPITAL_FOOTPRINT := 1.7
-const TOWN_FOOTPRINT := 1.05
+# Capitals have their own models in assets/characters; the pack's castle and tower stand in
+# if a file is missing.
+const CAPITAL_SCENE := "CapitalCastle"  # a civ's own capital
+const TOWN_SCENE := "Castle"  # every other region capital
+const CAPITAL_MODEL := "building_castle_green"
+const TOWN_MODEL := "building_tower_A_green"
+const CAPITAL_FOOTPRINT := 3.0
+const TOWN_FOOTPRINT := 2.0
 
 ## How buildings sharing a tile are laid out: [scale, distance from the tile's centre].
 const TILE_LAYOUT := {1: [1.0, 0.0], 2: [0.58, 0.25], 3: [0.52, 0.28]}
@@ -142,6 +147,7 @@ func update(civs: Array, regions: Array) -> void:
 		if not _nodes.has(key):
 			var caption := "%s\n%s" % [info["capital"], info["name"]]
 			_nodes[key] = _make_capital(_native_color, caption, int(info["x"]), int(info["y"]), false)
+			_terrain.set_clearing(key, _nodes[key].position, TOWN_FOOTPRINT * 0.5 + 0.15)
 	for civ: Dictionary in civs:
 		var civ_id := int(civ["id"])
 		var index := 0
@@ -154,6 +160,8 @@ func update(civs: Array, regions: Array) -> void:
 			if not _nodes.has(key):
 				var caption := ("★ " if is_main else "") + str(settlement["name"])
 				_nodes[key] = _make_capital(_civ_colors[civ_id], caption, int(settlement["x"]), int(settlement["y"]), is_main)
+				# A castle is wider than its tile: fell the trees it would stand in.
+				_terrain.set_clearing(key, _nodes[key].position, (CAPITAL_FOOTPRINT if is_main else TOWN_FOOTPRINT) * 0.5 + 0.15)
 		var capital_tiles := {}  # "x:y" -> footprint of the capital standing there
 		index = 0
 		for settlement: Dictionary in civ["settlements"]:
@@ -511,12 +519,17 @@ func _make_capital(color: Color, caption: String, x: int, y: int, is_main: bool)
 	root.position = _terrain.tile_position(x, y)
 	var model_name := CAPITAL_MODEL if is_main else TOWN_MODEL
 	var footprint := CAPITAL_FOOTPRINT if is_main else TOWN_FOOTPRINT
-	var model: Node3D = _models.instance(model_name, _models.tinted_material(color), footprint)
 	var top := 3.0
+	var model: Node3D = _characters.instance(CAPITAL_SCENE if is_main else TOWN_SCENE, color, 0.0, footprint)
 	if model != null:
 		root.add_child(model)
+		top = float(model.get_meta("height"))
+	else:
+		model = _models.instance(model_name, _models.tinted_material(color), footprint)
+	if model != null and model.get_parent() == null:
+		root.add_child(model)
 		top = _models.height(model_name, footprint)
-	else:  # no model: the old keep
+	if model == null:  # no model at all: the old keep
 		var keep := MeshInstance3D.new()
 		var keep_mesh := BoxMesh.new()
 		keep_mesh.size = Vector3(0.9, 1.3, 0.9)

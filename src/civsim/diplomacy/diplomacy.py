@@ -9,7 +9,7 @@ military/warfare.py; this module owns what a capture or a surrender means.
 import random
 
 from ..civ.civilization import Settlement
-from ..economy import recompute_capacity
+from ..economy import may_stand, ports, recompute_capacity
 from ..economy.villagers import convert_villagers
 from ..military.units import unit_strength
 from ..economy.rules import (
@@ -359,6 +359,8 @@ class Diplomacy:
         # Whatever stands on the tile now belongs to the captor, finished or not.
         for building in [b for b in loser.buildings if b.tile == tile]:
             loser.buildings.remove(building)
+            if not may_stand(self.world, building.type, tile):
+                continue  # it could never have been built here, so it is not handed on either
             captor.buildings.append(building)
             bdef = self.building_defs[building.type]
             text = f"{captor.name} captures a {bdef.name} from {loser.name}"
@@ -530,22 +532,25 @@ class Diplomacy:
         """The defender's tiles closest to the attacker's territory, if it can reach them.
 
         Overland the gap may be up to REACH tiles. Open water (lakes, deep sea)
-        cannot be crossed at all without boats; with them the gap may be wider.
+        cannot be crossed at all without boats, and then only by putting out from land
+        near one of the attacker's working harbours; that way the gap may be wider.
         """
         world = self.world
-        boats = bool(self.mods[attacker.id].boats)
+        harbours = ports(attacker, world) if self.mods[attacker.id].boats else set()
+        boats = bool(harbours)
         seen = set(attacker.territory)
         frontier = sorted(seen)
         for _ in range(rules.REACH + BOAT_RANGE + self.mods[attacker.id].boat_range if boats else rules.REACH):
             found, reached = [], []
             for tile in frontier:
+                embark = world.is_open_water(tile) or tile in harbours
                 for n in world.neighbors(tile):
-                    if n in seen:
+                    if n in seen or (world.is_open_water(n) and not embark):
                         continue
                     seen.add(n)
                     if world.owner[n] == defender.id:
                         found.append(n)
-                    elif boats or not world.is_open_water(n):
+                    else:
                         reached.append(n)
             if found:
                 return found

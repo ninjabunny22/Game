@@ -216,8 +216,8 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
                 "units": whole(army.units),
                 "size": round(army.size),
                 "dominant": army.dominant,
-                # afloat: on open water. boat: it put out from one of its civ's harbours, and is
-                # drawn as a ship until it lands.
+                # afloat: on open water. boat: aboard ship, which an army on open water always is,
+                # having put out from near one of its civ's harbours; drawn as a ship until it lands.
                 "afloat": world.is_open_water(army.tile),
                 "boat": army.boat,
                 "strength": round(sim.military.army_strength(army), 1),
@@ -230,7 +230,9 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
                               # What a gatherer is working, whether it has reached its place of work,
                               # and whether it rides a horse from the stables.
                               "gathers": villager.gathers, "at_work": villager.tile == villager.target,
-                              "mounted": villager.mounted})
+                              "mounted": villager.mounted,
+                              # On open water it is aboard a ship and is not drawn.
+                              "afloat": world.is_open_water(villager.tile)})
     relations = []
     for (a, b), relation in diplomacy.relations.items():
         war = relation.war

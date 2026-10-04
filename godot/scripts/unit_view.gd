@@ -4,8 +4,8 @@ extends Node3D
 ## An army with a commander is shown as the commander, an animated model in the
 ## civ's colour that stands, walks or strikes according to what the army is doing,
 ## with the count of each unit type written above. An army without one is shown as
-## a single plain figure of its dominant unit type (spear, sword and shield, bow,
-## or horse). An army that has put out from a harbour is shown as a ship until it
+## a single figure of its dominant unit type: a mounted knight, animated and in the
+## civ's colour, for cavalry, and a plain figure (spear, sword and shield, bow) for the rest. An army that has put out from a harbour is shown as a ship until it
 ## lands. Villagers are animated too: walking, hammering at a building, working the
 ## land or drawing water; one with a horse from the stables is shown riding.
 ##
@@ -17,6 +17,7 @@ const FIGURE_SCALE := 1.7
 const COMMANDER_HEIGHT := 2.1  # in tiles
 const VILLAGER_HEIGHT := 1.05
 const RIDER_HEIGHT := 1.55
+const KNIGHT_HEIGHT := 1.75
 const BOAT_LENGTH := 2.2
 const AT_ARMS := ["fighting", "besieging"]  # army states shown as striking
 const MOVE_SPEED := 6.0  # how fast figures glide toward their tile, in tiles per second
@@ -97,7 +98,8 @@ func update(armies: Array, villagers: Array) -> void:
 		crowd[key] = n + 1
 		var fan := Vector3(-0.3 + 0.3 * (n % 3), 0, 0.3 - 0.3 * (n / 3 % 3))
 		_aim(_villagers[id], _spot(int(villager["x"]), int(villager["y"]), fan))
-		_villagers[id]["node"].visible = _detail >= 1
+		_villagers[id]["afloat"] = bool(villager.get("afloat", false))  # aboard ship: not drawn
+		_villagers[id]["node"].visible = _detail >= 1 and not _villagers[id]["afloat"]
 		# What it does once it has stopped walking.
 		var doing := "idle"
 		if villager["at_work"] and villager["task"] == "build":
@@ -114,7 +116,7 @@ func set_detail(detail: int) -> void:
 	for entry: Dictionary in _armies.values():
 		_show_army(entry)
 	for entry: Dictionary in _villagers.values():
-		entry["node"].visible = detail >= 1
+		entry["node"].visible = detail >= 1 and not entry.get("afloat", false)
 		_characters.set_active(entry["node"], detail >= 1)
 
 
@@ -164,7 +166,13 @@ func _process(delta: float) -> void:
 			# The right animation for the moment.
 			if is_same(group, _armies):
 				var state: String = entry.get("state", "idle")
-				_characters.play(entry["figure"], "attack" if state in AT_ARMS else ("walk" if moving else "idle"))
+				var figure: Node3D = entry["figure"]
+				var action := "walk" if moving else "idle"
+				if moving and offset.length() > 1.5 and _characters.can_play(figure, "trot"):
+					action = "trot"  # a mounted figure with ground to make up
+				if state in AT_ARMS and _characters.can_play(figure, "attack"):
+					action = "attack"
+				_characters.play(figure, action)
 			elif entry.get("mounted", false):
 				_characters.play(node, ("trot" if offset.length() > 1.5 else "walk") if moving else "idle")
 			else:
@@ -215,7 +223,9 @@ func _make_army(civ: int, army: Dictionary, look: String) -> Dictionary:
 		figure = _characters.instance("Commander", color, COMMANDER_HEIGHT)
 		if figure == null:
 			figure = _commander_figure(color)  # the model is missing: the old placeholder
-	else:
+	elif str(army["dominant"]) == "cavalry":
+		figure = _characters.instance("Knight", color, KNIGHT_HEIGHT)
+	if figure == null:
 		figure = _soldier_figure(str(army["dominant"]), color)
 	root.add_child(figure)
 
