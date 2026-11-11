@@ -22,8 +22,13 @@ const VILLAGER_HEIGHT := 0.45
 const RIDER_HEIGHT := 0.62
 const KNIGHT_HEIGHT := 0.72
 const ARCHER_HEIGHT := 0.6
+const SOLDIER_HEIGHT := 0.58  # a man-at-arms: the commander's model, smaller
 ## Unit types with a model of their own for an army without a commander: [model, height].
-const SOLDIER_MODELS := {"cavalry": ["Knight", KNIGHT_HEIGHT], "archer": ["Archer", ARCHER_HEIGHT]}
+const SOLDIER_MODELS := {"cavalry": ["Knight", KNIGHT_HEIGHT], "archer": ["Archer", ARCHER_HEIGHT],
+	"swordsman": ["Commander", SOLDIER_HEIGHT], "spearman": ["Commander", SOLDIER_HEIGHT]}
+const SOLDIERS_PER_FIGURE := 12  # an army shows one more figure in its ranks for every so many soldiers
+const MAX_RANKS := 8  # ... up to this many behind whoever leads it
+const RANK_SPACING := 0.34
 const STRIKES := ["attack", "shoot"]  # what a model's fighting animation may be called
 const BOAT_LENGTH := 0.95
 const GARRISON_SPOT := Vector3(0.5, 0, 1.3)  # before the castle gate, not inside the walls
@@ -40,6 +45,7 @@ var _armies := {}  # army id -> {"node", "label", "look", "target"}
 var _villagers := {}  # villager id -> {"node", "look", "target"}
 var _materials := {}
 var _detail := 0  # 0 whole-map view, 1 closer, 2 full detail
+var _swell := 0.0
 var _characters: RefCounted  # characters.gd
 
 
@@ -64,7 +70,7 @@ func update(armies: Array, villagers: Array) -> void:
 		var civ := int(army["civ"])
 		var commander: Variant = army["commander"]
 		# What the piece looks like; rebuilt only when that changes.
-		var look := "%d:%s" % [civ, "commander" if commander != null else str(army["dominant"])]
+		var look := "%d:%s:%s" % [civ, "commander" if commander != null else str(army["dominant"]), _ranks(army)]
 		if not _armies.has(id) or _armies[id]["look"] != look:
 			if _armies.has(id):
 				_armies[id]["node"].queue_free()
@@ -137,7 +143,9 @@ func _show_army(entry: Dictionary) -> void:
 	entry["node"].visible = is_field or _detail >= 1
 	var afloat: bool = entry.get("afloat", false) and entry.has("boat")
 	figure.visible = _detail >= 1 and not afloat
-	_characters.set_active(figure, figure.visible)
+	for one: Node3D in entry["figures"]:
+		_characters.set_active(one, figure.visible)
+	(entry["dust"] as CPUParticles3D).emitting = figure.visible and entry.get("state", "") in AT_ARMS
 	if entry.has("boat"):
 		entry["boat"].visible = _detail >= 1 and afloat
 	marker.visible = _detail == 0 and is_field
@@ -173,15 +181,19 @@ func _process(delta: float) -> void:
 			# The right animation for the moment.
 			if is_same(group, _armies):
 				var state: String = entry.get("state", "idle")
-				var figure: Node3D = entry["figure"]
-				var action := "walk" if moving else "idle"
-				if moving and offset.length() > 1.5 and _characters.can_play(figure, "trot"):
-					action = "trot"  # a mounted figure with ground to make up
-				if state in AT_ARMS:
-					for strike: String in STRIKES:
-						if _characters.can_play(figure, strike):
-							action = strike
-				_characters.play(figure, action)
+				for figure: Node3D in entry["figures"]:
+					var action := "walk" if moving else "idle"
+					if moving and offset.length() > 1.5 and _characters.can_play(figure, "trot"):
+						action = "trot"  # a mounted figure with ground to make up
+					if state in AT_ARMS:
+						for strike: String in STRIKES:
+							if _characters.can_play(figure, strike):
+								action = strike
+					_characters.play(figure, action)
+				if entry.has("boat") and entry.get("afloat", false):  # a ship rides the swell
+					_swell += delta
+					entry["boat"].position.y = 0.03 * sin(_swell * 1.7 + node.position.x)
+					entry["boat"].rotation.z = 0.05 * sin(_swell * 1.3 + node.position.z)
 			elif entry.get("mounted", false):
 				_characters.play(node, ("trot" if offset.length() > 1.5 else "walk") if moving else "idle")
 			else:
@@ -237,7 +249,41 @@ func _make_army(civ: int, army: Dictionary, look: String) -> Dictionary:
 		figure = _characters.instance(soldier[0], color, soldier[1])
 	if figure == null:
 		figure = _soldier_figure(str(army["dominant"]), color)
-	root.add_child(figure)
+	# The army itself: whoever leads it in front, its soldiers drawn up in ranks behind.
+	var troop := Node3D.new()
+	troop.add_child(figure)
+	var figures: Array = [figure]
+	var ranks := _ranks(army)
+	for i in ranks.size():
+		var soldier: Node3D = _soldier(ranks[i], color)
+		soldier.position = Vector3((i % 3 - 1) * RANK_SPACING, 0, -(i / 3 + 1) * RANK_SPACING)
+		troop.add_child(soldier)
+		figures.append(soldier)
+	root.add_child(troop)
+	figure = troop
+
+	# Dust where an army is fighting.
+	var dust := CPUParticles3D.new()
+	dust.emitting = false
+	dust.amount = 18
+	dust.lifetime = 1.1
+	dust.mesh = _sphere(0.07)
+	var dust_material := StandardMaterial3D.new()
+	dust_material.albedo_color = Color(0.74, 0.66, 0.52, 0.5)
+	dust_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	dust_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	dust.material_override = dust_material
+	dust.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+	dust.emission_sphere_radius = 0.45
+	dust.direction = Vector3.UP
+	dust.spread = 40.0
+	dust.gravity = Vector3(0, 0.25, 0)
+	dust.initial_velocity_min = 0.2
+	dust.initial_velocity_max = 0.6
+	dust.scale_amount_min = 0.6
+	dust.scale_amount_max = 1.8
+	dust.position.y = 0.1
+	root.add_child(dust)
 
 	# What stands in for the army in the whole-map view: a diamond in the civ's colour.
 	var marker := MeshInstance3D.new()
@@ -262,7 +308,35 @@ func _make_army(civ: int, army: Dictionary, look: String) -> Dictionary:
 	root.add_child(label)
 
 	add_child(root)
-	return {"node": root, "figure": figure, "marker": marker, "label": label, "look": look, "target": Vector3.ZERO}
+	return {"node": root, "figure": figure, "figures": figures, "dust": dust, "marker": marker, "label": label,
+		"look": look, "target": Vector3.ZERO}
+
+
+## The unit type of each figure in an army's ranks, most numerous first: one for every
+## SOLDIERS_PER_FIGURE soldiers of that type.
+func _ranks(army: Dictionary) -> Array:
+	var units: Dictionary = army["units"]
+	var order := units.keys()
+	order.sort_custom(func(a: String, b: String) -> bool: return int(units[a]) > int(units[b]) or (int(units[a]) == int(units[b]) and a < b))
+	var ranks: Array = []
+	for unit_id: String in order:
+		for n in int(units[unit_id]) / SOLDIERS_PER_FIGURE:
+			if ranks.size() < MAX_RANKS:
+				ranks.append(unit_id)
+	return ranks
+
+
+## One soldier of a unit type: its model if there is one, the plain figure otherwise.
+func _soldier(unit_id: String, color: Color) -> Node3D:
+	var soldier: Node3D = null
+	if SOLDIER_MODELS.has(unit_id):
+		soldier = _characters.instance(SOLDIER_MODELS[unit_id][0], color, SOLDIER_MODELS[unit_id][1])
+	if soldier == null:
+		return _soldier_figure(unit_id, color)
+	if unit_id == "spearman":  # the same man-at-arms, with a spear grounded beside him
+		_part(soldier, _cylinder(0.012, 0.8), WOOD, Vector3(0.17, 0.4, 0.05))
+		_part(soldier, _box(0.035, 0.09, 0.035), STEEL, Vector3(0.17, 0.83, 0.05))
+	return soldier
 
 
 func _make_villager(civ: int, task: String, look: String, mounted: bool) -> Dictionary:
