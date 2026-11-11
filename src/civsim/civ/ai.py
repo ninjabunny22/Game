@@ -45,6 +45,7 @@ CATEGORY_OF_RESOURCE = {
 }
 MATERIALS = ("wood", "stone", "ore", "gold")
 
+LOOKAHEAD = 0.25  # how much what a tech leads to counts beside what it gives now
 MIN_SCORE = 0.12  # below this nothing is worth doing; just stockpile
 GOAL_STICKINESS = 1.2  # bonus for the goal already being saved for, to avoid flip-flopping
 COUNT_FALLOFF = 0.35  # each existing copy of a building makes another less attractive ...
@@ -141,10 +142,24 @@ class CivAI:
         for tech in self.tech_tree.available(civ.known_techs):
             if not self._feasible(civ, tech.materials, mods):
                 continue
-            score = self._tech_value(civ, tech, needs)
+            score = self._tech_value(civ, tech, needs) + LOOKAHEAD * self._opens(civ, tech, needs)
             if score > best_score:
                 best, best_score = tech, score
         civ.research = Research(best.id) if best else None
+
+    def _opens(self, civ: Civilization, tech: Tech, needs: dict) -> float:
+        """What learning this tech leads to: the best of the techs it is the last thing missing
+        for, and half the best of what those lead to in turn. A civ plans its way to what it
+        wants instead of taking whatever looks best today."""
+        known = set(civ.known_techs) | {tech.id}
+        best = 0.0
+        for later in self.tech_tree.techs.values():
+            if later.id in known or tech.id not in later.prereqs or not set(later.prereqs) <= known:
+                continue
+            beyond = max((self._tech_value(civ, after, needs) for after in self.tech_tree.techs.values()
+                          if later.id in after.prereqs and after.id not in known), default=0.0)
+            best = max(best, self._tech_value(civ, later, needs) + 0.5 * beyond)
+        return best
 
     def _tech_value(self, civ: Civilization, tech: Tech, needs: dict) -> float:
         weights = civ.personality.weights

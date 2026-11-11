@@ -36,6 +36,7 @@ var _routine: Array = []  # [tick, kind] of recent routine events
 var _connected := false
 var _tick := 0
 var _seed := 0
+var _map_name := ""
 var _paused := false
 var _waiting_for: Array = []  # civ ids whose strategist the clock is being held for
 var _armies := {}  # civ id -> that civ's armies, from the latest tick
@@ -322,6 +323,7 @@ func set_connected(connected: bool) -> void:
 
 func setup(init: Dictionary) -> void:
 	_seed = int(init["seed"])
+	_map_name = str(init.get("map_name", ""))
 	_resources = init["resources"]
 	_tech_names.clear()
 	for tech: Dictionary in init["tech_tree"]["techs"]:
@@ -539,7 +541,7 @@ func _refresh_status() -> void:
 		return
 	# One tick is one day; speed is shown as days per minute, which is what a spectator feels.
 	var pace := "paused" if _paused else "%s days/min" % String.num(_speed * 60.0, 0)
-	_status.text = "Day %d   [%s]   seed %d" % [_tick, pace, _seed]
+	_status.text = "Day %d   [%s]   %s" % [_tick, pace, _map_name if _map_name != "" else "seed %d" % _seed]
 	_pause_button.text = "Resume" if _paused else "Pause"
 
 
@@ -555,7 +557,10 @@ func _compact_text(info: Dictionary, civ: Dictionary) -> String:
 	var goal := ""
 	if str(civ.get("strategy", "")) != "":
 		goal = "\n[color=#8a93a0]Goal: %s[/color]" % civ["strategy"]
-	return "%s\n%s\n%s%s" % [title, facts, _status_line(int(civ["id"]), civ), goal]
+	var ill := ""
+	if civ.get("sickness") != null:
+		ill = "\n[color=#c9a23a]Struck by %s (%d days left)[/color]" % [civ["sickness"]["name"], int(civ["sickness"]["days"])]
+	return "%s\n%s\n%s%s%s" % [title, facts, _status_line(int(civ["id"]), civ), ill, goal]
 
 
 ## What is going on with this civ, most pressing first.

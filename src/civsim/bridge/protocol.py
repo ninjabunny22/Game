@@ -25,10 +25,10 @@ from ..map import BIOME_INFO, DEPOSIT_TYPES, Biome, load_faction
 from ..military import UNIT_TYPES
 from ..military.warfare import ROSTER_CAP
 from ..simulation import Simulation
-from ..config import MAP_SIZES
+from ..config import MAP_SIZES, MAPS
 from ..diplomacy import rules
 
-PROTOCOL_VERSION = 13
+PROTOCOL_VERSION = 15
 RULER_COMMANDS = ("take_control", "release_control", "set_stance", "set_focus", "set_research", "set_build",
                   "answer_proposal")
 GAME_COMMANDS = ("new_game", "end_game")  # start a game from the menu; go back to the menu
@@ -73,8 +73,11 @@ def init_message(sim: Simulation, lobby: bool = False) -> str:
     data = {
         # Set while no game has been started: the map behind the main menu is only a backdrop,
         # and this is what a game can be started with.
-        "lobby": {"sizes": [{"id": size, **spec} for size, spec in MAP_SIZES.items()]} if lobby else None,
+        # Each size lists the maps it can be played on; a game takes the one asked for, or any.
+        "lobby": {"sizes": [{"id": size, **spec, "maps": [{"id": m["id"], "name": m["name"]} for m in MAPS[size]]}
+                            for size, spec in MAP_SIZES.items()]} if lobby else None,
         "seed": sim.config.seed,
+        "map_name": sim.config.map_name,  # "" for a map made from the game's own seed
         "resources": list(RESOURCES),
         "map": {
             "width": world.width,
@@ -160,6 +163,8 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
             # What it is working toward, in words, and what the realm concentrates on.
             "strategy": civ.strategy,
             "focus": civ.focus,
+            # The sickness a long war has brought on the civ, and how many days it has left; null when well.
+            "sickness": {"name": civ.sickness, "days": max(0, civ.sick_until - sim.tick)} if civ.sickness else None,
             "regions": [region.id for region in world.regions if region.owner == civ.id],
             "population": int(civ.population),
             "housing": int(mods.housing),

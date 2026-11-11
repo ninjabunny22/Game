@@ -14,6 +14,12 @@ ATTACK_THRESHOLD = 0.5  # an attack must be worth at least this to be launched
 ALLY_THRESHOLD = 0.6
 WAR_WEARY_TICKS = 300  # a war this old is only kept up from a position of strength
 RUNAWAY = 1.5  # a neighbour this many times our size is running away with the game
+LONG_PEACE = 800  # ticks at peace, divided by its taste for war, after which any civ starts to itch
+RESTLESS_PER_TICK = 0.2 / 400  # ... more with every season that passes, up to RESTLESS_MAX
+RESTLESS_MAX = 1.6
+EXPOSED_EDGE = 1.3  # how much weaker a civ caught off balance is taken to be
+SICK_EDGE = 1.3  # how much weaker a civ struck by sickness is taken to be
+SICK_BETRAYAL = 0.75  # an ally laid low is turned on at this share of the usual edge and warlikeness
 BETRAYAL_EDGE = 1.8  # how far ahead a warlike civ must be before it turns on an ally
 BETRAYAL_MILITARY = 1.3  # ... and how warlike
 STRATEGY_STICKINESS = 1.3  # a strategy already in hand counts for this much more than a new one
@@ -55,7 +61,9 @@ class UtilityBrain:
             entry = {"civ": n["name"], "stance": "ignore", "give": "none", "give_per_tick": 0,
                      "want": "none", "want_per_tick": 0, "troop_commitment": 0}
             if n["relation"] == "war":
-                weary = (n["war_ticks"] or 0) >= WAR_WEARY_TICKS
+                weary = (n["war_ticks"] or 0) >= WAR_WEARY_TICKS or you.get("sick")
+                if n.get("sick") and not you.get("sick"):
+                    edge = max(edge, 1.0) * SICK_EDGE  # they are laid low: now is the time
                 if edge >= 1.3 or (edge >= 0.85 and not weary):
                     entry.update(stance="aggression", troop_commitment=self._commitment(edge, len(my_wars)))
                     notes.append((2, f"pressing the war on {n['name']}"))
@@ -134,12 +142,23 @@ class UtilityBrain:
     @staticmethod
     def _attack(you, n, edge, military, thirst, supplier, can_declare, at_war, runaway, strategy,
                 backing=1.0, friends_wars=None) -> tuple[float, str]:
-        if not (can_declare and n["in_reach"]) or n["truce"]:
-            return 0.0, ""
+        if not (can_declare and n["in_reach"]) or n["truce"] or you.get("sick"):
+            return 0.0, ""  # nor does a civ that is itself sick start anything
+        sick = bool(n.get("sick"))
+        if sick:
+            edge *= SICK_EDGE
+        # Caught off balance: its army is away, or has just been beaten.
+        exposed = bool(n.get("army_abroad")) or n.get("routed_ticks_ago") is not None
+        if exposed:
+            edge *= EXPOSED_EDGE
         if n["relation"] == "alliance":
             # Only the warlike turn on a friend, and only a lone one they can crush, with no
             # betrayal already against their name.
             lone = not [name for name in n["allied_with"] if name != you["name"]]
+            ease = SICK_BETRAYAL if sick else 1.0  # a friend's weakness is some rulers' opportunity
+            if sick and military >= BETRAYAL_MILITARY * ease and edge >= BETRAYAL_EDGE * ease and lone \
+                    and not at_war and not you["distrusted_ticks_left"] and n.get("standing", 0.0) < 1.5:
+                return 1.1 + (edge - BETRAYAL_EDGE * ease) * military, f"{n['name']} is sick and cannot defend itself"
             if (military < BETRAYAL_MILITARY or edge < BETRAYAL_EDGE or not lone or at_war
                     or strategy["kind"] == "survival" or you["distrusted_ticks_left"]
                     or n.get("standing", 0.0) >= 1.5):
@@ -152,6 +171,12 @@ class UtilityBrain:
         if n["at_war_with"]:
             score += 0.4
             why = f"{n['name']} is weaker and already fighting {n['at_war_with'][0]}"
+        if sick:
+            score += 0.35
+            why = f"{n['name']} is laid low by sickness"
+        if exposed and not sick:
+            score += 0.3
+            why = (f"{n['name']}'s army is away" if n.get("army_abroad") else f"{n['name']} has just lost a battle")
         if n["distrusted_ticks_left"]:
             score += 0.2  # nobody will come to its aid
         # The long view: the civ it has set out to conquer is attacked sooner, and a civ set on
@@ -182,7 +207,16 @@ class UtilityBrain:
             why = f"the wells are failing and {n['name']} has water"
         elif thirst >= WATER_PRIORITY and n["water_rich"]:
             score = min(score, 0.0)  # whoever has water is courted, not fought, while there is a choice
-        if together < 1.15:
+        # A very long peace wears thin: an equal will do, where nobody weaker is to be had.
+        # No peace lasts for ever: the longer a civ has gone without a war the more it wants
+        # one, the warlike soonest, until even an equal will do.
+        idle = you.get("peace_ticks", 0) - LONG_PEACE / max(military, 0.3)
+        restless = idle > 0 and not at_war
+        if restless:
+            score += min(RESTLESS_MAX, idle * RESTLESS_PER_TICK)
+            if score >= ATTACK_THRESHOLD and edge < 1.15:
+                why = f"the long peace has run its course and {n['name']} is no stronger than we are"
+        if together < (0.8 if restless else 1.15):
             score = min(score, 0.0)  # never start a war from parity
         return score, why
 

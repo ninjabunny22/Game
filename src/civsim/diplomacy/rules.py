@@ -44,6 +44,21 @@ MAX_WAR = 400  # ticks after which both sides are exhausted
 TRUCE = 100
 SURRENDER_TRUCE = 300
 TRIBUTE = 0.5  # share of the loser's stock taken on surrender
+# Sickness: a long war wears a people down, and sooner or later something breaks out in the camps.
+SICKNESS_AFTER = 250  # ticks a civ must have been at war before an outbreak is possible
+SICKNESS_CHECK = 25  # ticks between rolls
+SICKNESS_CHANCE = 0.05  # per roll at SICKNESS_AFTER, doubling with every further SICKNESS_AFTER ticks of war
+SICKNESS_TICKS = 150  # how long it lasts
+SICKNESS_REST = 400  # ticks after it ends before another can start
+SICKNESS_DEATHS = 0.08  # share of the population lost at the outbreak
+SICKNESS_MILITARY = -0.25  # while it lasts: weaker soldiers ...
+SICKNESS_GROWTH = -0.6  # ... slower growth ...
+SICKNESS_YIELD = -0.1  # ... and less of everything from the land
+SICKNESSES = ("camp fever", "the flux", "the sweating sickness", "a plague", "the pox")
+
+# Ceding land: a side far ahead takes a whole region rather than tribute when peace is made.
+CEDE_LEAD = 20  # tiles taken, more than the other side
+
 # Peace on terms: a side well ahead in a war is paid tribute when it ends, and will accept an
 # offer of it once its own advance has stalled.
 PEACE_LEAD = 5  # tiles taken, more than the other side, to count as ahead

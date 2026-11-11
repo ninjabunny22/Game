@@ -6,7 +6,7 @@ extends CanvasLayer
 ## suggests a number and limits the choice to what it has room for. A game to be ruled then
 ## shows its civs, paused, for the player to pick one.
 
-signal start_requested(mode: String, size: String, civs: int, seed_text: String)
+signal start_requested(mode: String, size: String, civs: int, seed_text: String, map_id: String)
 signal civ_chosen(civ_id: int)  # -1: watch after all
 
 const ACCENT := Color(0.36, 0.62, 1.0)
@@ -23,6 +23,9 @@ var _mode := "watch"
 var _size := "medium"
 var _civs := 4
 var _mode_cards := {}
+var _map := ""  # the map asked for by id, or "" for any of the size's
+var _map_row: HBoxContainer
+var _map_buttons := {}
 var _size_cards := {}
 var _civ_count: Label
 var _civ_hint: Label
@@ -93,6 +96,11 @@ func show_menu(lobby: Dictionary) -> void:
 		var detail := "%d × %d tiles\nBest with %d civs" % [int(size["side"]), int(size["side"]), int(size["civs"])]
 		var id: String = size["id"]
 		_size_cards[id] = _card(sizes, str(size["name"]), detail, Vector2(196, 92), func() -> void: _set_size(id))
+	# Which of the size's maps to play on: any of them, or one by name.
+	_map_row = HBoxContainer.new()
+	_map_row.add_theme_constant_override("separation", 8)
+	_map_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	column.add_child(_map_row)
 
 	_heading(column, "Civilizations")
 	var count := HBoxContainer.new()
@@ -117,7 +125,7 @@ func show_menu(lobby: Dictionary) -> void:
 	last.alignment = BoxContainer.ALIGNMENT_CENTER
 	column.add_child(last)
 	_seed = LineEdit.new()
-	_seed.placeholder_text = "Seed (blank: a new world)"
+	_seed.placeholder_text = "Seed (blank: new starts)"
 	_seed.custom_minimum_size = Vector2(230, 44)
 	_seed.max_length = 9
 	last.add_child(_seed)
@@ -126,7 +134,7 @@ func show_menu(lobby: Dictionary) -> void:
 	start.custom_minimum_size = Vector2(230, 44)
 	start.add_theme_font_size_override("font_size", 20)
 	_style_button(start, ACCENT.darkened(0.1), ACCENT, 12)
-	start.pressed.connect(func() -> void: start_requested.emit(_mode, _size, _civs, _seed.text.strip_edges()))
+	start.pressed.connect(func() -> void: start_requested.emit(_mode, _size, _civs, _seed.text.strip_edges(), _map))
 	last.add_child(start)
 
 	_set_mode(_mode)
@@ -198,7 +206,30 @@ func _set_size(size: String) -> void:
 	_size = size
 	for id: String in _size_cards:
 		_light(_size_cards[id], id == size)
+	for child in _map_row.get_children():
+		child.queue_free()
+	_map_buttons.clear()
+	var choices: Array = [{"id": "", "name": "Any map"}]
+	choices.append_array(_spec().get("maps", []))
+	for choice: Dictionary in choices:
+		var id := str(choice["id"])
+		var button := Button.new()
+		button.text = str(choice["name"])
+		button.focus_mode = Control.FOCUS_NONE
+		button.custom_minimum_size = Vector2(120, 34)
+		button.pressed.connect(func() -> void: _set_map(id))
+		_map_row.add_child(button)
+		_map_buttons[id] = button
+	_set_map("")
 	_set_civs(int(_spec()["civs"]))  # each map starts on the number that suits it
+
+
+func _set_map(id: String) -> void:
+	_map = id
+	for key: String in _map_buttons:
+		var chosen: bool = key == id
+		_style_button(_map_buttons[key], ACCENT.darkened(0.25) if chosen else Color(1, 1, 1, 0.07),
+				ACCENT.darkened(0.1) if chosen else Color(1, 1, 1, 0.14), 10)
 
 
 func _set_civs(civs: int) -> void:

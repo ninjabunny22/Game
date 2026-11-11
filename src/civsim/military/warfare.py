@@ -637,6 +637,7 @@ class Military:
                 loser.leaderless_until = tick + REPLACEMENT_TICKS
         loser.state, loser.path, loser.siege_progress = "retreating", [], 0.0
         loser.rout_size = loser.size
+        losing.last_rout = tick
         loser.pursuing = None
         if winner.role == "field" and winner.state == "fighting":
             winner.state = "marching"

@@ -49,6 +49,9 @@ class Diplomacy:
         self._next_deal_id = 1
         self._reach_cache: dict[tuple[int, int], tuple[int, bool]] = {}
         self.player: int | None = None  # the civ a human rules, if any: it is never made peace for
+        self.now = 0
+        self.wars_started = 0  # how many wars between civs there have been in the game
+        self._ills = random.Random(7 + sum(civ.capital.tile for civ in civs))  # its own dice: outbreaks never disturb the game's
         self._alliance_breaks: dict[tuple[int, int], int] = {}  # (breaker, former ally) -> tick it broke the alliance
         self.distrust_until: dict[int, int] = {}  # betrayer -> tick until which others hold it against them
         self.military = None  # set by the simulation; moves and fights the armies each tick
@@ -132,6 +135,11 @@ class Diplomacy:
         allies = len(self.allies(civ.id))
         mods.science_mult += rules.ALLY_SCIENCE * allies
         mods.defense += rules.ALLY_DEFENSE * allies
+        if self.sick(civ):
+            mods.military += rules.SICKNESS_MILITARY
+            mods.growth += rules.SICKNESS_GROWTH
+            for res in mods.yield_mult:
+                mods.yield_mult[res] += rules.SICKNESS_YIELD
 
     # -- per-tick execution --------------------------------------------------
 
@@ -140,7 +148,44 @@ class Diplomacy:
         if who != of and (who, of) in self.standing:
             self.standing[(who, of)] = max(-3.0, min(3.0, self.standing[(who, of)] + amount))
 
+    def sick(self, civ) -> bool:
+        return self.now < civ.sick_until
+
+    def _outbreaks(self, tick: int, events: list) -> None:
+        """A civ long at war may be struck by sickness: it loses people at once and is weakened
+        for a season. Everyone can see it, and not every neighbour is above using it."""
+        for civ in self.civs.values():
+            if not civ.alive:
+                continue
+            if civ.sickness and tick >= civ.sick_until:
+                self._log(tick, events, "diplomacy", [civ], f"{civ.name} recovers from {civ.sickness}")
+                civ.sickness = ""
+            if tick % rules.SICKNESS_CHECK or civ.sickness or tick < civ.sick_rest:
+                continue
+            wars = [self.relation(civ.id, other).war for other in self.enemies(civ.id)]
+            age = max((tick - war.start for war in wars if war), default=0)
+            if age < rules.SICKNESS_AFTER:
+                continue
+            if self._ills.random() >= rules.SICKNESS_CHANCE * age / rules.SICKNESS_AFTER:
+                continue
+            civ.sickness = self._ills.choice(rules.SICKNESSES)
+            civ.sick_until = tick + rules.SICKNESS_TICKS
+            civ.sick_rest = civ.sick_until + rules.SICKNESS_REST
+            share = rules.SICKNESS_DEATHS
+            civ.population = max(MIN_POPULATION, civ.population * (1 - share))
+            for army in civ.armies:
+                army.scale(1 - share)
+            civ.soldiers *= 1 - share
+            self._log(tick, events, "war", [civ],
+                      f"{civ.sickness.capitalize()} breaks out in {civ.name} after {age} days of war: "
+                      f"its people sicken and its armies are weakened")
+
     def update(self, tick: int, events: list) -> None:
+        self.now = tick
+        self._outbreaks(tick, events)
+        for civ in self.civs.values():
+            if civ.alive and self.enemies(civ.id):
+                civ.last_war = tick
         for pair in self.standing:
             self.standing[pair] *= rules.MEMORY_FADE  # old deeds count for less
         for civ in self.civs.values():
@@ -261,6 +306,7 @@ class Diplomacy:
         relation = self.relations[(a, b)]
         self.deals = [d for d in self.deals if {d.a, d.b} != {a, b}]
         self._set_status(relation, "war", tick)
+        self.wars_started += 1
         relation.war = War(a, b, tick, aggressors=aggressors, progress={a: 0.0, b: 0.0}, tiles_taken={a: 0, b: 0},
                            casualties={a: 0.0, b: 0.0}, declarer=declarer.id, guardian=guardian, defending=defending,
                            name=name, last_gain=tick)
@@ -410,7 +456,8 @@ class Diplomacy:
         if region_id is not None and world.regions[region_id].owner == defender.id:
             self.capture_region(attacker, world.regions[region_id], tick, events)
 
-    def capture_region(self, captor, region, tick: int, events: list, peaceful: bool = False) -> None:
+    def capture_region(self, captor, region, tick: int, events: list, peaceful: bool = False,
+                       ceded: bool = False) -> None:
         """Whoever takes a region's capital takes the region: every tile its previous holder had there.
 
         Land that other civs hold inside the region stays theirs. A civ that loses
@@ -438,6 +485,9 @@ class Diplomacy:
         elif loser is None:
             self._log(tick, events, "region", [captor],
                       f"{captor.name} takes {region.capital_name} from {self.faction}; all of {region.name} falls with it")
+        elif ceded:
+            self._log(tick, events, "region", [captor, loser],
+                      f"{region.capital_name} and all of {region.name} pass to {captor.name} by treaty")
         else:
             self._log(tick, events, "war", [captor, loser],
                       f"{captor.name} takes {region.capital_name}; all of {region.name} falls with it")
@@ -487,13 +537,35 @@ class Diplomacy:
         """End a war. A side well ahead is paid tribute by the other; what was taken stays taken."""
         war = relation.war
         leader = self.ahead(war)
+        ceded = None
         if leader is not None:
             winner = self.civs[leader]
             loser = self.civs[war.b if leader == war.a else war.a]
-            self._pay_tribute(loser, {winner.id: 1.0}, rules.PEACE_TRIBUTE)
-            text += f"; {loser.name} pays {winner.name} tribute"
-            self.remember(loser.id, winner.id, -0.3)
+            lead = war.tiles_taken.get(winner.id, 0) - war.tiles_taken.get(loser.id, 0)
+            ceded = self._region_to_cede(winner, loser) if lead >= rules.CEDE_LEAD else None
+            if ceded is not None:
+                text += f"; {loser.name} cedes {ceded.name} to {winner.name}"
+                self.remember(loser.id, winner.id, -0.5)
+            else:
+                self._pay_tribute(loser, {winner.id: 1.0}, rules.PEACE_TRIBUTE)
+                text += f"; {loser.name} pays {winner.name} tribute"
+                self.remember(loser.id, winner.id, -0.3)
         self._end_war(relation, tick, events, rules.TRUCE, text)
+        if ceded is not None:
+            self.capture_region(winner, ceded, tick, events, ceded=True)
+
+    def _region_to_cede(self, winner, loser):
+        """The region a beaten civ gives up: the one nearest the winner, never its home."""
+        wx, wy = self.world.xy(winner.capital.tile)
+        best, best_gap = None, None
+        for region in self.world.regions:
+            if region.owner != loser.id or region.capital == loser.capital.tile:
+                continue
+            x, y = self.world.xy(region.capital)
+            gap = abs(x - wx) + abs(y - wy)
+            if best_gap is None or gap < best_gap:
+                best, best_gap = region, gap
+        return best
 
     def _pay_tribute(self, loser, shares: dict[int, float], share: float) -> None:
         for res in RESOURCES:

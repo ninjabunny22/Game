@@ -17,7 +17,7 @@ Per game it reports
 import argparse
 from concurrent.futures import ProcessPoolExecutor
 
-from .config import SimConfig
+from .config import MAP_SIZES, SimConfig, game_config
 from .economy import castle_ground, footprint, ports
 from .simulation import Simulation
 from .strategy import make_brain
@@ -25,9 +25,10 @@ from .strategy import make_brain
 DEFAULT_SEEDS = (1, 2, 3, 7, 42, 101, 2024, 31337)
 
 
-def survey(seed: int, ticks: int, brain_name: str = "utility") -> dict:
-    """Play one game with the built-in rules brain and return its counts."""
-    sim = Simulation(SimConfig(seed=seed))
+def survey(seed: int, ticks: int, brain_name: str = "utility", size: str | None = None) -> dict:
+    """Play one game and return its counts: on one of the chosen maps of `size`, or with no
+    size on the map the seed itself makes."""
+    sim = Simulation(game_config(size, seed=seed, end_tick=0) if size else SimConfig(seed=seed))
     brain = make_brain(brain_name)
     world = sim.world
     counts = dict.fromkeys((
@@ -110,9 +111,12 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--seeds", type=int, nargs="+", default=list(DEFAULT_SEEDS))
     parser.add_argument("--ticks", type=int, default=6000, help="ticks per game")
     parser.add_argument("--brain", default="utility", help='who plays the civs: "utility" (default) or "rules"')
+    parser.add_argument("--size", choices=list(MAP_SIZES), help="play on the chosen maps of this size "
+                        "(the seed picks which, and where the civs start) instead of one made from the seed")
     args = parser.parse_args(argv)
+    n = len(args.seeds)
     with ProcessPoolExecutor() as pool:
-        results = list(pool.map(survey, args.seeds, [args.ticks] * len(args.seeds), [args.brain] * len(args.seeds)))
+        results = list(pool.map(survey, args.seeds, [args.ticks] * n, [args.brain] * n, [args.size] * n))
     print(report(results))
 
 

@@ -142,3 +142,25 @@ def test_whole_games_still_end_wars_and_some_on_terms():
         texts += [e.get("text", "") for e in sim.step_with(brain)]
     assert any("declares war" in t for t in texts)
     assert any("make peace" in t or "sues for peace" in t or "exhausted" in t or "loses its capital" in t for t in texts)
+
+
+def test_a_side_far_behind_cedes_a_region_instead_of_paying(war):
+    sim, a, b, relation = war
+    relation.war.tiles_taken[a.id] = rules.CEDE_LEAD
+    home = b.capital.tile
+    regions = [r for r in sim.world.regions if r.owner == b.id]
+    assert len(regions) == 2
+    set_stances(sim, a, b, Stance.IGNORE, Stance.IGNORE)
+    events = []
+    sim.diplomacy._resolve_pair(a.id, b.id, rules.MIN_WAR, events)
+    assert relation.war is None and b.alive and b.capital.tile == home, "never its home region"
+    kept = [r for r in regions if r.owner == b.id]
+    assert len(kept) == 1 and kept[0].capital == home
+    assert sum(1 for r in sim.world.regions if r.owner == a.id) == 3
+    assert b.resources["gold"] == 100.0, "land, not tribute"
+    assert any("cedes" in e["text"] for e in events) and any("by treaty" in e["text"] for e in events)
+    # With only its home left there is nothing to cede: it pays instead.
+    sim.diplomacy._start_war(a, b, 1000, {a.id})
+    relation.war.tiles_taken[a.id] = rules.CEDE_LEAD
+    sim.diplomacy._resolve_pair(a.id, b.id, 1000 + rules.MIN_WAR, [])
+    assert relation.war is None and b.alive and b.resources["gold"] < 100.0

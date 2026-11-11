@@ -26,6 +26,15 @@ def army_band(their_power: float, your_power: float) -> str:
     return next((label for limit, label in ARMY_BANDS if ratio < limit), STRONGEST_BAND)
 
 
+ROUT_MEMORY = 100  # ticks for which a lost battle is still plain for all to see
+
+
+def _abroad(sim, civ) -> bool:
+    """Whether most of a civ's soldiers are with armies off its own land."""
+    away = sum(army.size for army in civ.armies if army.role == "field" and sim.world.owner[army.tile] != civ.id)
+    return civ.soldiers >= 1 and away > 0.5 * civ.soldiers
+
+
 def stance_context(sim, civ) -> dict:
     diplomacy = sim.diplomacy
     tree = sim.tech_tree
@@ -60,10 +69,18 @@ def stance_context(sim, civ) -> dict:
             "distrusted_ticks_left": max(0, diplomacy.distrust_until.get(other_id, 0) - sim.tick),
             "relation": relation.status,
             "war_ticks": sim.tick - relation.war.start if relation.war else None,
+            # How long the two have been at peace, if they are: a long peace makes the restless bold.
+            "peace_ticks": sim.tick - relation.since if relation.status == "peace" else None,
             "at_war_with": [sim.civs[e].name for e in diplomacy.enemies(other_id)],
             "allied_with": [sim.civs[e].name for e in diplomacy.allies(other_id)],
             "truce": sim.tick < relation.truce_until,
             "in_reach": diplomacy.in_reach(civ.id, other_id, sim.tick),
+            # What anyone can see of their army: whether most of it is away from home, and how
+            # long ago it was last beaten in the field (None if not lately).
+            "army_abroad": _abroad(sim, other),
+            "routed_ticks_ago": sim.tick - other.last_rout if sim.tick - other.last_rout <= ROUT_MEMORY else None,
+            # Sickness is plain to see: a civ laid low by it fights worse until it passes.
+            "sick": diplomacy.sick(other),
             "active_deal": deal_text,
             # What you make of them from what has passed between you: -3 a bitter grudge, 3 a proven friend.
             "standing": round(diplomacy.standing[(civ.id, other_id)], 2),
@@ -85,6 +102,9 @@ def stance_context(sim, civ) -> dict:
             "strategy": {"kind": civ.strategy_kind, "target": sim.civs[civ.strategy_target].name
                          if civ.strategy_target is not None else None},
             "era": tree.eras[tree.era_of(civ.known_techs)],
+            "sick": diplomacy.sick(civ),
+            # How long since it was last at war with anyone.
+            "peace_ticks": sim.tick - civ.last_war,
             "population": int(civ.population),
             "territory": len(civ.territory),
             "capitals": [s.name for s in civ.settlements],

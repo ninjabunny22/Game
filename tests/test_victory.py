@@ -50,5 +50,8 @@ def test_the_highest_score_wins_on_the_last_day():
         sim.step()
     assert sim.victory is None
     sim.step()
-    assert sim.victory == {"civ": 3, "kind": "score", "tick": 5}
+    assert sim.victory is None, "a game nobody has fought in runs on past its last day"
+    sim.diplomacy.wars_started = 1
+    sim.step()
+    assert sim.victory == {"civ": 3, "kind": "score", "tick": 6}
     assert Simulation(SimConfig(seed=3, end_tick=0)).config.end_tick == 0

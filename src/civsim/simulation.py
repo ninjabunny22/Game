@@ -30,7 +30,7 @@ from .ruler import Ruler
 from .strategy import CHECKIN_INTERVAL, Brain, CheckinRequest, parse_stances, stance_context
 from .tech import TechTree, advance_research
 
-DOMINATION_SHARE = 0.6  # holding this share of all regions wins the game
+DOMINATION_SHARE = 0.7  # holding this share of all regions wins the game
 SCORE_PER_REGION = 100
 SCORE_PER_TECH = 20
 
@@ -45,7 +45,7 @@ class Simulation:
         self.rng = random.Random(config.seed)
         self.building_defs = load_building_defs()
         self.tech_tree = TechTree.load()
-        self.world = generate_map(config.seed, config.width, config.height)
+        self.world = generate_map(config.seed if config.map_seed is None else config.map_seed, config.width, config.height)
         self.civs = self._create_civs()
         self.world.civs = self.civs  # placement rules look across borders
         self.ai = CivAI(self.world, self.building_defs, self.tech_tree, self.rng)
@@ -123,7 +123,8 @@ class Simulation:
             winner, kind = living[0], "conquest"
         elif held[leader.id] >= DOMINATION_SHARE * len(self.world.regions):
             winner, kind = leader, "domination"
-        elif self.config.end_tick and self.tick >= self.config.end_tick:
+        elif self.config.end_tick and self.tick >= self.config.end_tick and self.diplomacy.wars_started:
+            # A game in which nobody has yet fought is not over: the age runs on until someone does.
             winner, kind = max(living, key=lambda civ: (self.score(civ), -civ.id)), "score"
         if winner is None:
             return

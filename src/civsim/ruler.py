@@ -164,6 +164,7 @@ class Ruler:
                 if theirs.stance is Stance.ALLY and mine.stance is not Stance.ALLY:
                     kind, text = "alliance", f"{other.name} proposes an alliance"
                 elif (theirs.stance is Stance.TRADE and theirs.give and mine.stance not in FRIENDLY
+                      and other_id not in self.stances  # an order already given is not second-guessed
                       and diplomacy.deal_between(civ.id, other_id) is None):
                     kind = "trade"
                     text = f"{other.name} offers {theirs.give}" + (f" for {theirs.want}" if theirs.want else "")

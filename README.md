@@ -81,6 +81,18 @@ The overlay is built for watching:
   that has no other friends.
 - **Proposals.** When you rule a civ, the others put alliances, trades and peace to you;
   accept or refuse them at the top of the ruler's panel.
+- **Chosen maps.** A game is played on one of nine maps, three of each size (`MAPS` in
+  `config.py`), picked from a few hundred candidates with `python -m civsim.maps` for fair
+  regions, water and deposits everywhere and a single landmass. The menu offers any map of
+  the size or one by name; the seed now only decides who the civs are and where they start.
+- **Sickness.** A civ at war for 250 days or more may be struck by sickness: it loses people
+  at once and for 150 days fights worse and grows slower. Neighbours see it; enemies press
+  harder and a warlike ally may turn on it.
+- **No peace lasts for ever.** The longer a civ has gone without a war the more it wants one,
+  the warlike soonest, until even an equal will do; and a civ whose army is away or has just
+  been beaten is attacked sooner. A game nobody has fought in does not end on score.
+- **Ceding land.** A side at least twenty tiles behind when peace is made gives up a region
+  (never its home) instead of paying tribute.
 - **Headline log.** Only wars, peace, regions and capitals changing hands,
   alliances, betrayals, routs and new eras get a line. Routine events
   (buildings captured, discoveries, trade changes) are counted in one summary

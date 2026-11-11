@@ -103,6 +103,11 @@ class Civilization:
     strategy_target: int | None = None
     focus: str = "balanced"
     born: Personality | None = None  # its personality before any focus tilted it
+    sickness: str = ""  # the sickness a long war has brought on it, while it lasts
+    sick_until: int = 0
+    sick_rest: int = 0  # no new outbreak before this tick
+    last_war: int = 0  # the last tick it was at war with anyone (0 = never)
+    last_rout: int = -10_000  # the last tick one of its armies was routed
 
     # Orders from a human ruler (see ruler.py); None leaves the choice to the civ's AI.
     research_order: str | None = None  # the tech to research next

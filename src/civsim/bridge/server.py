@@ -156,7 +156,9 @@ class SimServer:
             if isinstance(seed, bool) or not isinstance(seed, int):
                 seed = random.SystemRandom().randrange(2**31)
             try:
-                sim = Simulation(game_config(value.get("size", "medium"), value.get("civs"), seed))
+                chosen = value.get("map")
+                sim = Simulation(game_config(value.get("size", "medium"), value.get("civs"), seed,
+                                             chosen if isinstance(chosen, str) and chosen else None))
             except ValueError as exc:
                 self._broadcast(protocol.error_message(self.sim, str(exc)))
                 return
@@ -183,8 +185,9 @@ class SimServer:
         self.sim, self.lobby, self.paused = sim, lobby, paused
         self._pending_steps = 0
         self._waiting = []
-        log.info("%s: seed %d, %dx%d, %d civs", "back to the menu" if lobby else "new game", sim.config.seed,
-                 sim.config.width, sim.config.height, sim.config.num_civs)
+        log.info("%s: %s, seed %d, %dx%d, %d civs", "back to the menu" if lobby else "new game",
+                 sim.config.map_name or "a random map", sim.config.seed, sim.config.width, sim.config.height,
+                 sim.config.num_civs)
         self._broadcast(protocol.init_message(sim, lobby))
         self._broadcast(protocol.tick_message(sim, self.paused, self.speed))
         self._wake.set()
