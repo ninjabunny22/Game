@@ -84,11 +84,12 @@ def test_a_routed_commander_dies_is_captured_or_stays_with_the_army(sim, rolls, 
 def test_a_defector_finding_the_roster_full_is_held_prisoner(sim):
     winner, loser = face_off(sim, sim.civs[0], sim.civs[1], (100, 40))
     victor = sim.civs[winner.civ]
-    victor.commanders[:] = [Commander(f"C{i}") for i in range(19)]
+    leading = sum(1 for army in victor.armies if army.commander)
+    victor.commanders[:] = [Commander(f"C{i}") for i in range(20 - leading)]
     assert sim.military.roster(victor) == 20
     sim.military.rng = Fixed(0.2, 0.1)
     sim.military._rout(loser, winner, sim.tick, [])
-    assert len(victor.commanders) == 19 and len(victor.captives) == 1
+    assert len(victor.commanders) == 20 - leading and len(victor.captives) == 1
 
 
 def test_most_of_a_beaten_armys_losses_are_wounded_or_got_away(sim):

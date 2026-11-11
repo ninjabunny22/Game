@@ -63,6 +63,7 @@ UPKEEP_CAUTION = 0.2  # don't add upkeep in a resource that is below this share 
 TILES_PER_EXPANSION = 4  # claiming budget per expansion; a river tile without bridges uses more of it
 RULER_ORDER = 1e6  # the score of a building a human ruler has ordered
 HARBOUR_NEED = 0.6  # ... and a harbour, once it can build one
+BARRACKS_NEED = 0.35  # how much a civ at peace wants barracks to train its soldiers in
 STABLES_NEED = 0.5  # how much a civ at peace wants stables, on the scale of the other needs
 NO_FOREST = 6  # wood work slots on the land (capitals aside) below which expansion stops costing wood
 WATER_MARGIN = 1.15  # look for more water once supply is below this multiple of consumption
@@ -123,6 +124,8 @@ class CivAI:
             "science": 0.55,
             "wealth": 0.25 + 0.35 * scarcity["gold"],
             "military": 0.1 + 0.9 * civ.military_need,
+            # How far the army lags what the civ means to raise: what barracks are for.
+            "training": _clamp((civ.soldier_target - civ.soldiers) / max(civ.soldier_target, 1.0), 0, 1),
             "expansion": (0.25 + 0.75 * _clamp(3 * idle_share, 0, 1) + (0.4 if wanted else 0.0)
                           + (0.5 if civ.march_target is not None else 0.0)),
             "resource": {res: 0.2 + 0.6 * scarcity[res] for res in RESOURCES},
@@ -391,6 +394,10 @@ class CivAI:
         if bdef.id == "stables":
             # Worth having in peace too: horses work the land as well as carrying cavalry.
             return max(needs["military"], STABLES_NEED)
+        if bdef.id == "barracks":
+            # Soldiers are trained there: wanted in peace for a first one, and badly once the
+            # army cannot be raised as fast as it is needed.
+            return max(needs["military"], BARRACKS_NEED, needs["training"])
         return needs[bdef.category]
 
     def _feasible(self, civ: Civilization, cost: dict[str, float], mods: Modifiers) -> bool:

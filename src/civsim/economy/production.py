@@ -10,7 +10,13 @@ from .rules import (
     FOOD_PER_POP,
     GROWTH_RATE,
     MIN_POPULATION,
+    ARMS_BOUGHT,
+    RECRUIT_GOLD,
+    RECRUIT_ORE,
     RECRUIT_RATE,
+    TRAIN_LEVY,
+    TRAIN_LEVY_PER_POP,
+    TRAIN_PER_BARRACKS,
     RESOURCES,
     SCIENCE_PER_POP,
     SETTLEMENT_YIELDS,
@@ -147,18 +153,30 @@ def produce(civ, mods: Modifiers, building_defs) -> None:
     civ.income = {res: civ.resources[res] - before[res] for res in RESOURCES}
 
 
+def training_rate(civ) -> float:
+    """Soldiers the civ can train per tick: a levy that grows with its people, and its barracks."""
+    barracks = sum(1 for b in civ.buildings if b.type == "barracks" and b.complete and b.active)
+    return TRAIN_LEVY + TRAIN_LEVY_PER_POP * civ.population + TRAIN_PER_BARRACKS * barracks
+
+
 def _maintain_army(civ, upkeep: dict[str, float]) -> None:
     """Recruit or demobilise toward the standing order, then pay and equip the soldiers."""
     # The wounded mend slowly; until they do they can be neither soldiers nor workers.
     civ.wounded = max(0.0, civ.wounded - max(0.05, WOUND_RECOVERY * civ.wounded))
     target = min(civ.soldier_target, max(0.0, civ.population - MIN_POPULATION - civ.wounded))
-    step = RECRUIT_RATE * civ.population + 0.2
-    change = max(-step, min(step, target - civ.soldiers))
-    if civ.unpaid:
-        change = min(change, 0.0)  # nobody enlists in an army that is not being paid
+    factors = upkeep_per_soldier(civ.unit_counts())
+    change = max(-(RECRUIT_RATE * civ.population + 0.2), target - civ.soldiers)
+    if change > 0:
+        # Soldiers are trained and armed: only so many a day, and only those that can be paid for.
+        change = 0.0 if civ.unpaid else min(change, training_rate(civ))  # nobody enlists in an unpaid army
+        gold, ore = RECRUIT_GOLD * factors["gold"], RECRUIT_ORE * factors["ore"]
+        if civ.resources["ore"] < change * ore:
+            gold, ore = gold + ARMS_BOUGHT * ore, 0.0  # no ore of its own: the arms are bought in, dearly
+        change = max(0.0, min(change, civ.resources["gold"] / gold if gold > 0 else change))
+        civ.resources["gold"] -= change * gold
+        civ.resources["ore"] -= change * ore
     civ.soldiers = max(0.0, civ.soldiers + change)
     # What the army costs depends on what it is made of: swordsmen need ore, archers wood, cavalry gold.
-    factors = upkeep_per_soldier(civ.unit_counts())
     civ.unpaid = not _charge(civ, upkeep, "gold", civ.soldiers * SOLDIER_GOLD * factors["gold"])
     civ.unsupplied = not _charge(civ, upkeep, "ore", civ.soldiers * SOLDIER_ORE * factors["ore"])
     _charge(civ, upkeep, "wood", civ.soldiers * factors["wood"])

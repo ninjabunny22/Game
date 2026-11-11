@@ -9,6 +9,7 @@ intel: exact army numbers, where the army is committed, and what is in store.
 import math
 
 from ..diplomacy.rules import ALLIANCE_COST, DEAL_FEE, SURPLUS_FILL, WAR_COST
+from ..economy import training_rate
 from ..economy import water_balance, water_urgency
 from ..economy.rules import RESOURCES
 
@@ -163,6 +164,8 @@ def stance_context(sim, civ) -> dict:
             # War cannot be declared with fewer soldiers than this; max_soldiers is the most it can raise.
             "soldiers_needed_to_declare_war": math.ceil(diplomacy.war_army(civ)),
             "max_soldiers": int(diplomacy.mobilization_cap(civ) * civ.population),
+            # Soldiers it can train per tick (a levy, plus its barracks); each costs gold and ore.
+            "training_per_tick": round(training_rate(civ), 2),
             "army": {unit_id: int(count) for unit_id, count in civ.unit_counts().items() if count >= 1},
             "commanders": [{"name": c.name, "level": c.level}
                            for c in civ.commanders + [a.commander for a in civ.armies if a.commander]],

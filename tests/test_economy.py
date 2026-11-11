@@ -38,6 +38,7 @@ def test_soldiers_cost_gold_and_desert_when_unpaid():
     civ = sim.civs[0]
     civ.population, civ.soldier_target = 100, 30
     civ.resources.update(gold=200, food=250)
+    civ.buildings += [Building("barracks", tile, 1.0, True) for tile in sorted(civ.territory)[:2]]  # to train them in
     for _ in range(40):
         produce(civ, sim.modifiers[civ.id], sim.building_defs)
     assert civ.soldiers > 25 and not civ.unpaid

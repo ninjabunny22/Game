@@ -40,6 +40,11 @@ from .units import BASE_UNIT, UNIT_TYPES, unit_strength
 GARRISON_KEEP = 0.2  # share of the soldiers that stays to hold the capital during a war ...
 GUARDED_KEEP = 0.35  # ... or while a civ it is not yet fighting is set on attacking it
 WALL_DETOUR = 4  # tiles further an army will go for a capital one point less strongly held
+SPLIT_SIZE = 60.0  # soldiers in the army against an enemy from which a second column is sent
+WING_SHARE = 0.6  # a second column's share of the soldiers, beside the main body's 1 ...
+HOME_SHARE = 0.5  # ... and a home defence force's
+HOME_CALL = 8  # tiles: an intruder further than this from every army gets a force of its own raised against it
+JOINT_PULL = 10  # tiles further an army will go to attack the capital an ally is already attacking
 OUTMATCHED = 1.8  # an army falls back from enemies within reach this many times its strength
 DANGER_RADIUS = 3  # ... counted this many tiles around it
 REINFORCE_RATE = 0.05  # share of the army that can reach a field army per tick once it has left home
@@ -235,13 +240,33 @@ class Military:
         """One field army per enemy, each with a commander; the rest of the soldiers hold the capital."""
         enemies = self.diplomacy.enemies(civ.id)
         garrison = civ.garrison
-        fielded = {a.target_civ for a in civ.armies
-                   if a.role == "field" and a.state != "returning" and a.target_region is None}
         for enemy in enemies:
-            if enemy not in fielded:
-                army = Army(self.next_id(), civ.id, civ.capital.tile, "field", target_civ=enemy,
-                            commander=self._appoint(civ))
-                civ.armies.append(army)
+            foe = self.civs[enemy]
+            mine = [a for a in civ.armies if a.role == "field" and a.target_civ == enemy
+                    and a.state != "returning" and a.target_region is None]
+            attack = [a for a in mine if a.duty == "attack"]
+            war = self.diplomacy.relation(civ.id, enemy).war
+            if not attack:
+                attack = [Army(self.next_id(), civ.id, civ.capital.tile, "field", target_civ=enemy,
+                               commander=self._appoint(civ))]
+                civ.armies.append(attack[0])
+            elif (len(attack) == 1 and attack[0].size >= SPLIT_SIZE and len(foe.settlements) >= 2
+                  and war and civ.id in war.aggressors):
+                # Strong enough to press two capitals at once: a second column sets out.
+                column = Army(self.next_id(), civ.id, civ.capital.tile, "field", target_civ=enemy,
+                              commander=self._appoint(civ), wing=1)
+                if attack[0].tile == civ.capital.tile:  # still at home: the army divides before it marches
+                    column.add(attack[0].take(attack[0].size * WING_SHARE / (1 + WING_SHARE)))
+                civ.armies.append(column)
+            # Home defence: an enemy on our land with every army far away gets a force of its own.
+            intruder = self._besieger(civ, foe) or self._nearest_intruder(civ, garrison, foe)
+            guard = next((a for a in mine if a.duty == "defend"), None)
+            if intruder is not None and guard is None and all(
+                    self._reach(a.tile, intruder.tile) > HOME_CALL for a in attack):
+                civ.armies.append(Army(self.next_id(), civ.id, civ.capital.tile, "field", target_civ=enemy,
+                                       commander=self._appoint(civ), duty="defend"))
+            elif intruder is None and guard is not None and guard.state not in ("fighting", "retreating"):
+                guard.state, guard.path = "returning", []  # the land is clear: stand down
         for army in civ.armies:
             if army.role != "field":
                 continue
@@ -263,10 +288,11 @@ class Military:
                       for other in self.diplomacy.others(civ.id)
                       if self.civs[other].alive and other not in enemies)
         keep = (GUARDED_KEEP if watched else GARRISON_KEEP) * civ.soldiers
-        each = (civ.soldiers - keep) / len(active)
+        weight = {a.id: HOME_SHARE if a.duty == "defend" else WING_SHARE if a.wing else 1.0 for a in active}
+        whole = sum(weight.values())
         for army in active:
             spare = garrison.size - keep
-            need = each - army.size
+            need = (civ.soldiers - keep) * weight[army.id] / whole - army.size
             if need <= 0 or spare <= 0 or army.state == "retreating":
                 continue  # nobody is sent out to join an army in flight
             # At home an army fills its ranks at once; in the field reinforcements trickle out to it.
@@ -399,16 +425,28 @@ class Military:
             war = self.diplomacy.relation(civ.id, enemy.id).war
             rested = tick >= self._rally.get(army.id, 0)
             besieger = self._besieger(civ, enemy) if war else None
-            if besieger is not None and rested and army.size >= MIN_FIELD_ARMY:
+            guarded = army.duty == "attack" and any(
+                a.duty == "defend" and a.target_civ == enemy.id and a.size >= MIN_FIELD_ARMY
+                and a.state not in ("retreating", "returning") for a in civ.armies)
+            if army.duty == "defend":
+                # The home force never leaves its own land: it goes for whoever is on it.
+                intruder = besieger or self._nearest_intruder(civ, army, enemy)
+                goal = intruder.tile if intruder else capital
+                army.state = "marching" if intruder and rested and army.size >= MIN_FIELD_ARMY else "idle"
+            elif besieger is not None and rested and army.size >= MIN_FIELD_ARMY and not guarded:
                 # One of our capitals is held: nothing matters more than driving them out.
                 goal = besieger.tile
                 army.state = "marching"
             elif war and civ.id in war.aggressors and rested and army.size >= MIN_FIELD_ARMY:
                 # Make for the nearest capital the enemy holds: taking it takes its region.
                 # Make for the capital that is cheapest to take: near, and not too strongly held.
+                joint = self._allied_targets(civ, enemy)  # where an ally is already attacking: join it there
                 others = sorted((s.tile for s in enemy.settlements),
-                                key=lambda t: (self._gap(army.tile, t) + WALL_DETOUR * self.tile_price(civ, t), t))
-                goal = others[0]
+                                key=lambda t: (self._gap(army.tile, t) + WALL_DETOUR * self.tile_price(civ, t)
+                                               - (JOINT_PULL if t in joint else 0), t))
+                # A second column takes the next capital, so the enemy has two to save.
+                goal = others[min(army.wing, len(others) - 1)]
+                others = [goal] + [t for t in others if t != goal]
                 if army.state == "idle":
                     army.state = "marching"
                 if self._outmatched(civ, army):
@@ -446,6 +484,18 @@ class Military:
                 path = self._route(civ, army.tile, capital)
             army.path = path or []
             army.path_tick = tick
+
+    def _allied_targets(self, civ, enemy) -> set[int]:
+        """The enemy capitals that allies of `civ`, also at war with it, are marching on or besieging."""
+        capitals = {s.tile for s in enemy.settlements}
+        found: set[int] = set()
+        for ally in self.diplomacy.allies(civ.id):
+            if self.diplomacy.relation(ally, enemy.id).status != "war":
+                continue
+            for other in self.civs[ally].armies:
+                if other.role == "field" and other.target_civ == enemy.id and other.path and other.path[-1] in capitals:
+                    found.add(other.path[-1])
+        return found
 
     def _outmatched(self, civ, army: Army) -> bool:
         """Whether enemy armies close by are far too strong for this one to face. An army that
@@ -976,7 +1026,12 @@ class Military:
                                     f"{civ.name}'s army breaks into {region.capital_name}: {region.name} "
                                     f"falls unless {enemy.name} drives it out within {rules.CAPITAL_HOLD} days")
             if region.held_by != civ.id:
-                return  # an ally got there first: the hold is theirs
+                # An ally got there first: the hold is theirs, but a second army in the breach
+                # brings the end on half as fast again.
+                if (attack > defence and tick % 2 == 0
+                        and self.diplomacy.relation(civ.id, region.held_by).status == "alliance"):
+                    region.hold = min(rules.CAPITAL_HOLD - 1, region.hold + 1)
+                return
             if attack > defence:
                 region.hold += 1  # a tick spent fighting off a relief never reaches here
             if region.hold < rules.CAPITAL_HOLD:

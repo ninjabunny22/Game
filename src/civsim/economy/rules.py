@@ -23,7 +23,15 @@ SCIENCE_BANK_CAP = 500.0  # most science a civ can hold while it has nothing to 
 # Army. Soldiers are part of the population but do not work.
 GARRISON = 0.10  # peacetime share of the population under arms
 MAX_MOBILIZATION = 0.35
-RECRUIT_RATE = 0.02  # share of the population that can join or leave the army per tick
+RECRUIT_RATE = 0.02  # share of the population that can leave the army per tick: standing down is quick
+# Raising soldiers is not: they are trained, a few a day by levy and more for every working
+# barracks, and each costs gold and ore to arm (more for the heavier kinds of troops).
+TRAIN_LEVY = 0.2  # soldiers a civ can train per tick with no barracks at all ...
+TRAIN_LEVY_PER_POP = 0.002  # ... plus this much per head of population
+TRAIN_PER_BARRACKS = 0.6  # ... and this many more for each working barracks
+RECRUIT_GOLD = 0.5  # to arm one base soldier
+RECRUIT_ORE = 0.2
+ARMS_BOUGHT = 3.0  # gold paid per unit of ore a civ without ore would have needed
 SOLDIER_FOOD = 0.04  # on top of what they eat as population
 SOLDIER_GOLD = 0.02
 SOLDIER_ORE = 0.005

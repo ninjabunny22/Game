@@ -111,6 +111,15 @@ The overlay is built for watching:
   (`strategy/utility.py`). `python -m civsim.league --tweak NAME=VALUE ...` plays a changed
   set against the standard one in ten games, half the civs on each; `--evolve N` mutates,
   keeps what wins, and refuses anything that makes games duller.
+- **Armies are built.** Soldiers are trained a few a day (a levy that grows with the
+  population, plus 0.6 a day for each working barracks) and each costs gold and ore to arm;
+  a civ with no ore buys its arms in for more gold. Standing down is quick. A lost army
+  takes time and money to replace.
+- **More than one army.** Against each enemy a civ fields a main body; from 60 soldiers a
+  second column sets out for another of the enemy's capitals; and an intruder far from
+  every army gets a home force raised against it, which never leaves its own land. Allies
+  at war with the same enemy make for the same capital, and a second army in the breach
+  brings a held capital down half as fast again.
 - **Headline log.** Only wars, peace, regions and capitals changing hands,
   alliances, betrayals, routs and new eras get a line. Routine events
   (buildings captured, discoveries, trade changes) are counted in one summary

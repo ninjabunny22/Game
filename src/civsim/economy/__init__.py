@@ -15,7 +15,7 @@ from .buildings import (
 )
 from .harbours import HARBOUR_REACH, ports
 from .modifiers import Modifiers, compute_modifiers
-from .production import food_need, produce, recompute_capacity, water_balance, water_growth_factor, water_urgency
+from .production import food_need, produce, training_rate, recompute_capacity, water_balance, water_growth_factor, water_urgency
 from .rules import RESOURCES
 from .villagers import manage_villagers
 
@@ -34,6 +34,7 @@ __all__ = [
     "recompute_capacity",
     "stables",
     "tend_horses",
+    "training_rate",
     "water_balance",
     "water_growth_factor",
     "water_urgency",

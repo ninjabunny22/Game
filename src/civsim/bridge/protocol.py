@@ -239,6 +239,8 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
             armies.append({
                 "id": army.id, "civ": civ.id, "x": army.tile % world.width, "y": army.tile // world.width,
                 "role": army.role, "state": army.state, "target_civ": army.target_civ,
+                # duty: "attack" (out after the enemy's capitals) or "defend" (a home force on its own land).
+                "duty": army.duty,
                 # Whole soldiers per unit type, adding up exactly to "size".
                 "units": whole(army.units),
                 "size": round(army.size),

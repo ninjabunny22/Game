@@ -67,6 +67,8 @@ class Army:
     pursuit_until: int = 0
     disordered_until: int = 0  # a pursuer is out of formation during the chase and for a while after
     rout_size: float = 0.0  # soldiers this army had when it broke
+    duty: str = "attack"  # "attack": makes for the enemy's capitals. "defend": stays on its own land
+    wing: int = 0  # among the armies sent against one enemy: the main body, or a second column
     boat: bool = False  # aboard ship on open water, having put out from near one of its civ's harbours
 
     @property
