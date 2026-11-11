@@ -9,3 +9,8 @@ godot/.godot/
 
 # Launcher logs
 logs/
+
+# macOS, and things kept beside the project but not part of it
+.DS_Store
+/Godot.app/
+/*.glb

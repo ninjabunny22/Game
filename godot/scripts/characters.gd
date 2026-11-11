@@ -12,7 +12,7 @@ const DIR := "res://assets/characters/"
 const TEAM_MATERIALS := {
 	"Commander": ["cloth_team"], "Villager": ["tunic_moss"], "Rider": ["tunic_moss", "saddle_blanket"],
 	"Stable": ["cloth_team"], "Boat": ["cloth_team"], "Harbour": ["cloth_team"],
-	"Knight": ["cloth_team"], "Archer": ["cloth_team"], "Castle": ["cloth_team"], "CapitalCastle": ["cloth_team"],
+	"Knight": ["cloth_team", "cloth_deep"], "Archer": ["cloth_team"], "Castle": ["cloth_team"], "CapitalCastle": ["cloth_team"],
 }
 
 ## Parts of a model that are left out: the stable comes on a wide plate of grass, which would
@@ -99,7 +99,8 @@ func _tint(node: Node, names: Array, color: Color) -> void:
 				var key := "%s:%s" % [material.resource_name, color.to_html(false)]
 				if not _tints.has(key):
 					var tinted: StandardMaterial3D = material.duplicate()
-					tinted.albedo_color = color
+					# A model's darker cloth (the knight's cloak) takes a darker shade of the colour.
+					tinted.albedo_color = color.darkened(0.4) if material.resource_name.ends_with("_deep") else color
 					_tints[key] = tinted
 				instance.set_surface_override_material(surface, _tints[key])
 	for child in node.get_children():

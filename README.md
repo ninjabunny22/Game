@@ -39,6 +39,14 @@ uses the simpler policy the tests run on. `--llm ollama` asks a local
 [Ollama](https://ollama.com) server instead (`http://localhost:11434`, `llama3.1:8b`;
 `--model` and `--llm-url` change that), and the launcher then starts Ollama first.
 
+**Main menu.** Started with nothing said about the game (`./CivSim.command`), the
+viewer opens on its main menu over a game playing itself. The menu chooses whether to
+watch or to rule a civ, one of three maps (small 64x64, medium 96x96, large 128x128,
+recommended for 2, 4 and 5 civs) and how many civs, up to five. A game to be ruled starts
+paused on a screen for choosing a civ. `--size` and `--civs` choose the same from the
+command line, and any of `--seed`, `--rule`, `--size` or `--civs` skips the menu. The
+Menu button in a game goes back.
+
 **Playing a civ.** Any civ can be taken in hand from the viewer's panel ("Rule a civ
 yourself"), or from the start with `--rule N`. A ruler sets what the realm
 concentrates on, what to research and build next, and how to stand toward each other

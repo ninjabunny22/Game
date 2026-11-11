@@ -29,6 +29,7 @@ var _latest := {}  # civ id -> its state in the latest tick
 var _paused_banner: Label
 var _ruler_box: VBoxContainer  # the player's own panel: which civ they rule and their orders
 var _victory: Variant = null  # who has won and how, once the game is decided
+var _ruler_folded := false
 var _ruler_signature := ""  # what the panel was last built from, so it is only rebuilt on a change
 var _routine: Array = []  # [tick, kind] of recent routine events
 
@@ -169,7 +170,7 @@ func _refresh_ruler(ruler: Variant) -> void:
 	for civ_id: int in _latest:
 		if _latest[civ_id]["alive"]:
 			others.append([civ_id, _relation_word(ruler, civ_id)])
-	var signature := JSON.stringify([ruler, others])
+	var signature := JSON.stringify([ruler, others, _ruler_folded])
 	if signature == _ruler_signature:
 		return
 	_ruler_signature = signature
@@ -195,8 +196,12 @@ func _refresh_ruler(ruler: Variant) -> void:
 	title.add_theme_color_override("font_color", Color.html(_civ_info[mine]["color"]).lightened(0.25))
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(title)
+	# The orders fold away, so the panel does not sit over the map while nothing is being changed.
+	_button(header, "Orders ▸" if _ruler_folded else "Orders ▾", func() -> void:
+		_ruler_folded = not _ruler_folded
+		_refresh_ruler(ruler))
 	_button(header, "Hand back" if ruler["alive"] else "Watch on", func() -> void: command_requested.emit("release_control", {}))
-	if not ruler["alive"]:
+	if not ruler["alive"] or _ruler_folded:
 		return
 
 	_small_label(_ruler_box, "The realm concentrates on")
