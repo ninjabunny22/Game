@@ -107,6 +107,10 @@ The overlay is built for watching:
   and guard their homes, Expansionists strike fast, Merchants pay others to fight.
   Research heads for the techs the civ's goal needs. When you rule a civ, the menu's
   Easy / Normal / Hard sets how hard the others go on you.
+- **League.** Every number the strategist decides by is a field of `Params`
+  (`strategy/utility.py`). `python -m civsim.league --tweak NAME=VALUE ...` plays a changed
+  set against the standard one in ten games, half the civs on each; `--evolve N` mutates,
+  keeps what wins, and refuses anything that makes games duller.
 - **Headline log.** Only wars, peace, regions and capitals changing hands,
   alliances, betrayals, routs and new eras get a line. Routine events
   (buildings captured, discoveries, trade changes) are counted in one summary
