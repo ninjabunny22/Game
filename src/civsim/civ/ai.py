@@ -52,6 +52,7 @@ FALLOFF_POWER = 0.6  # ... but gently: rising costs and upkeep are what really l
 STORE_NEED = 0.4  # how much a completely full store makes the civ want more room for it
 UPKEEP_CAUTION = 0.2  # don't add upkeep in a resource that is below this share of storage and not growing
 TILES_PER_EXPANSION = 4  # claiming budget per expansion; a river tile without bridges uses more of it
+RULER_ORDER = 1e6  # the score of a building a human ruler has ordered
 HARBOUR_NEED = 0.6  # ... and a harbour, once it can build one
 STABLES_NEED = 0.5  # how much a civ at peace wants stables, on the scale of the other needs
 NO_FOREST = 6  # wood work slots on the land (capitals aside) below which expansion stops costing wood
@@ -123,6 +124,15 @@ class CivAI:
     # -- research ------------------------------------------------------------
 
     def _choose_research(self, civ: Civilization, mods: Modifiers, needs: dict, tick: int) -> None:
+        if civ.research_order is not None:
+            # A ruler's choice stands until it is learned, as long as it can be researched at all.
+            if civ.research_order in {tech.id for tech in self.tech_tree.available(civ.known_techs)}:
+                if civ.research is None or (civ.research.tech_id != civ.research_order and not civ.research.paid):
+                    civ.research = Research(civ.research_order)
+                if civ.research.tech_id == civ.research_order:
+                    return
+            else:
+                civ.research_order = None
         if civ.research is not None:
             stuck = not civ.research.paid and tick % RESEARCH_RETHINK_TICKS == 0
             if not stuck:
@@ -202,6 +212,16 @@ class CivAI:
                 continue
             options.append((self._building_score(civ, bdef, needs, count), "build", bdef.id, cost))
 
+        if civ.build_order is not None:
+            # A ruler's order goes ahead of everything the civ would choose for itself.
+            ordered = self.building_defs.get(civ.build_order)
+            count = civ.count(civ.build_order) if ordered else 0
+            if (ordered is None or (ordered.requires_tech and ordered.requires_tech not in civ.known_techs)
+                    or (ordered.max_count is not None and count >= ordered.max_count)):
+                civ.build_order = None
+            else:
+                options.append((RULER_ORDER, "build", ordered.id, ordered.cost_for(count)))
+
         expand_cost = self.expansion_cost(civ, mods)
         if self._feasible(civ, expand_cost, mods):
             added = max(0, len(civ.territory) - civ.base_territory)
@@ -233,6 +253,8 @@ class CivAI:
                 if civ.can_afford(cost):
                     civ.pay(cost)
                     place(civ, self.world, self.building_defs[target], site)
+                    if target == civ.build_order:
+                        civ.build_order = None  # done as ordered
                     civ.goal = None
             else:
                 border = self._border(civ, mods)

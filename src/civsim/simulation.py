@@ -26,6 +26,7 @@ from .economy import (
 from .economy.rules import START_POPULATION, START_RESOURCES
 from .map import generate_map, region_neighbours
 from .military.warfare import Military
+from .ruler import Ruler
 from .strategy import CHECKIN_INTERVAL, Brain, CheckinRequest, parse_stances, stance_context
 from .tech import TechTree, advance_research
 
@@ -65,6 +66,7 @@ class Simulation:
         self._outbox: list[CheckinRequest] = []
         self._inbox: list[tuple[CheckinRequest, dict | None]] = []
         self._awaiting: set[int] = set()  # civs whose check-in is still unanswered
+        self.ruler = Ruler(self)  # a human player's hand on one civ, if any
 
     def step(self) -> list[dict]:
         self.tick += 1
@@ -140,7 +142,7 @@ class Simulation:
             if reply is None:
                 continue  # no answer: previous stances stand
             intents, reason = parse_stances(reply, request.context, self.tick)
-            self.diplomacy.set_intents(civ.id, intents)
+            self.diplomacy.set_intents(civ.id, self.ruler.overrule(civ.id, request.context, intents))
             civ.last_reason = reason
 
     def _create_civs(self) -> list[Civilization]:

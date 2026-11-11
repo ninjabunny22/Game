@@ -96,6 +96,10 @@ class Civilization:
 
     last_demolition: int = -10_000  # tick; demolitions are rate-limited
 
+    # Orders from a human ruler (see ruler.py); None leaves the choice to the civ's AI.
+    research_order: str | None = None  # the tech to research next
+    build_order: str | None = None  # the building to put up next
+
     known_techs: list[str] = field(default_factory=list)
     research: Research | None = None
     science: float = 0.0

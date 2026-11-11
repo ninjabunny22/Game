@@ -32,6 +32,7 @@ var _territory_rev := -1
 var _detail := -1  # how much the map shows, set from how far the camera is
 var _perf_clock := 0.0  # CIVSIM_PERF=1 prints frame rate and draw calls every few seconds
 var _tick := 0
+var _ruled := -1  # the civ the player rules, or -1
 
 
 func _ready() -> void:
@@ -144,6 +145,13 @@ func _on_tick(tick: int, data: Dictionary) -> void:
 	if not _ready_for_ticks:
 		return
 	_tick = tick
+	# Taking a civ in hand brings the camera to its capital.
+	var ruled: int = int(data["ruler"]["civ"]) if data.get("ruler") != null else -1
+	if ruled != _ruled:
+		_ruled = ruled
+		if ruled >= 0 and not data["civs"][ruled]["settlements"].is_empty():
+			var home: Dictionary = data["civs"][ruled]["settlements"][0]
+			_camera.focus(_terrain.tile_position(int(home["x"]), int(home["y"])), 46.0)
 	var rev := int(data["territory_rev"])
 	if rev != _territory_rev:
 		_territory_rev = rev

@@ -23,6 +23,8 @@ def main(argv: list[str] | None = None) -> None:
                         help='who answers the strategic check-ins: "utility" (default), the built-in '
                              'strategist, which needs no model; "rules" for the simple policy the tests '
                              'use; or "ollama" to ask a local language model')
+    parser.add_argument("--rule", type=int, metavar="CIV", help="start with this civ (0, 1, ...) in the player's "
+                        "hands; any civ can also be taken up or handed back from the viewer")
     parser.add_argument("--model", help="model name for the LLM provider (default: llama3.1:8b for ollama)")
     parser.add_argument("--llm-url", help="base URL of the LLM provider (default: http://localhost:11434 for ollama)")
     args = parser.parse_args(argv)
@@ -39,6 +41,10 @@ def main(argv: list[str] | None = None) -> None:
                             "use --llm rules to run without a model.", problem)
 
     sim = Simulation(config)
+    if args.rule is not None:
+        problem = sim.ruler.command("take_control", {"civ": args.rule})
+        if problem:
+            parser.error(f"--rule {args.rule}: {problem}")
     if args.headless:
         # Check-ins are answered before the next tick, so the run waits on the model.
         for _ in range(args.ticks):

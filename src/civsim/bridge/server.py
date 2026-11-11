@@ -127,7 +127,7 @@ class SimServer:
             self.clients.discard(ws)
             log.info("viewer disconnected: %s", ws.remote_address)
 
-    def _apply_command(self, action: str, value: float | None) -> None:
+    def _apply_command(self, action: str, value: float | dict | None) -> None:
         if action == "pause":
             self.paused = True
         elif action == "resume":
@@ -139,6 +139,13 @@ class SimServer:
             self._pending_steps += 1
         elif action == "set_speed":
             self.speed = _clamp_speed(value)
+        elif action in protocol.RULER_COMMANDS:
+            problem = self.sim.ruler.command(action, value)
+            if problem:
+                self._broadcast(protocol.error_message(self.sim, problem))
+            # Show the order at once, even while the game is paused.
+            self._broadcast(protocol.tick_message(self.sim, self.paused, self.speed))
+            return
         if not self.paused:
             self._pending_steps = 0
         self._wake.set()

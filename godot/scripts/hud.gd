@@ -27,6 +27,8 @@ var _cards := {}  # civ id -> RichTextLabel
 var _expanded := -1  # civ whose card shows full detail, or -1
 var _latest := {}  # civ id -> its state in the latest tick
 var _paused_banner: Label
+var _ruler_box: VBoxContainer  # the player's own panel: which civ they rule and their orders
+var _ruler_signature := ""  # what the panel was last built from, so it is only rebuilt on a change
 var _routine: Array = []  # [tick, kind] of recent routine events
 
 var _connected := false
@@ -89,9 +91,17 @@ func _ready() -> void:
 	legend.text = LINK_LEGEND
 	column.add_child(legend)
 
+	# The ruler's panel: take a civ in hand, and give it its orders.
+	var ruler_panel := _panel(root)
+	ruler_panel.position = Vector2(10, 124)
+	_ruler_box = VBoxContainer.new()
+	_ruler_box.custom_minimum_size = Vector2(420, 0)
+	_ruler_box.add_theme_constant_override("separation", 6)
+	ruler_panel.add_child(_ruler_box)
+
 	# Diplomacy: every war, alliance and trade deal in force. Toggled with the button or Tab.
 	_diplomacy_panel = _panel(root)
-	_diplomacy_panel.position = Vector2(10, 124)
+	_diplomacy_panel.position = Vector2(470, 124)
 	_diplomacy_panel.custom_minimum_size = Vector2(390, 0)
 	_diplomacy_panel.visible = false
 	_diplomacy = RichTextLabel.new()
@@ -149,6 +159,135 @@ func _ready() -> void:
 	_refresh_status()
 
 
+## The player's panel. With no civ in hand it offers the living ones; with one, the orders a
+## ruler can give: what the realm concentrates on, what to research and build next, and how
+## to stand toward each other civ. "Auto" leaves a choice to the civ itself.
+func _refresh_ruler(ruler: Variant) -> void:
+	var others: Array = []
+	for civ_id: int in _latest:
+		if _latest[civ_id]["alive"]:
+			others.append([civ_id, _relation_word(ruler, civ_id)])
+	var signature := JSON.stringify([ruler, others])
+	if signature == _ruler_signature:
+		return
+	_ruler_signature = signature
+	for child in _ruler_box.get_children():
+		child.queue_free()
+
+	if ruler == null:
+		_small_label(_ruler_box, "Rule a civ yourself, or just watch:")
+		var row := HBoxContainer.new()
+		_ruler_box.add_child(row)
+		for pair: Array in others:
+			var civ_id: int = pair[0]
+			var pick := _button(row, str(_civ_info[civ_id]["name"]), func() -> void: command_requested.emit("take_control", {"civ": civ_id}))
+			pick.add_theme_color_override("font_color", Color.html(_civ_info[civ_id]["color"]).lightened(0.25))
+		return
+
+	var mine := int(ruler["civ"])
+	var header := HBoxContainer.new()
+	_ruler_box.add_child(header)
+	var title := Label.new()
+	title.text = ("You rule %s" if ruler["alive"] else "%s has fallen") % str(_civ_info[mine]["name"])
+	title.add_theme_font_size_override("font_size", 18)
+	title.add_theme_color_override("font_color", Color.html(_civ_info[mine]["color"]).lightened(0.25))
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(title)
+	_button(header, "Hand back" if ruler["alive"] else "Watch on", func() -> void: command_requested.emit("release_control", {}))
+	if not ruler["alive"]:
+		return
+
+	_small_label(_ruler_box, "The realm concentrates on")
+	var focuses := HBoxContainer.new()
+	_ruler_box.add_child(focuses)
+	for focus: String in ruler["focuses"]:
+		var chosen: bool = focus == ruler["focus"]
+		_choice(focuses, focus.capitalize(), chosen, func() -> void: command_requested.emit("set_focus", {"focus": focus}))
+
+	_order_menu("Research next", ruler["research_options"], ruler["research_order"],
+			func(id: Variant) -> void: command_requested.emit("set_research", {"tech": id}))
+	_order_menu("Build next", ruler["build_options"], ruler["build_order"],
+			func(id: Variant) -> void: command_requested.emit("set_build", {"building": id}))
+
+	_small_label(_ruler_box, "Toward the others")
+	for pair: Array in others:
+		var other: int = pair[0]
+		if other == mine:
+			continue
+		var row := HBoxContainer.new()
+		_ruler_box.add_child(row)
+		var name_label := Label.new()
+		name_label.text = "%s  (%s)" % [str(_civ_info[other]["name"]), pair[1]]
+		name_label.add_theme_font_size_override("font_size", 13)
+		name_label.add_theme_color_override("font_color", Color.html(_civ_info[other]["color"]).lightened(0.25))
+		name_label.custom_minimum_size = Vector2(150, 0)
+		row.add_child(name_label)
+		var order: Variant = ruler["stances"].get(str(other))
+		var current: String = order["stance"] if order != null else "auto"
+		for stance: Array in [["auto", "Auto"], ["trade", "Trade"], ["ally", "Ally"], ["aggression", "Attack"], ["ignore", "Ignore"]]:
+			_choice(row, stance[1], current == stance[0], func() -> void:
+				command_requested.emit("set_stance", {"civ": other, "stance": stance[0]}))
+
+
+## How things stand between the ruled civ and another: war, alliance, truce or peace.
+func _relation_word(ruler: Variant, other: int) -> String:
+	if ruler == null or int(ruler["civ"]) == other:
+		return ""
+	var mine := int(ruler["civ"])
+	var relation: Variant = _relations.get("%d:%d" % [mini(mine, other), maxi(mine, other)])
+	if relation == null:
+		return "peace"
+	if relation["status"] == "peace" and relation["truce"]:
+		return "truce"
+	return str(relation["status"])
+
+
+func _small_label(parent: Control, text: String) -> void:
+	var label := Label.new()
+	label.text = text
+	label.add_theme_font_size_override("font_size", 12)
+	label.modulate = Color(1, 1, 1, 0.6)
+	parent.add_child(label)
+
+
+## One of a row of choices; the one in force is lit.
+func _choice(parent: Control, text: String, chosen: bool, on_pressed: Callable) -> void:
+	var button := _button(parent, text, on_pressed)
+	button.add_theme_font_size_override("font_size", 13)
+	if chosen:
+		var lit := StyleBoxFlat.new()
+		lit.bg_color = Color(0.36, 0.62, 1.0, 0.75)
+		lit.set_corner_radius_all(8)
+		lit.content_margin_left = 12
+		lit.content_margin_right = 12
+		lit.content_margin_top = 5
+		lit.content_margin_bottom = 5
+		for state: String in ["normal", "hover", "pressed"]:
+			button.add_theme_stylebox_override(state, lit)
+
+
+## A drop-down for an order with many options; the first entry hands the choice back to the civ.
+func _order_menu(caption: String, options: Array, current: Variant, on_chosen: Callable) -> void:
+	var row := HBoxContainer.new()
+	_ruler_box.add_child(row)
+	var label := Label.new()
+	label.text = caption
+	label.add_theme_font_size_override("font_size", 13)
+	label.custom_minimum_size = Vector2(110, 0)
+	row.add_child(label)
+	var menu := OptionButton.new()
+	menu.focus_mode = Control.FOCUS_NONE
+	menu.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	menu.add_theme_font_size_override("font_size", 13)
+	menu.add_item("The realm decides")
+	for i in options.size():
+		menu.add_item(str(options[i]["name"]))
+		if options[i]["id"] == current:
+			menu.select(i + 1)
+	menu.item_selected.connect(func(index: int) -> void: on_chosen.call(null if index == 0 else options[index - 1]["id"]))
+	row.add_child(menu)
+
+
 func toggle_help() -> void:
 	_help.visible = not _help.visible
 
@@ -198,6 +337,7 @@ func setup(init: Dictionary) -> void:
 	_routine.clear()
 	_log_lines.clear()
 	_log.text = ""
+	_ruler_signature = ""
 
 
 func set_status(status: Dictionary) -> void:
@@ -218,6 +358,7 @@ func update(tick: int, data: Dictionary) -> void:
 		_deals["%d:%d" % [mini(int(deal["a"]), int(deal["b"])), maxi(int(deal["a"]), int(deal["b"]))]] = deal
 	for civ: Dictionary in data["civs"]:
 		_latest[int(civ["id"])] = civ
+	_refresh_ruler(data.get("ruler"))
 	_armies.clear()
 	for army: Dictionary in data["armies"]:
 		var owner := int(army["civ"])

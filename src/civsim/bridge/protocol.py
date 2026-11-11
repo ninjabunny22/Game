@@ -26,8 +26,9 @@ from ..military import UNIT_TYPES
 from ..military.warfare import ROSTER_CAP
 from ..simulation import Simulation
 
-PROTOCOL_VERSION = 9
-COMMANDS = ("pause", "resume", "toggle_pause", "step", "set_speed")
+PROTOCOL_VERSION = 10
+RULER_COMMANDS = ("take_control", "release_control", "set_stance", "set_focus", "set_research", "set_build")
+COMMANDS = ("pause", "resume", "toggle_pause", "step", "set_speed", *RULER_COMMANDS)
 
 
 class ProtocolError(ValueError):
@@ -39,7 +40,7 @@ def encode(message_type: str, tick: int, data: dict) -> str:
     return json.dumps(envelope, separators=(",", ":"))
 
 
-def parse_command(raw: str | bytes) -> tuple[str, float | None]:
+def parse_command(raw: str | bytes) -> tuple[str, float | dict | None]:
     try:
         message = json.loads(raw)
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
@@ -55,6 +56,11 @@ def parse_command(raw: str | bytes) -> tuple[str, float | None]:
         if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
             raise ProtocolError("set_speed needs a positive numeric value")
         return action, float(value)
+    if action in RULER_COMMANDS:
+        # A ruler's command carries its details as an object; the ruler checks what is in it.
+        if value is not None and not isinstance(value, dict):
+            raise ProtocolError(f"{action} needs an object value")
+        return action, value or {}
     return action, None
 
 
@@ -260,6 +266,8 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
         "territory": world.encode_territory(),
         "territory_rev": world.territory_rev,
         "civs": civs,
+        # The civ a human rules and the orders in force, or null when every civ plays itself.
+        "ruler": sim.ruler.state(),
         "armies": armies,
         "villagers": villagers,
         # owner is a civ id, or null while the native faction holds the region.
