@@ -13,6 +13,7 @@ var _camera := Camera3D.new()
 var _yaw := 0.0
 var _pitch := deg_to_rad(55.0)
 var _distance := 110.0
+var auto_orbit := false  # circle slowly on its own, behind the main menu
 
 
 func _ready() -> void:
@@ -34,6 +35,10 @@ func focus(target: Vector3, view_distance: float) -> void:
 
 
 func _process(delta: float) -> void:
+	if auto_orbit:
+		_yaw += 0.06 * delta
+		_apply()
+		return
 	var move := Vector3.ZERO
 	if Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_UP):
 		move.z -= 1.0

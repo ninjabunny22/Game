@@ -82,6 +82,7 @@ func _ready() -> void:
 	column.add_child(help)
 	_help = help
 	_button(buttons, "?", toggle_help)
+	_button(buttons, "Menu", func() -> void: command_requested.emit("end_game", {}))
 	var legend := RichTextLabel.new()
 	legend.bbcode_enabled = true
 	legend.fit_content = true

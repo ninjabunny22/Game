@@ -4,7 +4,7 @@ import logging
 import random
 
 from .bridge import SimServer
-from .config import SimConfig
+from .config import MAP_SIZES, MAX_CIVS, SimConfig, game_config
 from .economy.rules import RESOURCES
 from .simulation import Simulation
 from .strategy import LLMBrain, make_brain
@@ -23,6 +23,10 @@ def main(argv: list[str] | None = None) -> None:
                         help='who answers the strategic check-ins: "utility" (default), the built-in '
                              'strategist, which needs no model; "rules" for the simple policy the tests '
                              'use; or "ollama" to ask a local language model')
+    parser.add_argument("--size", choices=list(MAP_SIZES), help="map size (default: medium); "
+                        "small is 64x64, medium 96x96, large 128x128")
+    parser.add_argument("--civs", type=int, help=f"number of civs, 2 to {MAX_CIVS} depending on the map "
+                        "(default: what suits the map)")
     parser.add_argument("--rule", type=int, metavar="CIV", help="start with this civ (0, 1, ...) in the player's "
                         "hands; any civ can also be taken up or handed back from the viewer")
     parser.add_argument("--model", help="model name for the LLM provider (default: llama3.1:8b for ollama)")
@@ -30,7 +34,14 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     seed = args.seed if args.seed is not None else random.SystemRandom().randrange(2**31)
-    config = SimConfig(seed=seed, host=args.host, port=args.port, tick_rate=args.tick_rate)
+    try:
+        config = game_config(args.size or "medium", args.civs, seed,
+                             host=args.host, port=args.port, tick_rate=args.tick_rate)
+    except ValueError as exc:
+        parser.error(str(exc))
+    # With nothing said about the game, the viewer opens on its main menu and the game is
+    # chosen there; a game playing itself is shown behind it meanwhile.
+    lobby = not args.headless and all(option is None for option in (args.seed, args.rule, args.size, args.civs))
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
 
     brain = make_brain(args.llm, args.model, args.llm_url)
@@ -52,7 +63,7 @@ def main(argv: list[str] | None = None) -> None:
         print(summary(sim))
         return
     try:
-        asyncio.run(SimServer(sim, brain, config.host, config.port, config.tick_rate, args.paused).run())
+        asyncio.run(SimServer(sim, brain, config.host, config.port, config.tick_rate, args.paused, lobby).run())
     except KeyboardInterrupt:
         pass
 

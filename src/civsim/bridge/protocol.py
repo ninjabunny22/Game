@@ -25,10 +25,12 @@ from ..map import BIOME_INFO, DEPOSIT_TYPES, Biome, load_faction
 from ..military import UNIT_TYPES
 from ..military.warfare import ROSTER_CAP
 from ..simulation import Simulation
+from ..config import MAP_SIZES
 
-PROTOCOL_VERSION = 10
+PROTOCOL_VERSION = 11
 RULER_COMMANDS = ("take_control", "release_control", "set_stance", "set_focus", "set_research", "set_build")
-COMMANDS = ("pause", "resume", "toggle_pause", "step", "set_speed", *RULER_COMMANDS)
+GAME_COMMANDS = ("new_game", "end_game")  # start a game from the menu; go back to the menu
+COMMANDS = ("pause", "resume", "toggle_pause", "step", "set_speed", *RULER_COMMANDS, *GAME_COMMANDS)
 
 
 class ProtocolError(ValueError):
@@ -56,7 +58,7 @@ def parse_command(raw: str | bytes) -> tuple[str, float | dict | None]:
         if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
             raise ProtocolError("set_speed needs a positive numeric value")
         return action, float(value)
-    if action in RULER_COMMANDS:
+    if action in RULER_COMMANDS or action in GAME_COMMANDS:
         # A ruler's command carries its details as an object; the ruler checks what is in it.
         if value is not None and not isinstance(value, dict):
             raise ProtocolError(f"{action} needs an object value")
@@ -64,9 +66,12 @@ def parse_command(raw: str | bytes) -> tuple[str, float | dict | None]:
     return action, None
 
 
-def init_message(sim: Simulation) -> str:
+def init_message(sim: Simulation, lobby: bool = False) -> str:
     world = sim.world
     data = {
+        # Set while no game has been started: the map behind the main menu is only a backdrop,
+        # and this is what a game can be started with.
+        "lobby": {"sizes": [{"id": size, **spec} for size, spec in MAP_SIZES.items()]} if lobby else None,
         "seed": sim.config.seed,
         "resources": list(RESOURCES),
         "map": {
@@ -124,7 +129,8 @@ def init_message(sim: Simulation) -> str:
             ],
         },
         "civs": [
-            {"id": civ.id, "name": civ.name, "color": civ.color, "personality": civ.personality.name}
+            {"id": civ.id, "name": civ.name, "color": civ.color, "personality": civ.personality.name,
+             "capital_name": civ.capital.name}
             for civ in sim.civs
         ],
     }

@@ -11,6 +11,7 @@ const Models := preload("res://scripts/models.gd")
 const Characters := preload("res://scripts/characters.gd")
 const CameraRig := preload("res://scripts/camera_rig.gd")
 const Hud := preload("res://scripts/hud.gd")
+const Menu := preload("res://scripts/menu.gd")
 
 const UI_SCALE := 1.35  # the whole overlay is drawn this much larger than Godot's default text size
 const UI_SCALE_STEP := 0.1
@@ -23,6 +24,9 @@ var _civ_view := CivView.new()
 var _unit_view := UnitView.new()
 var _camera := CameraRig.new()
 var _hud := Hud.new()
+var _menu := Menu.new()
+var _auto_started := false
+var _starting := ""  # the mode of the game just asked for from the menu: "watch" or "rule"
 var _models := Models.new()
 var _characters := Characters.new()
 
@@ -43,6 +47,9 @@ func _ready() -> void:
 	add_child(_unit_view)
 	add_child(_camera)
 	add_child(_hud)
+	add_child(_menu)
+	_menu.start_requested.connect(_on_start_requested)
+	_menu.civ_chosen.connect(_on_civ_chosen)
 	add_child(_client)
 
 	_client.connection_changed.connect(_on_connection_changed)
@@ -120,6 +127,23 @@ func _on_connection_changed(connected: bool) -> void:
 		_ready_for_ticks = false
 
 
+## The menu asks for a game: the sim builds it and sends its map, as for any game.
+func _on_start_requested(mode: String, size: String, civs: int, seed_text: String) -> void:
+	_starting = mode
+	var game := {"mode": mode, "size": size, "civs": civs}
+	if seed_text.is_valid_int():
+		game["seed"] = int(seed_text)
+	_client.send_command("new_game", game)
+
+
+## A game to be ruled waits, paused, until the player has chosen a civ (or chosen to watch).
+func _on_civ_chosen(civ_id: int) -> void:
+	_menu.close()
+	if civ_id >= 0:
+		_client.send_command("take_control", {"civ": civ_id})
+	_client.send_command("resume")
+
+
 func _on_init(data: Dictionary) -> void:
 	_civ_colors.clear()
 	for civ: Dictionary in data["civs"]:
@@ -138,7 +162,29 @@ func _on_init(data: Dictionary) -> void:
 	if OS.get_environment("CIVSIM_CARD") != "":  # start with one civ's card open, by civ id
 		_hud.toggle_card(int(OS.get_environment("CIVSIM_CARD")))
 	_territory_rev = -1
+	_ruled = -1
 	_ready_for_ticks = true
+	# No game started yet: the main menu, over a game playing itself as the camera circles.
+	var lobby: Variant = data.get("lobby")
+	_hud.visible = lobby == null
+	_camera.auto_orbit = lobby != null
+	if lobby != null:
+		_menu.show_menu(lobby)
+		# CIVSIM_START="mode,size,civs" starts that game straight from the menu, for scripted runs.
+		var start := OS.get_environment("CIVSIM_START").split(",", false)
+		if start.size() == 3 and not _auto_started:
+			_auto_started = true
+			_on_start_requested.call_deferred(start[0], start[1], int(start[2]), "")
+	elif _starting == "rule":
+		var civs: Array = []
+		for civ: Dictionary in data["civs"]:
+			var entry := civ.duplicate()
+			entry["capital"] = civ.get("capital_name", "")
+			civs.append(entry)
+		_menu.show_pick(civs)
+	else:
+		_menu.close()
+	_starting = ""
 
 
 func _on_tick(tick: int, data: Dictionary) -> void:

@@ -6,10 +6,12 @@ after it arrives."""
 
 import asyncio
 import logging
+import random
 
 from websockets.asyncio.server import ServerConnection, broadcast, serve
 from websockets.exceptions import ConnectionClosed
 
+from ..config import game_config
 from ..simulation import Simulation
 from ..strategy import Brain, CheckinRequest
 from . import protocol
@@ -22,8 +24,11 @@ MAX_SPEED = 60.0
 
 class SimServer:
     def __init__(self, sim: Simulation, brain: Brain, host: str = "127.0.0.1", port: int = 8765,
-                 tick_rate: float = 2.0, paused: bool = False):
+                 tick_rate: float = 2.0, paused: bool = False, lobby: bool = False):
         self.sim = sim
+        # In the lobby no game has been started: `sim` is a game playing itself behind the main
+        # menu, replaced when the player starts one (new_game) and begun again when they leave it.
+        self.lobby = lobby
         self.brain = brain
         self.host = host
         self.port = port
@@ -75,6 +80,9 @@ class SimServer:
 
             self.sim.step()
             if self.sim.victory and self.sim.victory["tick"] == self.sim.tick:
+                if self.lobby:
+                    self._start(_backdrop(), lobby=True)  # the game behind the menu is over: another
+                    continue
                 self.paused = True  # the game is decided: stop for the moment; play can be resumed
             for request in self.sim.take_requests():
                 task = asyncio.create_task(self._answer(request))
@@ -97,23 +105,24 @@ class SimServer:
     async def _answer(self, request: CheckinRequest) -> None:
         """Ask the brain off the event loop; the sim applies the answer on its next tick."""
         reply = None
+        sim = self.sim  # the game this check-in belongs to, which may be over before the answer comes
         try:
             # Each civ's call runs on its own thread, independent of the others.
             reply = await asyncio.to_thread(self.brain.decide, request)
         except Exception:
             log.exception("strategy brain failed on the check-in for civ %d", request.civ_id)
         finally:
-            self.sim.submit(request, reply)
-        if reply is not None:
+            sim.submit(request, reply)
+        if reply is not None and sim is self.sim:
             log.info("tick %d: check-in for %s answered: %s", request.tick,
-                     self.sim.civs[request.civ_id].name, reply.get("reason") or "")
+                     sim.civs[request.civ_id].name, reply.get("reason") or "")
 
     # -- clients -------------------------------------------------------------
 
     async def _handle_client(self, ws: ServerConnection) -> None:
         log.info("viewer connected: %s", ws.remote_address)
         try:
-            await ws.send(protocol.init_message(self.sim))
+            await ws.send(protocol.init_message(self.sim, self.lobby))
             await ws.send(protocol.tick_message(self.sim, self.paused, self.speed))
             self.clients.add(ws)
             async for raw in ws:
@@ -141,6 +150,22 @@ class SimServer:
             self._pending_steps += 1
         elif action == "set_speed":
             self.speed = _clamp_speed(value)
+        elif action == "new_game":
+            value = value if isinstance(value, dict) else {}
+            seed = value.get("seed")
+            if isinstance(seed, bool) or not isinstance(seed, int):
+                seed = random.SystemRandom().randrange(2**31)
+            try:
+                sim = Simulation(game_config(value.get("size", "medium"), value.get("civs"), seed))
+            except ValueError as exc:
+                self._broadcast(protocol.error_message(self.sim, str(exc)))
+                return
+            # A game to be ruled starts paused, so the player can choose a civ before a day passes.
+            self._start(sim, lobby=False, paused=value.get("mode") == "rule")
+            return
+        elif action == "end_game":
+            self._start(_backdrop(), lobby=True)
+            return
         elif action in protocol.RULER_COMMANDS:
             problem = self.sim.ruler.command(action, value)
             if problem:
@@ -153,9 +178,25 @@ class SimServer:
         self._wake.set()
         self._broadcast(protocol.status_message(self.sim, self.paused, self.speed))
 
+    def _start(self, sim: Simulation, lobby: bool, paused: bool = False) -> None:
+        """Put a new game in place of the current one and show it to every viewer."""
+        self.sim, self.lobby, self.paused = sim, lobby, paused
+        self._pending_steps = 0
+        self._waiting = []
+        log.info("%s: seed %d, %dx%d, %d civs", "back to the menu" if lobby else "new game", sim.config.seed,
+                 sim.config.width, sim.config.height, sim.config.num_civs)
+        self._broadcast(protocol.init_message(sim, lobby))
+        self._broadcast(protocol.tick_message(sim, self.paused, self.speed))
+        self._wake.set()
+
     def _broadcast(self, message: str) -> None:
         if self.clients:
             broadcast(self.clients, message)
+
+
+def _backdrop() -> Simulation:
+    """A game to play itself behind the main menu."""
+    return Simulation(game_config("medium", seed=random.SystemRandom().randrange(2**31)))
 
 
 def _clamp_speed(speed: float) -> float:
