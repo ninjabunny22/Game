@@ -12,10 +12,10 @@ villagers on the map).
 ## Run it
 
 Double-click `CivSim.command` in Finder (or run `./CivSim.command`). It starts
-Ollama if it is not already running, starts the simulation, and opens the Godot
-viewer once the simulation is ready. Closing the Godot window stops the
-simulation, and Ollama too if the launcher started it. Arguments are passed to
-the sim, for example `./CivSim.command --seed 42`. Logs go to `logs/`.
+the simulation and opens the Godot viewer once the simulation is ready. Closing
+the Godot window stops the simulation. Arguments are passed to the sim, for
+example `./CivSim.command --seed 42` or `./CivSim.command --rule 0` to play a
+civ yourself. Logs go to `logs/`.
 
 To run the pieces by hand:
 
