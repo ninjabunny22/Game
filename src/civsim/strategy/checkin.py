@@ -3,8 +3,8 @@
 The simulation never calls a brain. On a fixed interval it emits a CheckinRequest
 per civ describing the situation; whoever drives the sim (the server, the headless
 runner, a test) gets an answer from a brain and hands it back with
-Simulation.submit(). This module turns that answer, which may come from a language
-model and so may be wrong in any way, into validated Intents.
+Simulation.submit(). This module turns that answer, which is never trusted to be
+well formed, into validated Intents.
 """
 
 from dataclasses import dataclass
@@ -100,7 +100,7 @@ def default_offer(you: dict, neighbor: dict | None = None) -> dict:
 
 
 def _apply_water_priority(intent: Intent, you: dict, neighbor: dict) -> None:
-    """Hold any strategist, model or rules, to the water priorities above.
+    """Hold any strategist to the water priorities above.
 
     A civ whose water is tightening does not trade its water away; one in real
     need turns every trade into a request for water.

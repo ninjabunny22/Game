@@ -5,7 +5,7 @@ import pytest
 from civsim.config import SimConfig
 from civsim.diplomacy import Intent, Stance, rules
 from civsim.simulation import Simulation
-from civsim.strategy import RuleBrain, prompt, stance_context
+from civsim.strategy import RuleBrain, stance_context
 from civsim.strategy.checkin import CheckinRequest
 from civsim.strategy.context import army_band
 
@@ -113,15 +113,15 @@ def test_army_comparison_bands(theirs, yours, band):
     assert army_band(theirs, yours) == band
 
 
-def test_the_model_is_not_shown_what_the_civ_cannot_see(sim):
+def test_a_strategist_is_not_shown_what_the_civ_cannot_see(sim):
     me, friend, stranger, _ = sim.civs
     ally_up(sim, me, friend)
     stranger.soldiers = 4321
     stranger.population = 20000
     friend.soldiers = 1234
-    _, user, _ = prompt.build(CheckinRequest(me.id, sim.tick, stance_context(sim, me)))
-    assert "4321" not in user and "1234" in user
-    shown = json.loads(user[user.index("{"): user.rindex("}") + 1])
+    shown = stance_context(sim, me)
+    text = json.dumps(shown)
+    assert "4321" not in text and "1234" in text
     assert all("army_vs_yours" in n for n in shown["neighbors"])
 
 

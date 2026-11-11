@@ -7,7 +7,7 @@ from .bridge import SimServer
 from .config import MAP_SIZES, MAX_CIVS, SimConfig, game_config
 from .economy.rules import RESOURCES
 from .simulation import Simulation
-from .strategy import LLMBrain, make_brain
+from .strategy import make_brain
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -19,18 +19,15 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--paused", action="store_true", help="start paused; a viewer can resume or step")
     parser.add_argument("--headless", action="store_true", help="no server: run --ticks at full speed and report")
     parser.add_argument("--ticks", type=int, default=1000, help="ticks to run with --headless")
-    parser.add_argument("--llm", default="utility", metavar="PROVIDER",
-                        help='who answers the strategic check-ins: "utility" (default), the built-in '
-                             'strategist, which needs no model; "rules" for the simple policy the tests '
-                             'use; or "ollama" to ask a local language model')
+    parser.add_argument("--brain", default="utility", choices=("utility", "rules"),
+                        help='who plays the civs: "utility" (default), the built-in strategist, or "rules", '
+                             'the simple policy the tests use')
     parser.add_argument("--size", choices=list(MAP_SIZES), help="map size (default: medium); "
                         "small is 64x64, medium 96x96, large 128x128")
     parser.add_argument("--civs", type=int, help=f"number of civs, 2 to {MAX_CIVS} depending on the map "
                         "(default: what suits the map)")
     parser.add_argument("--rule", type=int, metavar="CIV", help="start with this civ (0, 1, ...) in the player's "
                         "hands; any civ can also be taken up or handed back from the viewer")
-    parser.add_argument("--model", help="model name for the LLM provider (default: llama3.1:8b for ollama)")
-    parser.add_argument("--llm-url", help="base URL of the LLM provider (default: http://localhost:11434 for ollama)")
     args = parser.parse_args(argv)
 
     seed = args.seed if args.seed is not None else random.SystemRandom().randrange(2**31)
@@ -44,12 +41,7 @@ def main(argv: list[str] | None = None) -> None:
     lobby = not args.headless and all(option is None for option in (args.seed, args.rule, args.size, args.civs))
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
 
-    brain = make_brain(args.llm, args.model, args.llm_url)
-    if isinstance(brain, LLMBrain) and hasattr(brain.client, "check"):
-        problem = brain.client.check()
-        if problem:
-            logging.warning("%s. Civs will keep their previous stances until it answers; "
-                            "use --llm rules to run without a model.", problem)
+    brain = make_brain(args.brain)
 
     sim = Simulation(config)
     if args.rule is not None:
@@ -57,7 +49,6 @@ def main(argv: list[str] | None = None) -> None:
         if problem:
             parser.error(f"--rule {args.rule}: {problem}")
     if args.headless:
-        # Check-ins are answered before the next tick, so the run waits on the model.
         for _ in range(args.ticks):
             sim.step_with(brain)
         print(summary(sim))

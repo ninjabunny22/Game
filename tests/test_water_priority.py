@@ -5,9 +5,8 @@ import pytest
 from civsim.config import SimConfig
 from civsim.diplomacy import Stance
 from civsim.economy import produce, water_growth_factor, water_urgency
-from civsim.llm import LLMError
 from civsim.simulation import Simulation
-from civsim.strategy import LLMBrain, RuleBrain, parse_stances, prompt, stance_context
+from civsim.strategy import RuleBrain, parse_stances, stance_context
 from civsim.strategy.checkin import WATER_PRIORITY, WATER_URGENT, CheckinRequest, default_offer
 
 
@@ -245,38 +244,6 @@ def test_rule_brain_fights_for_water_only_as_a_last_resort(sim):
     set_water(sim, civ, 10, 3)
     calm, _ = stances_of(sim, civ)
     assert calm[rich.name]["stance"] == "trade"
-
-
-class Recorder:
-    name = "recorder"
-
-    def __init__(self):
-        self.calls = []
-
-    def complete_json(self, system, user, schema):
-        self.calls.append((system, user))
-        raise LLMError("not answering")
-
-
-def test_the_model_is_told_about_water_in_proportion_to_urgency(sim):
-    civ = sim.civs[0]
-    client = Recorder()
-    brain = LLMBrain(client)
-
-    set_water(sim, civ, 10, 3)
-    brain.decide(CheckinRequest(civ.id, sim.tick, stance_context(sim, civ)))
-    system, user = client.calls[-1]
-    assert "urgency" in system and "as urgent as food" in system and "do not chase water" in system
-    assert "WATER IS" not in user, "no alarm for a comfortable civ"
-    shown = json.loads(user[user.index("{"): user.rindex("}") + 1])
-    assert shown["you"]["water"]["status"] == "comfortable"
-    assert all("water_rich" in n for n in shown["neighbors"])
-
-    set_water(sim, civ, 10, 13, 50)
-    brain.decide(CheckinRequest(civ.id, sim.tick, stance_context(sim, civ)))
-    _, user = client.calls[-1]
-    assert "WATER IS CRITICAL" in user and "run dry in about 16 ticks" in user
-    assert prompt.STANCE_SCHEMA["properties"]["stances"]["items"]["properties"]["want"]["enum"].count("water") == 1
 
 
 def test_a_thirsty_civ_and_a_rich_neighbour_end_up_trading_water(sim):

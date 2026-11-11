@@ -1,6 +1,6 @@
 """The simulation: owns the world and the civs and advances them one tick at a time.
 
-It knows nothing about wall-clock time, the network or language models. The driver
+It knows nothing about wall-clock time, the network or who plays the civs. The driver
 (the bridge server, the headless runner, a test) decides when to call step(), and
 answers the strategic check-ins the sim emits: take_requests() hands them out,
 submit() takes the answers back, and they are applied at the start of the next

@@ -4,8 +4,8 @@ Four civilizations compete on a procedurally generated map. A Python simulation
 core runs the world; a Godot 4 project renders it in 3D over a local WebSocket.
 
 Built so far: **phase 1** (map, civs, economy, rule-based AI, viewer),
-**phase 2** (base tech tree), **phase 3** (upkeep, trade, alliances, war, an
-LLM strategic layer), water (rivers, lakes, bridges,
+**phase 2** (base tech tree), **phase 3** (upkeep, trade, alliances, war, a
+strategic layer), water (rivers, lakes, bridges,
 boats) and the first piece of **phase 4** (armies, unit types, commanders and
 villagers on the map).
 
@@ -26,18 +26,14 @@ python3 -m venv .venv
 .venv/bin/python -m civsim                 # random seed, ws://127.0.0.1:8765, 2 ticks/s
 .venv/bin/python -m civsim --seed 42 --tick-rate 10
 .venv/bin/python -m civsim --rule 0        # play civ 0 yourself (ruler's view)
-.venv/bin/python -m civsim --llm ollama    # a local language model plays the civs
-.venv/bin/python -m civsim --headless --seed 42 --ticks 1500 --llm rules   # no server, prints a summary
+.venv/bin/python -m civsim --headless --seed 42 --ticks 1500 --brain rules   # no server, prints a summary
 .venv/bin/python -m pytest
 .venv/bin/python -m civsim.survey                # eight full games: counts ships, crossings and large-building overlaps
 ```
 
-By default the civs are played by the built-in strategist (`strategy/utility.py`),
-which needs no model: at each check-in it weighs attacking, allying and trading with
-every neighbour from the civ's personality and the situation, and says why. `--llm rules`
-uses the simpler policy the tests run on. `--llm ollama` asks a local
-[Ollama](https://ollama.com) server instead (`http://localhost:11434`, `llama3.1:8b`;
-`--model` and `--llm-url` change that), and the launcher then starts Ollama first.
+The civs are played by the built-in strategist (`strategy/utility.py`): at each check-in
+it weighs attacking, allying and trading with every neighbour from the civ's personality
+and the situation, and says why. `--brain rules` uses the simpler policy the tests run on.
 
 **Main menu.** Started with nothing said about the game (`./CivSim.command`), the
 viewer opens on its main menu over a game playing itself. The menu chooses whether to
@@ -98,8 +94,8 @@ The overlay is built for watching:
   (150 after a capital falls). Neighbours build a grudge along a shared border and over
   native land both are settling. A civ much bigger than a neighbour attacks it whatever
   its temper, and the two strongest civs resent each other, ally less and are quicker to
-  betray one another. An alliance lasts only while both sides still choose it, and one
-  with nothing left to guard against wears out.
+  betray one another. An alliance lasts only while both sides still choose it, and is
+  let go after 100 days in which neither ally is at war.
 - **Headline log.** Only wars, peace, regions and capitals changing hands,
   alliances, betrayals, routs and new eras get a line. Routine events
   (buildings captured, discoveries, trade changes) are counted in one summary
@@ -180,9 +176,8 @@ src/civsim/
   tech/        tech tree loading/validation, research progress
   diplomacy/   stances, trade deals, alliances, war, region capture (diplomacy.py), the native
                faction (natives.py), constants (rules.py)
-  strategy/    check-ins: context shown to a strategist, prompts, reply validation, brains
+  strategy/    check-ins: context shown to a strategist, reply validation, brains
   military/    unit types, armies, commanders, villagers (army.py), marching and battles (warfare.py)
-  llm/         the Ollama client (ollama.py) and the small interface the strategy layer codes against
   bridge/      WebSocket server and tick clock (server.py), wire format (protocol.py)
   simulation.py  owns the world and civs; step() advances one tick
   data/        buildings.json, techs.json, personalities.json, units.json, regions.json
@@ -190,9 +185,9 @@ godot/         viewer: scripts/main.gd wires sim_client, terrain, civ_view, hud,
 tests/
 ```
 
-The simulation knows nothing about time, the network or language models. A
+The simulation knows nothing about time, the network or who plays the civs. A
 driver (`bridge/server.py`, the headless runner, a test) decides when to call
-`step()` and answers the strategic check-ins the sim raises. With `--llm rules`
+`step()` and answers the strategic check-ins the sim raises. With `--brain rules`
 a run is fully deterministic for a given seed.
 
 ## How the pieces work
@@ -276,9 +271,8 @@ water, and one with plenty sells it to neighbours who ask. From 0.3 it asks
 for water before anything else and never trades its own away. From 0.7 every
 trade it proposes is for water, it seeks alliance with water-rich neighbours,
 and if none will deal it may attack one that is weaker and in reach. The
-rule-based strategist follows this directly; the language model is told the
-same in its prompt, and its replies are corrected to the first two rules
-(`strategy/checkin.py`) whatever it answers.
+strategists follow this directly, and whatever one answers is corrected to the
+first two rules (`strategy/checkin.py`).
 
 **Crossing water.** One rule (`WorldMap.crossing_cost`) governs border
 expansion and war reach, and is meant for unit movement later. Lakes and deep
@@ -311,13 +305,13 @@ demolition refund (35%), Banking for cheaper trade deals. Six buildings come
 with them: Bank, Academy, Harbour (must be on the water), Fortress, Reservoir
 and Factory.
 
-**Strategic layer.** Every 50 ticks (staggered between civs) the sim raises a
+**Strategic layer.** Every 10 ticks (staggered between civs) the sim raises a
 check-in for each civ: its own state, each neighbour's visible state and recent
 dealings between them. A *brain* answers with one stance per neighbour -
 `trade`, `ally`, `ignore` or `aggression` - plus terms (a resource to give and
-one to want, or a troop commitment) and a short reason. `LLMBrain` asks a
-language model for JSON matching a schema; `RuleBrain` is a deterministic
-stand-in. Replies are validated and clamped (`strategy/checkin.py`); a missing
+one to want, or a troop commitment) and a short reason. `UtilityBrain` is
+the strategist the game is played with; `RuleBrain` is a simpler deterministic
+one for tests. Replies are validated and clamped (`strategy/checkin.py`); a missing
 or unusable reply leaves the previous stances in place. With the server, calls
 run in the background and the sim keeps ticking; an answer is applied on the
 tick after it arrives. Headless runs wait for each answer.

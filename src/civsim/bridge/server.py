@@ -1,7 +1,7 @@
 """WebSocket server that runs the sim on a fixed, controllable clock and pushes state to viewers.
 
 Strategic check-ins are answered in the background: the sim keeps ticking while a
-brain (usually a language model) thinks, and each answer is applied on the tick
+brain thinks, and each answer is applied on the tick
 after it arrives."""
 
 import asyncio

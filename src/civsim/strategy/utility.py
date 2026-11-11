@@ -14,8 +14,7 @@ ATTACK_THRESHOLD = 0.5  # an attack must be worth at least this to be launched
 ALLY_THRESHOLD = 0.6
 WAR_WEARY_TICKS = 300  # a war this old is only kept up from a position of strength
 RUNAWAY = 1.5  # a neighbour this many times our size is running away with the game
-ALLIANCE_FATIGUE = 0.6  # how much an alliance with no purpose left loses of its appeal ...
-ALLIANCE_WEARS = 800  # ... over this many ticks
+ALLIANCE_WEARS = 100  # ticks an alliance lasts with neither ally at war: after that it is let go
 RIVAL_ATTACK = 0.3  # how much more a war with the other of the two strongest is worth
 RIVAL_ALLY = 0.5  # ... and how much less an alliance with it
 RIVAL_BETRAYAL = 0.8  # ... and the share of the usual edge at which that ally is turned on
@@ -251,13 +250,13 @@ class UtilityBrain:
             return 0.0, ""
         score, why = 0.0, f"{n['name']} is a useful friend"
         shared = [name for name in n["at_war_with"] if name in my_enemies]
-        needed = bool(shared or threats - {n["name"]} or (runaway and runaway != n["name"]))
         if n["relation"] == "alliance":
+            # An alliance is for fighting beside each other: with neither at war it is let go
+            # after a season, whatever else speaks for it.
+            if not (my_enemies or n["at_war_with"]) and (n.get("alliance_ticks") or 0) >= ALLIANCE_WEARS:
+                return 0.0, ""
             score += 0.5
             why = f"standing by {n['name']}"
-            if not needed:
-                # An alliance with nothing left to guard against wears thin with the years.
-                score -= min(ALLIANCE_FATIGUE, ALLIANCE_FATIGUE * (n.get("alliance_ticks") or 0) / ALLIANCE_WEARS)
         else:
             score -= 0.3 * friends  # one good friend is worth more than many"
         if n["their_stance_toward_you"] == "ally":

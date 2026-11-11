@@ -1,20 +1,15 @@
 """Strategy brains: things that answer a check-in.
 
-LLMBrain asks a language model. RuleBrain is a deterministic stand-in with the
-same inputs and outputs, used for tests and for running without a model. Both
+UtilityBrain (utility.py) is the strategist the game is played with. RuleBrain is a
+simpler deterministic policy with the same inputs and outputs, used by the tests. Both
 return the raw reply dict; the simulation validates it either way.
 """
 
-import logging
 from typing import Protocol
 
-from ..economy.rules import RESOURCES
-from ..llm import LLMClient, LLMError
-from . import prompt
 from .checkin import WATER_PRIORITY, WATER_URGENT, CheckinRequest, default_offer
 from .context import BAND_RATIO
 
-log = logging.getLogger(__name__)
 
 class Brain(Protocol):
     name: str
@@ -22,20 +17,6 @@ class Brain(Protocol):
     def decide(self, request: CheckinRequest) -> dict | None:
         """The reply to a check-in, or None if no answer could be produced."""
         ...
-
-
-class LLMBrain:
-    def __init__(self, client: LLMClient):
-        self.client = client
-        self.name = client.name
-
-    def decide(self, request: CheckinRequest) -> dict | None:
-        system, user, schema = prompt.build(request)
-        try:
-            return self.client.complete_json(system, user, schema)
-        except LLMError as exc:
-            log.warning("check-in for civ %d at tick %d got no answer: %s", request.civ_id, request.tick, exc)
-            return None
 
 
 class RuleBrain:
@@ -93,15 +74,12 @@ class RuleBrain:
         return {"reason": reason, "stances": stances}
 
 
-def make_brain(provider: str, model: str | None = None, base_url: str | None = None) -> Brain:
-    """"utility" for the built-in strategist, "rules" for the simple deterministic policy,
-    otherwise an LLM provider name (see llm.make_client)."""
-    if provider == "utility":
+def make_brain(name: str = "utility") -> Brain:
+    """"utility" for the built-in strategist, "rules" for the simple deterministic policy."""
+    if name == "utility":
         from .utility import UtilityBrain
 
         return UtilityBrain()
-    if provider == "rules":
+    if name == "rules":
         return RuleBrain()
-    from ..llm import make_client
-
-    return LLMBrain(make_client(provider, model, base_url))
+    raise ValueError(f'unknown strategist {name!r}: expected "utility" or "rules"')

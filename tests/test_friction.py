@@ -125,19 +125,23 @@ def test_a_long_peace_ends_in_war_even_between_equals_the_warlike_first(context)
     assert 250 <= warlike <= 700 and warlike < peaceable <= 1200
 
 
-def test_an_alliance_with_nothing_to_guard_against_wears_out(context):  # noqa: F811
+def test_an_alliance_wears_out_after_a_hundred_days_unless_there_is_a_war_on(context):  # noqa: F811
     friend = context["neighbors"][0]
     power = context["you"]["military_power"]
     context["you"]["weights"]["military"] = 1.0
     friend.update(relation="alliance", intel={"military_power": power}, their_stance_toward_you="ally",
                   alliance_ticks=0)
     assert decide(context)[friend["name"]]["stance"] == "ally"
-    friend["alliance_ticks"] = 2000
-    assert decide(context)[friend["name"]]["stance"] != "ally"
+    friend["alliance_ticks"] = 99
+    assert decide(context)[friend["name"]]["stance"] == "ally"
+    friend["alliance_ticks"] = 100
+    assert decide(context)[friend["name"]]["stance"] != "ally", "a hundred days with nobody at war and it is let go"
     friend["at_war_with"] = ["Someone"]
+    assert decide(context)[friend["name"]]["stance"] == "ally", "but not while the ally is at war"
+    friend["at_war_with"] = []
     enemy = context["neighbors"][1]
-    enemy.update(relation="war", war_ticks=20, name="Someone")
-    assert decide(context)[friend["name"]]["stance"] == "ally", "but not while they share an enemy"
+    enemy.update(relation="war", war_ticks=20)
+    assert decide(context)[friend["name"]]["stance"] == "ally", "or while we are"
 
 
 # -- the two at the top ------------------------------------------------------
@@ -177,7 +181,7 @@ def test_rivals_fight_sooner_ally_less_and_stab_each_other_in_the_back(context):
     # Allied, the stronger of the two turns on the other once it is clearly ahead ...
     power = you["military_power"]
     other.update(relation="alliance", intel={"military_power": round(power / 1.5)}, their_stance_toward_you="ally",
-                 alliance_ticks=100, rival=False, army_vs_yours="comparable")
+                 alliance_ticks=50, rival=False, army_vs_yours="comparable")
     assert decide(context)[other["name"]]["stance"] == "ally"
     other["rival"] = True
     assert decide(context)[other["name"]]["stance"] == "aggression"

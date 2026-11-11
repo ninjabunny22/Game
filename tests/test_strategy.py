@@ -1,34 +1,23 @@
-import json
-import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
-
 import pytest
 
 from civsim.config import SimConfig
 from civsim.diplomacy import Stance
 from civsim.diplomacy.rules import MAX_RATE
-from civsim.llm import LLMError, make_client
-from civsim.llm.ollama import OllamaClient
 from civsim.simulation import Simulation
-from civsim.strategy import CHECKIN_INTERVAL, LLMBrain, RuleBrain, parse_stances, stance_context
-from civsim.strategy import prompt
+from civsim.strategy import CHECKIN_INTERVAL, RuleBrain, make_brain, parse_stances, stance_context
 from civsim.strategy.checkin import CheckinRequest
 
 
-class ScriptedClient:
-    """Stands in for a language model: returns whatever reply it was given."""
+class ScriptedBrain:
+    """A brain that answers every check-in with whatever the function it was given makes of it."""
 
     name = "scripted"
 
     def __init__(self, reply):
         self.reply = reply
-        self.calls: list[tuple[str, str, dict]] = []
 
-    def complete_json(self, system, user, schema):
-        self.calls.append((system, user, schema))
-        if isinstance(self.reply, Exception):
-            raise self.reply
-        return self.reply(user) if callable(self.reply) else self.reply
+    def decide(self, request):
+        return self.reply(request.context)
 
 
 @pytest.fixture
@@ -140,34 +129,12 @@ def test_no_answer_keeps_previous_stances(sim):
 
 # -- brains ------------------------------------------------------------------
 
-def test_llm_brain_sends_the_situation_and_returns_the_models_reply(sim):
-    civ = sim.civs[0]
-    request = CheckinRequest(civ.id, sim.tick, stance_context(sim, civ))
-    client = ScriptedClient({"reason": "ok", "stances": []})
-    assert LLMBrain(client).decide(request) == {"reason": "ok", "stances": []}
-
-    system, user, schema = client.calls[0]
-    assert civ.name in system and civ.personality.name not in ("",)
-    for neighbor in request.context["neighbors"]:
-        assert neighbor["name"] in system and neighbor["name"] in user
-    assert '"weights"' not in user and '"id"' not in user, "internal fields are not shown to the model"
-    assert schema == prompt.STANCE_SCHEMA
-    assert json.loads(user[user.index("{"): user.rindex("}") + 1])["you"]["name"] == civ.name
-
-
-def test_llm_brain_swallows_model_failures(sim):
-    civ = sim.civs[0]
-    request = CheckinRequest(civ.id, sim.tick, stance_context(sim, civ))
-    assert LLMBrain(ScriptedClient(LLMError("down"))).decide(request) is None
-
-
-def test_llm_driven_run_forms_a_deal_and_fights_a_war():
-    """A scripted 'model' that always trades with everyone except one civ, which it attacks."""
+def test_a_scripted_run_forms_a_deal_and_fights_a_war():
+    """A scripted brain that always trades with everyone except one civ, which it attacks."""
     sim = Simulation(SimConfig(seed=3))
     villain = sim.civs[0].name
 
-    def reply(user: str) -> dict:
-        context = json.loads(user[user.index("{"): user.rindex("}") + 1])
+    def reply(context: dict) -> dict:
         me = context["you"]["name"]
         stances = []
         # The villain picks on a neighbour it can actually get at.
@@ -180,7 +147,7 @@ def test_llm_driven_run_forms_a_deal_and_fights_a_war():
                 stances.append(entry(n["name"], "trade", give=give, give_per_tick=0.5, want=want, want_per_tick=0.5))
         return {"reason": f"{me} decides.", "stances": stances}
 
-    brain = LLMBrain(ScriptedClient(reply))
+    brain = ScriptedBrain(reply)
     kinds: dict[str, int] = {}
     for _ in range(1500):
         for event in sim.step_with(brain):
@@ -205,65 +172,7 @@ def test_rule_brain_runs_are_deterministic_and_active():
     assert any("trades" in entry["text"] for entry in first[0])
 
 
-# -- Ollama client -----------------------------------------------------------
-
-@pytest.fixture
-def fake_ollama():
-    """A local HTTP server that answers like Ollama's /api/chat and /api/tags."""
-    state = {"content": '{"reason": "hi", "stances": []}', "requests": []}
-
-    class Handler(BaseHTTPRequestHandler):
-        def do_POST(self):
-            state["requests"].append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
-            self._send({"message": {"role": "assistant", "content": state["content"]}})
-
-        def do_GET(self):
-            self._send({"models": [{"name": "llama3.1:8b"}]})
-
-        def _send(self, payload):
-            body = json.dumps(payload).encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-
-        def log_message(self, *args):
-            pass
-
-    server = HTTPServer(("127.0.0.1", 0), Handler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    state["url"] = f"http://127.0.0.1:{server.server_port}"
-    yield state
-    server.shutdown()
-    server.server_close()
-
-
-def test_ollama_client_round_trip(fake_ollama):
-    client = make_client("ollama", base_url=fake_ollama["url"])
-    assert isinstance(client, OllamaClient) and client.model == "llama3.1:8b"
-    assert client.check() is None
-    assert client.complete_json("sys", "usr", {"type": "object"}) == {"reason": "hi", "stances": []}
-    sent = fake_ollama["requests"][0]
-    assert sent["model"] == "llama3.1:8b" and sent["format"] == {"type": "object"} and sent["stream"] is False
-    assert [m["role"] for m in sent["messages"]] == ["system", "user"]
-
-
-@pytest.mark.parametrize("content", ["not json at all", "[1, 2, 3]", ""])
-def test_ollama_client_rejects_non_object_replies(fake_ollama, content):
-    fake_ollama["content"] = content
-    with pytest.raises(LLMError):
-        OllamaClient(base_url=fake_ollama["url"]).complete_json("s", "u", {})
-
-
-def test_ollama_client_reports_unreachable_server_and_missing_model(fake_ollama):
-    dead = OllamaClient(base_url="http://127.0.0.1:9", timeout=2)
-    assert "cannot reach" in dead.check()
-    with pytest.raises(LLMError):
-        dead.complete_json("s", "u", {})
-    assert "ollama pull" in OllamaClient(model="nope:1b", base_url=fake_ollama["url"]).check()
-
-
-def test_unknown_provider_is_rejected():
+def test_an_unknown_strategist_is_rejected():
+    assert make_brain().name == "utility" and make_brain("rules").name == "rules"
     with pytest.raises(ValueError):
-        make_client("telepathy")
+        make_brain("telepathy")
