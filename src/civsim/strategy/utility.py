@@ -14,6 +14,8 @@ ATTACK_THRESHOLD = 0.5  # an attack must be worth at least this to be launched
 ALLY_THRESHOLD = 0.6
 WAR_WEARY_TICKS = 300  # a war this old is only kept up from a position of strength
 RUNAWAY = 1.5  # a neighbour this many times our size is running away with the game
+BETRAYAL_EDGE = 1.8  # how far ahead a warlike civ must be before it turns on an ally
+BETRAYAL_MILITARY = 1.3  # ... and how warlike
 STRATEGY_STICKINESS = 1.3  # a strategy already in hand counts for this much more than a new one
 STRATEGY_FOCUS = {"conquest": "military", "survival": "military", "science": "science",
                   "prosperity": "economy", "expansion": "expansion"}
@@ -42,6 +44,10 @@ class UtilityBrain:
         runaway = leader["name"] if leader and leader["population"] + leader["territory"] >= RUNAWAY * size else None
         supplier = any(n["water_rich"] and n["their_stance_toward_you"] in ("trade", "ally") for n in neighbors)
         strategy = self._strategy(context, edges, threats)
+        # Allies count: what they bring to a fight, and the wars they are already in.
+        friends = [n for n in neighbors if n["relation"] == "alliance"]
+        backing = 1 + sum(n["intel"]["military_power"] for n in friends if n["intel"]) / max(you["military_power"], 1)
+        friends_wars = {name: n["name"] for n in friends for name in n["at_war_with"]}
 
         stances, notes = [], []
         for n in neighbors:
@@ -59,7 +65,7 @@ class UtilityBrain:
                 continue
 
             attack, why_attack = self._attack(you, n, edge, military, thirst, supplier, can_declare,
-                                              bool(my_wars), runaway, strategy)
+                                              bool(my_wars), runaway, strategy, backing, friends_wars)
             ally, why_ally = self._ally(n, edge, thirst, my_enemies, threats, runaway)
             if attack >= ATTACK_THRESHOLD and attack >= ally:
                 entry.update(stance="aggression", troop_commitment=self._commitment(edge, len(my_wars) + 1))
@@ -126,9 +132,22 @@ class UtilityBrain:
         return round(max(0.4, min(0.9, share / max(1, wars) ** 0.5)), 2)
 
     @staticmethod
-    def _attack(you, n, edge, military, thirst, supplier, can_declare, at_war, runaway, strategy) -> tuple[float, str]:
-        if not (can_declare and n["in_reach"]) or n["truce"] or n["relation"] == "alliance":
+    def _attack(you, n, edge, military, thirst, supplier, can_declare, at_war, runaway, strategy,
+                backing=1.0, friends_wars=None) -> tuple[float, str]:
+        if not (can_declare and n["in_reach"]) or n["truce"]:
             return 0.0, ""
+        if n["relation"] == "alliance":
+            # Only the warlike turn on a friend, and only a lone one they can crush, with no
+            # betrayal already against their name.
+            lone = not [name for name in n["allied_with"] if name != you["name"]]
+            if (military < BETRAYAL_MILITARY or edge < BETRAYAL_EDGE or not lone or at_war
+                    or strategy["kind"] == "survival" or you["distrusted_ticks_left"]
+                    or n.get("standing", 0.0) >= 1.5):
+                return 0.0, ""
+            return 0.9 + (edge - BETRAYAL_EDGE) * military, f"{n['name']} trusts us and is weak"
+        friends_wars = friends_wars or {}
+        joint = n["name"] in friends_wars or runaway == n["name"]
+        together = edge * backing if joint else edge  # with allies beside us, when it is their fight too
         score, why = (edge - 1.0) * 1.2 * military, f"{n['name']} is weaker"
         if n["at_war_with"]:
             score += 0.4
@@ -148,8 +167,11 @@ class UtilityBrain:
             why = f"{n['name']} has wronged us and is weaker"
         allies = [name for name in n["allied_with"] if name != you["name"]]
         score -= 0.5 * len(allies)
-        if runaway == n["name"] and edge >= 1.0:
-            score += 0.3
+        if n["name"] in friends_wars and together >= 1.15:
+            score = max(score, 0.0) + 0.5
+            why = f"{friends_wars[n['name']]} is fighting {n['name']} and we stand with our ally"
+        if runaway == n["name"] and together >= 1.15:
+            score = max(score, 0.0) + 0.4
             why = f"{n['name']} is running away with it"
         if at_war:
             score -= 1.0 if edge < 2.2 else 0.3  # a second front only against the helpless
@@ -160,7 +182,7 @@ class UtilityBrain:
             why = f"the wells are failing and {n['name']} has water"
         elif thirst >= WATER_PRIORITY and n["water_rich"]:
             score = min(score, 0.0)  # whoever has water is courted, not fought, while there is a choice
-        if edge < 1.15:
+        if together < 1.15:
             score = min(score, 0.0)  # never start a war from parity
         return score, why
 

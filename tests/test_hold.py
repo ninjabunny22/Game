@@ -19,7 +19,7 @@ def siege():
     a, b = sim.civs[0], sim.civs[1]
     world, military = sim.world, sim.military
     relation = sim.diplomacy.relation(a.id, b.id)
-    sim.diplomacy._start_war(a, b, 0, {a.id}, [])
+    sim.diplomacy._start_war(a, b, 0, {a.id})
     target = b.capital.tile
     beside = next(t for t in world.neighbors(target) if not world.is_water(t))
     sim.military._sync(a)

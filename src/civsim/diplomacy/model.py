@@ -67,6 +67,7 @@ class War:
     # Set when the declarer broke an alliance with the other side to start this war.
     betrayer: int | None = None
     surprise_until: int = 0
+    last_gain: int = 0  # tick a tile last changed hands
 
 
 @dataclass

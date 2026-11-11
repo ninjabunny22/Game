@@ -48,6 +48,7 @@ class Diplomacy:
         self.standing: dict[tuple[int, int], float] = {(a, b): 0.0 for a in ids for b in ids if a != b}
         self._next_deal_id = 1
         self._reach_cache: dict[tuple[int, int], tuple[int, bool]] = {}
+        self.player: int | None = None  # the civ a human rules, if any: it is never made peace for
         self._alliance_breaks: dict[tuple[int, int], int] = {}  # (breaker, former ally) -> tick it broke the alliance
         self.distrust_until: dict[int, int] = {}  # betrayer -> tick until which others hold it against them
         self.military = None  # set by the simulation; moves and fights the armies each tick
@@ -184,10 +185,14 @@ class Diplomacy:
                                   f"{guardian.name} stands down, its duty to {defended.name} discharged")
                 return  # otherwise it carries on as an ordinary war
             if age >= rules.MAX_WAR:
-                self._end_war(relation, tick, events, rules.TRUCE,
-                              f"{civ_a.name} and {civ_b.name} are exhausted and stop fighting")
+                self._make_peace(relation, tick, events, f"{civ_a.name} and {civ_b.name} are exhausted and stop fighting")
             elif age >= rules.MIN_WAR and not hostile:
-                self._end_war(relation, tick, events, rules.TRUCE, f"{civ_a.name} and {civ_b.name} make peace")
+                self._make_peace(relation, tick, events, f"{civ_a.name} and {civ_b.name} make peace")
+            elif age >= rules.TERMS_AFTER and len(hostile) == 1:
+                winner = hostile[0]
+                loser = civ_b if winner is civ_a else civ_a
+                if self.accepts_terms(war, winner, loser, tick):
+                    self._make_peace(relation, tick, events, f"{loser.name} sues for peace and {winner.name} accepts")
             return
 
         if hostile:
@@ -258,7 +263,7 @@ class Diplomacy:
         self._set_status(relation, "war", tick)
         relation.war = War(a, b, tick, aggressors=aggressors, progress={a: 0.0, b: 0.0}, tiles_taken={a: 0, b: 0},
                            casualties={a: 0.0, b: 0.0}, declarer=declarer.id, guardian=guardian, defending=defending,
-                           name=name)
+                           name=name, last_gain=tick)
 
     def _join_defence(self, guardian, victim, aggressor, tick: int, events: list) -> None:
         """An ally of a civ that was attacked is at war with the attacker, whether it likes it or not.
@@ -399,6 +404,7 @@ class Diplomacy:
         recompute_capacity(attacker, world)
         recompute_capacity(defender, world)
         relation.war.tiles_taken[attacker.id] += 1
+        relation.war.last_gain = tick
         self._reach_cache.clear()
         region_id = world.capital_tiles.get(tile)
         if region_id is not None and world.regions[region_id].owner == defender.id:
@@ -450,13 +456,7 @@ class Diplomacy:
 
     def _capital_lost(self, winner, loser, shares: dict[int, float], tick: int, events: list) -> None:
         """A civ whose own capital falls pays tribute, moves its court, and is granted a truce."""
-        for res in RESOURCES:
-            taken = rules.TRIBUTE * loser.resources[res]
-            loser.resources[res] -= taken
-            for civ_id, share in shares.items():
-                civ = self.civs[civ_id]
-                room = self.mods[civ_id].storage[res] - civ.resources[res]
-                civ.resources[res] += max(0.0, min(share * taken, room))
+        self._pay_tribute(loser, shares, rules.TRIBUTE)
         text = (f"{loser.name} loses its capital to {winner.name}, pays tribute and moves its court to "
                 f"{loser.capital.name}" + self._split_note(shares))
         relation = self.relation(winner.id, loser.id)
@@ -465,6 +465,44 @@ class Diplomacy:
         else:
             self._log(tick, events, "war", [winner, loser], text)
         self.intents[(loser.id, winner.id)] = Intent(tick=tick)
+
+    def ahead(self, war: War) -> int | None:
+        """The side well ahead in a war by ground taken, or None while it is close."""
+        lead = war.tiles_taken.get(war.a, 0) - war.tiles_taken.get(war.b, 0)
+        if abs(lead) < rules.PEACE_LEAD:
+            return None
+        return war.a if lead > 0 else war.b
+
+    def accepts_terms(self, war: War, winner, loser, tick: int) -> bool:
+        """Whether a civ still pressing a war it is winning would stop for tribute: only once its
+        advance has stalled and it holds none of the other's capitals. A human ruler decides for
+        himself, by calling off the attack."""
+        if winner.id == self.player or self.ahead(war) != winner.id:
+            return False
+        if tick - war.last_gain < rules.STALL_TICKS:
+            return False
+        return not any(r.owner == loser.id and r.held_by == winner.id for r in self.world.regions)
+
+    def _make_peace(self, relation: Relation, tick: int, events: list, text: str) -> None:
+        """End a war. A side well ahead is paid tribute by the other; what was taken stays taken."""
+        war = relation.war
+        leader = self.ahead(war)
+        if leader is not None:
+            winner = self.civs[leader]
+            loser = self.civs[war.b if leader == war.a else war.a]
+            self._pay_tribute(loser, {winner.id: 1.0}, rules.PEACE_TRIBUTE)
+            text += f"; {loser.name} pays {winner.name} tribute"
+            self.remember(loser.id, winner.id, -0.3)
+        self._end_war(relation, tick, events, rules.TRUCE, text)
+
+    def _pay_tribute(self, loser, shares: dict[int, float], share: float) -> None:
+        for res in RESOURCES:
+            taken = share * loser.resources[res]
+            loser.resources[res] -= taken
+            for civ_id, part in shares.items():
+                civ = self.civs[civ_id]
+                room = self.mods[civ_id].storage[res] - civ.resources[res]
+                civ.resources[res] += max(0.0, min(part * taken, room))
 
     def _eliminate(self, loser, captor, tick: int, events: list) -> None:
         """A civ with no capital left is finished: what remains of it goes to its conqueror."""

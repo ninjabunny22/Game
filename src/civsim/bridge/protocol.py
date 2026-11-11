@@ -28,8 +28,9 @@ from ..simulation import Simulation
 from ..config import MAP_SIZES
 from ..diplomacy import rules
 
-PROTOCOL_VERSION = 12
-RULER_COMMANDS = ("take_control", "release_control", "set_stance", "set_focus", "set_research", "set_build")
+PROTOCOL_VERSION = 13
+RULER_COMMANDS = ("take_control", "release_control", "set_stance", "set_focus", "set_research", "set_build",
+                  "answer_proposal")
 GAME_COMMANDS = ("new_game", "end_game")  # start a game from the menu; go back to the menu
 COMMANDS = ("pause", "resume", "toggle_pause", "step", "set_speed", *RULER_COMMANDS, *GAME_COMMANDS)
 

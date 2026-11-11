@@ -56,6 +56,7 @@ def test_it_trades_with_equals_and_attacks_the_weak_within_reach(context):
 def test_it_does_not_attack_across_a_truce_out_of_reach_or_an_ally(context, change):
     target = context["neighbors"][0]
     target.update(army_vs_yours="much weaker", **change)
+    context["you"]["weights"]["military"] = 1.2  # short of the warlike, who alone turn on allies
     assert decide(context)[target["name"]]["stance"] != "aggression"
 
 

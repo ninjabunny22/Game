@@ -201,7 +201,23 @@ func _refresh_ruler(ruler: Variant) -> void:
 		_ruler_folded = not _ruler_folded
 		_refresh_ruler(ruler))
 	_button(header, "Hand back" if ruler["alive"] else "Watch on", func() -> void: command_requested.emit("release_control", {}))
-	if not ruler["alive"] or _ruler_folded:
+	if not ruler["alive"]:
+		return
+	for offer: Dictionary in ruler.get("proposals", []):
+		var from := int(offer["civ"])
+		var row := HBoxContainer.new()
+		_ruler_box.add_child(row)
+		var words := Label.new()
+		words.text = str(offer["text"])
+		words.add_theme_font_size_override("font_size", 13)
+		words.add_theme_color_override("font_color", Color.html(_civ_info[from]["color"]).lightened(0.25))
+		words.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(words)
+		_button(row, "Accept", func() -> void:
+			command_requested.emit("answer_proposal", {"civ": from, "kind": offer["kind"], "accept": true}))
+		_button(row, "Refuse", func() -> void:
+			command_requested.emit("answer_proposal", {"civ": from, "kind": offer["kind"], "accept": false}))
+	if _ruler_folded:
 		return
 
 	_small_label(_ruler_box, "The realm concentrates on")

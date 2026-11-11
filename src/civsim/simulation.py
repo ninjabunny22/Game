@@ -93,6 +93,7 @@ class Simulation:
             advance_research(civ, self.tech_tree, events)
         self.diplomacy.update(self.tick, events)
         self.villages.update(self.tick, events)
+        events.extend(self.ruler.notices())
         self._check_victory(events)
         self._schedule_checkins()
         self.events = events

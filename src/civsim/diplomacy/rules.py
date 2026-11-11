@@ -44,6 +44,12 @@ MAX_WAR = 400  # ticks after which both sides are exhausted
 TRUCE = 100
 SURRENDER_TRUCE = 300
 TRIBUTE = 0.5  # share of the loser's stock taken on surrender
+# Peace on terms: a side well ahead in a war is paid tribute when it ends, and will accept an
+# offer of it once its own advance has stalled.
+PEACE_LEAD = 5  # tiles taken, more than the other side, to count as ahead
+PEACE_TRIBUTE = 0.25  # share of the loser's stock handed over
+TERMS_AFTER = 150  # ticks of war before an offer of tribute is listened to
+STALL_TICKS = 80  # ... and only when the winner has taken nothing for this long
 MUSTER = 0.3  # share of full mobilisation raised while a war is only threatened
 
 # Regions and the native faction

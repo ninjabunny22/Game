@@ -43,6 +43,7 @@ func _ready() -> void:
 ## Show the menu. `lobby` is what the sim offers: the map sizes and how many civs each takes.
 func show_menu(lobby: Dictionary) -> void:
 	_sizes = lobby["sizes"]
+	_mode = "watch"  # each visit starts from watching, whatever the last game was
 	_clear()
 	visible = true
 	# The game behind stays visible, darkened toward the edges of the panel.

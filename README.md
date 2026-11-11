@@ -73,6 +73,14 @@ The overlay is built for watching:
 - **Sieges.** A civ's capital does not fall the moment an army breaks in: the army
   has to hold it for 100 days. The map shows who holds it and how far along they are,
   and the defender's armies drop everything to drive them out.
+- **Peace on terms.** A side well ahead in a war (five tiles or more) is paid a quarter of
+  the loser's stores when it ends, and a winner whose advance has stalled accepts an offer
+  of tribute rather than fight on.
+- **Allies and betrayal.** Civs join an ally's war when together they outmatch the enemy,
+  gang up on a civ running away with the game, and a warlike civ may turn on a weak ally
+  that has no other friends.
+- **Proposals.** When you rule a civ, the others put alliances, trades and peace to you;
+  accept or refuse them at the top of the ruler's panel.
 - **Headline log.** Only wars, peace, regions and capitals changing hands,
   alliances, betrayals, routs and new eras get a line. Routine events
   (buildings captured, discoveries, trade changes) are counted in one summary
