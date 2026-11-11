@@ -26,8 +26,9 @@ from ..military import UNIT_TYPES
 from ..military.warfare import ROSTER_CAP
 from ..simulation import Simulation
 from ..config import MAP_SIZES
+from ..diplomacy import rules
 
-PROTOCOL_VERSION = 11
+PROTOCOL_VERSION = 12
 RULER_COMMANDS = ("take_control", "release_control", "set_stance", "set_focus", "set_research", "set_build")
 GAME_COMMANDS = ("new_game", "end_game")  # start a game from the menu; go back to the menu
 COMMANDS = ("pause", "resume", "toggle_pause", "step", "set_speed", *RULER_COMMANDS, *GAME_COMMANDS)
@@ -284,7 +285,9 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
         "villagers": villagers,
         # owner is a civ id, or null while the native faction holds the region.
         "regions": [
-            {"id": region.id, "owner": region.owner, "garrison": round(region.garrison)}
+            # held_by: the civ whose army has broken into the capital, hold: how far (0 to 1) it is to taking it.
+            {"id": region.id, "owner": region.owner, "garrison": round(region.garrison),
+             "held_by": region.held_by, "hold": round(region.hold / rules.CAPITAL_HOLD, 3)}
             for region in world.regions
         ],
         "relations": relations,

@@ -29,6 +29,8 @@ class Region:
     owner: int | None = None  # civ id, or None while the native faction holds it
     garrison: float = 0.0  # native defenders at the capital, in soldier-equivalents
     under_attack: int = -1  # last tick an army fought the garrison
+    held_by: int | None = None  # the civ whose army has broken into the capital and is holding it
+    hold: int = 0  # ticks it has held it unchallenged; the region falls at rules.CAPITAL_HOLD
 
     @property
     def neutral(self) -> bool:

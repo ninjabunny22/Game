@@ -112,6 +112,7 @@ class Military:
         self.next_id = next_id
         self._battles: dict[tuple[int, int], int] = {}  # (army id, army id) -> tick the battle began
         self._rally: dict[int, int] = {}  # army id -> tick until which it rests after a rout
+        self._no_way: dict[tuple[int, int], int] = {}  # (civ, region) -> tick until which no expedition is sent there
         self._lost: dict[tuple[int, int], dict[str, float]] = {}  # (army id, enemy id) -> soldiers lost in the battle
         self._named = 0
         self._names = random.Random(sum(civ.capital.tile for civ in civs))  # naming never disturbs the game's dice
@@ -144,6 +145,7 @@ class Military:
             self._station(civ)
             self._hold_captives(civ, tick, events)
         busy = self._fight(tick, events)
+        self._relieve(tick, events)
         for civ in living:
             for army in list(civ.armies):
                 if army.pursuing is not None and army.state != "pursuing":
@@ -388,7 +390,12 @@ class Military:
             enemy = self.civs[army.target_civ]
             war = self.diplomacy.relation(civ.id, enemy.id).war
             rested = tick >= self._rally.get(army.id, 0)
-            if war and civ.id in war.aggressors and rested and army.size >= MIN_FIELD_ARMY:
+            besieger = self._besieger(civ, enemy) if war else None
+            if besieger is not None and rested and army.size >= MIN_FIELD_ARMY:
+                # One of our capitals is held: nothing matters more than driving them out.
+                goal = besieger.tile
+                army.state = "marching"
+            elif war and civ.id in war.aggressors and rested and army.size >= MIN_FIELD_ARMY:
                 # Make for the nearest capital the enemy holds: taking it takes its region.
                 others = sorted((s.tile for s in enemy.settlements), key=lambda t: (self._gap(army.tile, t), t))
                 goal = others[0]
@@ -416,6 +423,10 @@ class Military:
                 if path is not None:
                     break
             army.no_route = goal if path is None else None
+            if path is None and army.target_region is not None and army.state == "marching":
+                # An expedition whose way has closed (a harbour lost, say) comes home.
+                self._no_way[(civ.id, army.target_region)] = tick + CAMPAIGN_RETRY
+                army.state, goal = "returning", capital
             if path is None and capital not in (goal, army.tile):
                 path = self._route(civ, army.tile, capital)
             army.path = path or []
@@ -637,7 +648,7 @@ class Military:
                                        "text": f"{winning.name}'s army routs {losing.name}'s"})
         if loser.size < 1.0:
             self._finish_off(loser, winner, tick, events)  # nothing left to run
-        elif self._can_pursue(winner, loser):
+        elif self._can_pursue(winner, loser) and not self._holding(winner):
             winner.state, winner.path = "pursuing", []
             winner.pursuing = loser.id
             winner.pursuit_origin = winner.tile
@@ -808,6 +819,10 @@ class Military:
         civ.campaign_muster = 1.1 * soldiers / max(civ.population, 1.0)
         if self.diplomacy.strength(civ) * (1 - GARRISON_KEEP) < need:
             return  # still mustering
+        if self._route(civ, civ.capital.tile, target.capital) is None:
+            # Across water it has no harbour for, or cut off: look elsewhere for a good while.
+            self._no_way[(civ.id, target.id)] = tick + CAMPAIGN_RETRY
+            return
         army = Army(self.next_id(), civ.id, civ.capital.tile, "field", target_region=target.id,
                     commander=self._appoint(civ), state="marching")
         army.add(civ.garrison.take((1 - GARRISON_KEEP) * civ.soldiers))
@@ -824,6 +839,8 @@ class Military:
             share = natives.shares(region).get(civ.id, 0.0)
             if share <= 0 and not (self._touching[region.id] & held):
                 continue
+            if self._tick < self._no_way.get((civ.id, region.id), 0):
+                continue  # no army could get there when last tried
             key = (-share, self._gap(civ.capital.tile, region.capital), region.id)
             if best_key is None or key < best_key:
                 best, best_key = region, key
@@ -917,6 +934,21 @@ class Military:
         price = self.tile_price(civ, target)
         if army.siege_progress < price:
             return
+        region = self._capital_region(target, enemy)
+        if region is not None:
+            # A capital does not fall the moment it is breached: the army has to hold it.
+            if region.held_by is None:
+                region.held_by, region.hold = civ.id, 0
+                self.diplomacy._log(tick, events, "war", [civ, enemy],
+                                    f"{civ.name}'s army breaks into {region.capital_name}: {region.name} "
+                                    f"falls unless {enemy.name} drives it out within {rules.CAPITAL_HOLD} days")
+            if region.held_by != civ.id:
+                return  # an ally got there first: the hold is theirs
+            if attack > defence:
+                region.hold += 1  # a tick spent fighting off a relief never reaches here
+            if region.hold < rules.CAPITAL_HOLD:
+                return
+            region.held_by, region.hold = None, 0
         army.siege_progress -= price
         self.diplomacy._capture_tile(relation, civ, enemy, target, tick, events)
 
@@ -929,6 +961,64 @@ class Military:
                     and self.tile_price(civ, side) <= SWATH_MAX_PRICE and not self._defended(side, enemy)):
                 self.diplomacy._capture_tile(relation, civ, enemy, side, tick, events)
                 taken += 1
+
+    def _capital_region(self, tile: int, holder):
+        """The region whose capital stands on this tile, if `holder` owns that region."""
+        region_id = self.world.capital_tiles.get(tile)
+        if region_id is None:
+            return None
+        region = self.world.regions[region_id]
+        return region if region.owner == holder.id else None
+
+    def _holder(self, region) -> Army | None:
+        """The army holding a breached capital: the occupier's strongest one beside it still in the fight."""
+        occupier = self.civs.get(region.held_by)
+        if occupier is None or not occupier.alive:
+            return None
+        cx, cy = self.world.xy(region.capital)
+        best = None
+        for army in occupier.armies:
+            if army.role != "field" or army.size < 0.5 or army.state in ("retreating", "returning", "idle"):
+                continue
+            x, y = self.world.xy(army.tile)
+            if max(abs(x - cx), abs(y - cy)) <= 1 and (best is None or army.size > best.size):
+                best = army
+        return best
+
+    def _holding(self, army: Army) -> bool:
+        """Whether the army stands beside a capital its civ is holding: it does not leave to chase anyone."""
+        x, y = self.world.xy(army.tile)
+        for region in self.world.regions:
+            if region.held_by == army.civ:
+                cx, cy = self.world.xy(region.capital)
+                if max(abs(x - cx), abs(y - cy)) <= 1:
+                    return True
+        return False
+
+    def _relieve(self, tick: int, events: list) -> None:
+        """A hold on a capital is broken once the occupier has no army left beside it, or the war is over."""
+        for region in self.world.regions:
+            if region.held_by is None:
+                continue
+            occupier, owner = self.civs.get(region.held_by), self.civs.get(region.owner)
+            at_war = (occupier is not None and owner is not None and occupier.alive and owner.alive
+                      and self.diplomacy.relation(occupier.id, owner.id).war is not None)
+            if at_war and self._holder(region) is not None:
+                continue
+            region.held_by, region.hold = None, 0
+            if at_war:
+                self.diplomacy._log(tick, events, "war", [owner, occupier],
+                                    f"{owner.name} relieves {region.capital_name}: {occupier.name}'s hold on it is broken")
+                self.diplomacy.remember(owner.id, occupier.id, -0.2)
+
+    def _besieger(self, civ, enemy) -> Army | None:
+        """The enemy army holding one of the civ's capitals, if any: the one nearest to falling first."""
+        held = [r for r in self.world.regions if r.owner == civ.id and r.held_by == enemy.id]
+        for region in sorted(held, key=lambda r: (-r.hold, r.id)):
+            army = self._holder(region)
+            if army is not None:
+                return army
+        return None
 
     def _defended(self, tile: int, defender) -> bool:
         x, y = self.world.xy(tile)

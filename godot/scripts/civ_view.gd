@@ -93,6 +93,8 @@ var _native_color := Color(0.6, 0.55, 0.48)
 var _native_name := ""
 var _links: ImmediateMesh
 var _link_labels := {}  # "a:b" -> Label3D naming the war or alliance
+var _civ_names := {}  # civ id -> name
+var _sieges := {}  # region id -> Label3D over a capital an enemy army has broken into
 var _detail := 0  # 0 whole-map view, 1 closer, 2 full detail
 var _view_distance := 110.0  # how far the camera is, for what is sized to the screen
 var _batches: Node3D  # batches.gd: every finished building of the pack's
@@ -112,6 +114,7 @@ func setup(terrain: Node3D, init: Dictionary, civ_colors: Array, models: RefCoun
 	_batches = Batches.new()
 	add_child(_batches)
 	_link_labels.clear()
+	_sieges.clear()
 	_body_meshes.clear()
 	_plinth_meshes.clear()
 	_terrain = terrain
@@ -119,6 +122,9 @@ func setup(terrain: Node3D, init: Dictionary, civ_colors: Array, models: RefCoun
 	_civ_colors = civ_colors
 	_add_deposits(init["map"]["deposits"], init["deposit_types"])
 	_regions.clear()
+	_civ_names.clear()
+	for civ: Dictionary in init["civs"]:
+		_civ_names[int(civ["id"])] = str(civ["name"])
 	for region: Dictionary in init["regions"]:
 		_regions[int(region["id"])] = region
 	_native_color = Color.html(init["native_faction"]["color"])
@@ -140,6 +146,7 @@ func setup(terrain: Node3D, init: Dictionary, civ_colors: Array, models: RefCoun
 ## `regions` is the tick's list of who holds each region (owner null = the native faction).
 func update(civs: Array, regions: Array) -> void:
 	var seen := {}
+	_show_sieges(regions)
 	# Capitals still held by the native faction.
 	for region: Dictionary in regions:
 		if region["owner"] != null:
@@ -222,6 +229,37 @@ func set_detail(detail: int) -> void:
 		_show_settled(node)
 	for label: Label3D in _link_labels.values():
 		_show_link_label(label)
+
+
+## A capital an enemy army has broken into shows who holds it and how close it is to falling.
+func _show_sieges(regions: Array) -> void:
+	var held := {}
+	for region: Dictionary in regions:
+		if region.get("held_by") == null:
+			continue
+		var id := int(region["id"])
+		var by := int(region["held_by"])
+		held[id] = true
+		if not _sieges.has(id):
+			var info: Dictionary = _regions[id]
+			var label := Label3D.new()
+			label.font_size = 40
+			label.outline_size = 14
+			label.fixed_size = true
+			label.pixel_size = 0.00065
+			label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+			label.no_depth_test = true
+			label.position = _terrain.tile_position(int(info["x"]), int(info["y"])) + Vector3(0.0, 6.2, 0.0)
+			add_child(label)
+			_sieges[id] = label
+		var siege: Label3D = _sieges[id]
+		var done := clampf(float(region.get("hold", 0.0)), 0.0, 1.0)
+		siege.text = "Held by %s\n%d%% taken" % [_civ_names.get(by, "?"), int(done * 100.0)]
+		siege.modulate = (_civ_colors[by] as Color).lightened(0.35)
+	for id: int in _sieges.keys():
+		if not held.has(id):
+			_sieges[id].queue_free()
+			_sieges.erase(id)
 
 
 func _show_capital_label(node: Node3D) -> void:

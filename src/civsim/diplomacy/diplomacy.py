@@ -422,6 +422,7 @@ class Diplomacy:
             self._transfer_tile(tile, captor, loser if owner >= 0 else None, tick, events, announce=False)
         region.owner = captor.id
         region.garrison = 0.0
+        region.held_by, region.hold = None, 0
         captor.settlements.append(Settlement(region.capital_name, region.capital))
         recompute_capacity(captor, world)
         self._reach_cache.clear()

@@ -70,6 +70,9 @@ The overlay is built for watching:
   days per minute. A banner appears while the sim is paused.
 - **Text size.** The whole overlay is drawn 35% larger than Godot's default;
   `[` and `]` make it smaller or larger while watching.
+- **Sieges.** A civ's capital does not fall the moment an army breaks in: the army
+  has to hold it for 100 days. The map shows who holds it and how far along they are,
+  and the defender's armies drop everything to drive them out.
 - **Headline log.** Only wars, peace, regions and capitals changing hands,
   alliances, betrayals, routs and new eras get a line. Routine events
   (buildings captured, discoveries, trade changes) are counted in one summary
