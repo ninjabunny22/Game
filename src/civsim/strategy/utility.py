@@ -14,6 +14,9 @@ ATTACK_THRESHOLD = 0.5  # an attack must be worth at least this to be launched
 ALLY_THRESHOLD = 0.6
 WAR_WEARY_TICKS = 300  # a war this old is only kept up from a position of strength
 RUNAWAY = 1.5  # a neighbour this many times our size is running away with the game
+STRATEGY_STICKINESS = 1.3  # a strategy already in hand counts for this much more than a new one
+STRATEGY_FOCUS = {"conquest": "military", "survival": "military", "science": "science",
+                  "prosperity": "economy", "expansion": "expansion"}
 
 
 class UtilityBrain:
@@ -38,6 +41,7 @@ class UtilityBrain:
         leader = max(neighbors, key=lambda n: (n["population"] + n["territory"], n["name"]), default=None)
         runaway = leader["name"] if leader and leader["population"] + leader["territory"] >= RUNAWAY * size else None
         supplier = any(n["water_rich"] and n["their_stance_toward_you"] in ("trade", "ally") for n in neighbors)
+        strategy = self._strategy(context, edges, threats)
 
         stances, notes = [], []
         for n in neighbors:
@@ -55,7 +59,7 @@ class UtilityBrain:
                 continue
 
             attack, why_attack = self._attack(you, n, edge, military, thirst, supplier, can_declare,
-                                              bool(my_wars), runaway)
+                                              bool(my_wars), runaway, strategy)
             ally, why_ally = self._ally(n, edge, thirst, my_enemies, threats, runaway)
             if attack >= ATTACK_THRESHOLD and attack >= ally:
                 entry.update(stance="aggression", troop_commitment=self._commitment(edge, len(my_wars) + 1))
@@ -72,7 +76,41 @@ class UtilityBrain:
         reason = max(notes)[1] if notes else "trading with everyone"
         if thirst >= WATER_PRIORITY:
             reason += f"; water is {you['water']['status']}"
-        return {"reason": reason[0].upper() + reason[1:] + ".", "stances": stances}
+        return {"reason": reason[0].upper() + reason[1:] + ".", "stances": stances, "strategy": strategy}
+
+    # -- the long view ---------------------------------------------------------
+
+    def _strategy(self, context: dict, edges: dict, threats: set) -> dict:
+        """What the civ is working toward over the long run. It follows from the civ's own
+        leanings and its position, and is kept from one check-in to the next unless something
+        else has become clearly better: a civ that changed its mind every time would get nowhere."""
+        you, neighbors = context["you"], context["neighbors"]
+        weights = you["weights"]
+        before = you.get("strategy") or {}
+        options: dict[str, tuple[float, str | None]] = {
+            "science": (0.9 * weights.get("science", 1.0), None),
+            "prosperity": (0.85 * weights.get("wealth", 1.0), None),
+            "expansion": (0.9 * weights.get("expansion", 1.0) if context.get("neutral_regions", 0) > 0 else 0.0, None),
+        }
+        # Conquest needs someone it can reach and beat; an old grudge points the way.
+        prey = [n for n in neighbors if n["in_reach"] and n["relation"] != "alliance" and edges[n["id"]] >= 1.15]
+        if prey:
+            def worth(n: dict) -> float:
+                return edges[n["id"]] - 0.9 + 0.2 * max(0.0, -n.get("standing", 0.0)) \
+                    + (0.3 if before.get("kind") == "conquest" and before.get("target") == n["name"] else 0.0)
+            target = max(prey, key=lambda n: (worth(n), n["name"]))
+            options["conquest"] = (weights.get("military", 1.0) * min(worth(target), 1.6), target["name"])
+        # Outmatched and under threat, nothing else matters.
+        stronger = sorted(n["name"] for n in neighbors if n["name"] in threats and edges[n["id"]] < 0.8)
+        if stronger:
+            options["survival"] = (1.7, stronger[0])
+        scores = {kind: score * (STRATEGY_STICKINESS if kind == before.get("kind") else 1.0)
+                  for kind, (score, _) in options.items()}
+        kind = max(scores, key=lambda k: (scores[k], k))
+        target = options[kind][1]
+        text = {"conquest": f"Conquer {target}", "survival": f"Survive {target}", "science": "Out-think the others",
+                "prosperity": "Grow rich by trade", "expansion": "Settle the open land"}[kind]
+        return {"kind": kind, "target": target, "focus": STRATEGY_FOCUS[kind], "text": text}
 
     @staticmethod
     def _edge(you: dict, n: dict) -> float:
@@ -88,7 +126,7 @@ class UtilityBrain:
         return round(max(0.4, min(0.9, share / max(1, wars) ** 0.5)), 2)
 
     @staticmethod
-    def _attack(you, n, edge, military, thirst, supplier, can_declare, at_war, runaway) -> tuple[float, str]:
+    def _attack(you, n, edge, military, thirst, supplier, can_declare, at_war, runaway, strategy) -> tuple[float, str]:
         if not (can_declare and n["in_reach"]) or n["truce"] or n["relation"] == "alliance":
             return 0.0, ""
         score, why = (edge - 1.0) * 1.2 * military, f"{n['name']} is weaker"
@@ -97,6 +135,17 @@ class UtilityBrain:
             why = f"{n['name']} is weaker and already fighting {n['at_war_with'][0]}"
         if n["distrusted_ticks_left"]:
             score += 0.2  # nobody will come to its aid
+        # The long view: the civ it has set out to conquer is attacked sooner, and a civ set on
+        # something else is slower to fight at all.
+        if strategy["kind"] == "conquest":
+            score += 0.35 if strategy["target"] == n["name"] else 0.0
+        else:
+            score -= 0.6 if strategy["kind"] == "survival" else 0.3
+        # Memory: a grudge is a reason, and a proven friend is not attacked lightly.
+        standing = n.get("standing", 0.0)
+        score -= max(-0.6, min(0.6, 0.35 * standing))
+        if standing <= -0.8:
+            why = f"{n['name']} has wronged us and is weaker"
         allies = [name for name in n["allied_with"] if name != you["name"]]
         score -= 0.5 * len(allies)
         if runaway == n["name"] and edge >= 1.0:
@@ -140,6 +189,7 @@ class UtilityBrain:
             why = f"{n['name']} has the water we need"
         if n["distrusted_ticks_left"]:
             score -= 0.5
+        score += max(-0.6, min(0.6, 0.3 * n.get("standing", 0.0)))  # friends are kept, enemies not courted
         if n["name"] in threats:
             score -= 0.6
         return score, why

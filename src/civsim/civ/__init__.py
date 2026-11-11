@@ -1,6 +1,6 @@
 from .ai import CivAI
 from .civilization import Building, Civilization, Goal, Research, Settlement
-from .personality import Personality, assign_personalities
+from .personality import FOCUSES, Personality, assign_personalities, with_focus
 from .villages import VILLAGE_RANGE, Village, Villages
 
 __all__ = [

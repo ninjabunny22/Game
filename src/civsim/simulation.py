@@ -11,7 +11,7 @@ deterministic.
 import itertools
 import random
 
-from .civ import CivAI, Civilization, Settlement, Villages, assign_personalities
+from .civ import FOCUSES, CivAI, Civilization, Settlement, Villages, assign_personalities, with_focus
 from .config import SimConfig
 from .diplomacy import Diplomacy, Natives
 from .economy import (
@@ -181,8 +181,24 @@ class Simulation:
             if reply is None:
                 continue  # no answer: previous stances stand
             intents, reason = parse_stances(reply, request.context, self.tick)
+            self._adopt_strategy(civ, reply.get("strategy"), request.context)
             self.diplomacy.set_intents(civ.id, self.ruler.overrule(civ.id, request.context, intents))
             civ.last_reason = reason
+
+    def _adopt_strategy(self, civ, strategy: object, context: dict) -> None:
+        """Take up the long-term strategy a strategist has settled on, if it sent a usable one.
+        A civ in a human ruler's hands keeps the ruler's focus; the rest still applies."""
+        if not isinstance(strategy, dict) or not isinstance(strategy.get("kind"), str):
+            return
+        names = {n["name"]: n["id"] for n in context["neighbors"]}
+        civ.strategy_kind = strategy["kind"][:40]
+        civ.strategy_target = names.get(strategy.get("target"))
+        civ.strategy = " ".join(str(strategy.get("text") or "").split())[:120]
+        focus = strategy.get("focus")
+        if focus in FOCUSES and self.ruler.civ_id != civ.id and focus != civ.focus:
+            civ.born = civ.born or civ.personality
+            civ.focus = focus
+            civ.personality = with_focus(civ.born, focus)
 
     def _create_civs(self) -> list[Civilization]:
         """Each civ starts holding two whole regions: a home region, whose capital is its

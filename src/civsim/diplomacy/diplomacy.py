@@ -43,6 +43,9 @@ class Diplomacy:
         self.relations: dict[tuple[int, int], Relation] = {(a, b): Relation() for a in ids for b in ids if a < b}
         self.deals: list[Deal] = []
         self.history: list[dict] = []  # {"tick", "civs", "text"}, oldest first
+        # What each civ makes of each other, from what has passed between them: (a, b) is how a
+        # regards b, from -3 (a bitter grudge) to 3 (a proven friend). It fades back toward 0.
+        self.standing: dict[tuple[int, int], float] = {(a, b): 0.0 for a in ids for b in ids if a != b}
         self._next_deal_id = 1
         self._reach_cache: dict[tuple[int, int], tuple[int, bool]] = {}
         self._alliance_breaks: dict[tuple[int, int], int] = {}  # (breaker, former ally) -> tick it broke the alliance
@@ -131,7 +134,14 @@ class Diplomacy:
 
     # -- per-tick execution --------------------------------------------------
 
+    def remember(self, who: int, of: int, amount: float) -> None:
+        """`who` thinks better (amount > 0) or worse of `of` for something it has just done."""
+        if who != of and (who, of) in self.standing:
+            self.standing[(who, of)] = max(-3.0, min(3.0, self.standing[(who, of)] + amount))
+
     def update(self, tick: int, events: list) -> None:
+        for pair in self.standing:
+            self.standing[pair] *= rules.MEMORY_FADE  # old deeds count for less
         for civ in self.civs.values():
             if civ.alive:
                 civ.diplomacy_points = min(rules.DIPLOMACY_CAP, civ.diplomacy_points + rules.DIPLOMACY_GAIN)
@@ -198,6 +208,7 @@ class Diplomacy:
                 self._start_war(declarer, target, tick, aggressors={civ.id for civ in hostile}, name=name)
                 self._log(tick, events, "war", [declarer, target],
                           f"{declarer.name} declares war on {target.name}: {name} begins")
+                self.remember(target.id, declarer.id, -1.0)  # an attack is not forgotten quickly
                 if betrayal:
                     self._betray(relation.war, declarer, target, tick, events)
                 for ally in self.allies(target.id):
@@ -228,6 +239,8 @@ class Diplomacy:
                                                    self.rng, self.names_used)
             self._log(tick, events, "diplomacy", [civ_a, civ_b],
                       f"{civ_a.name} and {civ_b.name} form an alliance: {relation.alliance_name}")
+            self.remember(a, b, 0.4)
+            self.remember(b, a, 0.4)
             # The new ally takes on any war in which its partner is the one under attack.
             for partner, newcomer in ((civ_a, civ_b), (civ_b, civ_a)):
                 for enemy in self.enemies(partner.id):
@@ -264,6 +277,8 @@ class Diplomacy:
                         guardian=guardian.id, defending=victim.id, name=name)
         self._log(tick, events, "war", [guardian, aggressor, victim],
                   f"{guardian.name} joins {name or 'the war'} against {aggressor.name} in defence of its ally {victim.name}")
+        self.remember(victim.id, guardian.id, 1.0)  # a friend who came when it counted
+        self.remember(guardian.id, aggressor.id, -0.5)
 
     def _betray(self, war: War, betrayer, victim, tick: int, events: list) -> None:
         """The declarer broke an alliance to start this war: it gets a surprise opening and a bad name."""
@@ -271,6 +286,10 @@ class Diplomacy:
         war.surprise_until = tick + rules.SURPRISE_TICKS
         # A betrayal while already distrusted adds to the time rather than restarting it.
         self.distrust_until[betrayer.id] = max(self.distrust_until.get(betrayer.id, 0), tick) + rules.DISTRUST_TICKS
+        self.remember(victim.id, betrayer.id, -1.5)
+        for other in self.civs:  # and everyone else has seen what its word is worth
+            if other not in (betrayer.id, victim.id):
+                self.remember(other, betrayer.id, -0.4)
         self._log(tick, events, "war", [betrayer, victim],
                   f"{betrayer.name} betrays its ally {victim.name}, catching it off guard; "
                   f"others will distrust {betrayer.name} for {self.distrust_until[betrayer.id] - tick} ticks")
@@ -310,6 +329,8 @@ class Diplomacy:
         deal = Deal(self._next_deal_id, civ_a.id, civ_b.id, (a_offer.give, a_rate), (b_offer.give, b_rate), tick)
         self._next_deal_id += 1
         self.deals.append(deal)
+        self.remember(civ_a.id, civ_b.id, 0.15)  # trade makes for good neighbours
+        self.remember(civ_b.id, civ_a.id, 0.15)
         self._log(tick, events, "trade", [civ_a, civ_b],
                   f"{civ_a.name} trades {a_rate:g} {a_offer.give}/tick to {civ_b.name} for {b_rate:g} {b_offer.give}/tick")
 
@@ -413,6 +434,7 @@ class Diplomacy:
         else:
             self._log(tick, events, "war", [captor, loser],
                       f"{captor.name} takes {region.capital_name}; all of {region.name} falls with it")
+            self.remember(loser.id, captor.id, -0.5)
         if loser is None:
             return
         military = getattr(self, "military", None)

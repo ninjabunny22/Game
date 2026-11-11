@@ -65,6 +65,8 @@ def stance_context(sim, civ) -> dict:
             "truce": sim.tick < relation.truce_until,
             "in_reach": diplomacy.in_reach(civ.id, other_id, sim.tick),
             "active_deal": deal_text,
+            # What you make of them from what has passed between you: -3 a bitter grudge, 3 a proven friend.
+            "standing": round(diplomacy.standing[(civ.id, other_id)], 2),
             "their_stance_toward_you": theirs.stance.value,
             "their_trade_offer": offer,
             "your_current_stance": diplomacy.intent(civ.id, other_id).stance.value,
@@ -77,7 +79,11 @@ def stance_context(sim, civ) -> dict:
             "id": civ.id,
             "name": civ.name,
             "personality": civ.personality.name,
-            "weights": civ.personality.weights,
+            # The civ's own leanings, before whatever it is concentrating on tilts them.
+            "weights": (civ.born or civ.personality).weights,
+            # The long-term strategy it settled on at its last check-in ("" at the start).
+            "strategy": {"kind": civ.strategy_kind, "target": sim.civs[civ.strategy_target].name
+                         if civ.strategy_target is not None else None},
             "era": tree.eras[tree.era_of(civ.known_techs)],
             "population": int(civ.population),
             "territory": len(civ.territory),

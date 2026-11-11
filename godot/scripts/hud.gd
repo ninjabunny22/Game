@@ -536,7 +536,10 @@ func _compact_text(info: Dictionary, civ: Dictionary) -> String:
 	var facts := "%s   %d region%s   Pop %d   Army %d   [color=#d9c36a]Score %d[/color]" % [
 		civ["era_name"], civ["regions"].size(), "" if civ["regions"].size() == 1 else "s",
 		int(civ["population"]), int(civ["soldiers"]), int(civ.get("score", 0))]
-	return "%s\n%s\n%s" % [title, facts, _status_line(int(civ["id"]), civ)]
+	var goal := ""
+	if str(civ.get("strategy", "")) != "":
+		goal = "\n[color=#8a93a0]Goal: %s[/color]" % civ["strategy"]
+	return "%s\n%s\n%s%s" % [title, facts, _status_line(int(civ["id"]), civ), goal]
 
 
 ## What is going on with this civ, most pressing first.

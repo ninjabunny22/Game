@@ -125,3 +125,53 @@ def test_whole_games_get_a_valid_answer_at_every_checkin():
                 sim.submit(request, reply)
                 answered += 1
         assert answered >= 100
+
+
+def test_it_settles_on_a_long_term_strategy_and_keeps_it(context):
+    reply = UtilityBrain().decide(CheckinRequest(0, context["tick"], context))
+    strategy = reply["strategy"]
+    assert strategy["kind"] in ("science", "prosperity", "expansion") and strategy["target"] is None, "nobody to beat"
+    weak = context["neighbors"][0]
+    weak["army_vs_yours"] = "much weaker"
+    strategy = UtilityBrain().decide(CheckinRequest(0, context["tick"], context))["strategy"]
+    assert (strategy["kind"], strategy["target"], strategy["focus"]) == ("conquest", weak["name"], "military")
+    assert strategy["text"] == f"Conquer {weak['name']}"
+    # Once chosen it is kept while it still makes sense, even if another has drawn level.
+    other = context["neighbors"][1]
+    other["army_vs_yours"] = "much weaker"
+    context["you"]["strategy"] = {"kind": "conquest", "target": other["name"]}
+    assert UtilityBrain().decide(CheckinRequest(0, context["tick"], context))["strategy"]["target"] == other["name"]
+    # Outmatched and threatened, survival comes first.
+    for n in context["neighbors"]:
+        n.update(army_vs_yours="much stronger", their_stance_toward_you="aggression")
+    assert UtilityBrain().decide(CheckinRequest(0, context["tick"], context))["strategy"]["kind"] == "survival"
+
+
+def test_a_grudge_makes_an_attack_likelier_and_a_friendship_makes_it_less(context):
+    target = context["neighbors"][0]
+    target["army_vs_yours"] = "weaker"
+    context["you"]["weights"]["military"] = 0.75
+    target["standing"] = 0.0
+    assert decide(context)[target["name"]]["stance"] != "aggression", "not worth it on the numbers alone"
+    target["standing"] = -1.5
+    assert decide(context)[target["name"]]["stance"] == "aggression", "but it has not been forgiven"
+    context["you"]["weights"]["military"] = 1.3
+    target.update(army_vs_yours="much weaker", standing=0.0)
+    assert decide(context)[target["name"]]["stance"] == "aggression"
+
+
+def test_the_sim_remembers_deeds_and_takes_up_the_strategy():
+    sim = Simulation(SimConfig(seed=3))
+    diplomacy = sim.diplomacy
+    assert all(value == 0.0 for value in diplomacy.standing.values())
+    diplomacy.remember(0, 1, -1.0)
+    diplomacy.remember(0, 1, -5.0)
+    assert diplomacy.standing[(0, 1)] == -3.0 and diplomacy.standing[(1, 0)] == 0.0
+    brain = make_brain("utility")
+    for _ in range(200):
+        sim.step_with(brain)
+    assert -3.0 < diplomacy.standing[(0, 1)] < -2.0, "it fades, slowly"
+    assert stance_context(sim, sim.civs[0])["neighbors"][0]["standing"] == round(diplomacy.standing[(0, 1)], 2)
+    for civ in sim.civs:
+        assert civ.strategy and civ.strategy_kind and civ.focus in ("military", "science", "economy", "expansion")
+        assert civ.born is not None and civ.personality.name == civ.born.name

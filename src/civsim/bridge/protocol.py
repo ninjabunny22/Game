@@ -155,6 +155,9 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
             "id": civ.id,
             "alive": civ.alive,
             "score": sim.score(civ),
+            # What it is working toward, in words, and what the realm concentrates on.
+            "strategy": civ.strategy,
+            "focus": civ.focus,
             "regions": [region.id for region in world.regions if region.owner == civ.id],
             "population": int(civ.population),
             "housing": int(mods.housing),

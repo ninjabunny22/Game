@@ -63,3 +63,4 @@ MILITIA = 0.03  # share of a defender's population that fights as irregulars
 CAPTURE_RATE = 0.5  # tiles of progress per tick at overwhelming superiority
 CASUALTY_RATE = 0.01  # share of the engaged troops lost per tick in an even fight
 TILE_DEFENSE = {Biome.SHALLOWS: 0.5, Biome.FOREST: 1.5, Biome.HILLS: 2.0, Biome.MOUNTAIN: 3.0}  # default 1
+MEMORY_FADE = 0.9985  # per tick: what a civ holds for or against another halves in about 460 days

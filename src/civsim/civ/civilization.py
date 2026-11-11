@@ -96,6 +96,14 @@ class Civilization:
 
     last_demolition: int = -10_000  # tick; demolitions are rate-limited
 
+    # The long view (see strategy/utility.py): what the civ is working toward, in words, the
+    # kind of strategy that is, who it is aimed at, and what the realm concentrates on for it.
+    strategy: str = ""
+    strategy_kind: str = ""
+    strategy_target: int | None = None
+    focus: str = "balanced"
+    born: Personality | None = None  # its personality before any focus tilted it
+
     # Orders from a human ruler (see ruler.py); None leaves the choice to the civ's AI.
     research_order: str | None = None  # the tech to research next
     build_order: str | None = None  # the building to put up next

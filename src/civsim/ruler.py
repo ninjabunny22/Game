@@ -6,20 +6,9 @@ next. Everything the ruler leaves alone is still decided by the civ's own AI and
 strategist, so a civ can be ruled as closely or as loosely as wanted, or handed back.
 """
 
-from dataclasses import replace
-
-from .civ.personality import Personality
+from .civ.personality import FOCUSES, with_focus
 from .strategy import parse_stances, stance_context
 
-# What each focus does to the weights the civ's AI plans by.
-FOCUSES = {
-    "balanced": {},
-    "growth": {"growth": 1.6, "food": 1.4},
-    "economy": {"wealth": 1.6, "industry": 1.4, "infrastructure": 1.2},
-    "military": {"military": 1.8},
-    "science": {"science": 1.8},
-    "expansion": {"expansion": 1.8},
-}
 STANCES = ("trade", "ally", "aggression", "ignore")
 COMMANDS = ("take_control", "release_control", "set_stance", "set_focus", "set_research", "set_build")
 
@@ -30,7 +19,6 @@ class Ruler:
         self.civ_id: int | None = None
         self.focus = "balanced"
         self.stances: dict[int, dict] = {}  # other civ id -> {"stance", "commitment"}; absent = left to the strategist
-        self._born: Personality | None = None  # the civ's own personality, to give back
 
     @property
     def civ(self):
@@ -86,20 +74,22 @@ class Ruler:
             return "that civ is no more"
         self._release()
         self.civ_id = civ_id
-        self._born = self.sim.civs[civ_id].personality
+        self._set_focus("balanced")  # whatever the strategist had it concentrating on, the ruler starts afresh
         return None
 
     def _release(self) -> None:
         civ = self.civ
         if civ is not None:
-            civ.personality = self._born
+            self._set_focus("balanced")
             civ.research_order = civ.build_order = None
-        self.civ_id, self._born, self.focus, self.stances = None, None, "balanced", {}
+        self.civ_id, self.focus, self.stances = None, "balanced", {}
 
     def _set_focus(self, focus: str) -> None:
         self.focus = focus
-        weights = {key: round(value * FOCUSES[focus].get(key, 1.0), 3) for key, value in self._born.weights.items()}
-        self.civ.personality = replace(self._born, weights=weights)
+        civ = self.civ
+        civ.born = civ.born or civ.personality
+        civ.focus = focus
+        civ.personality = with_focus(civ.born, focus)
 
     # -- stances -------------------------------------------------------------
 
