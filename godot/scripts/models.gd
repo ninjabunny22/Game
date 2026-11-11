@@ -43,6 +43,20 @@ func instance(model: String, material: Material, footprint: float) -> Node3D:
 	return root
 
 
+## The model's parts as [mesh, transform] pairs, scaled to stand on `footprint` tiles, for
+## drawing many copies in batches. Empty if the model could not be loaded.
+func parts(model: String, footprint: float) -> Array:
+	var data: Dictionary = _load(model)
+	if data.is_empty():
+		return []
+	var aabb: AABB = data["aabb"]
+	var scale := Transform3D(Basis().scaled(Vector3.ONE * (footprint / maxf(maxf(aabb.size.x, aabb.size.z), 0.01))), Vector3.ZERO)
+	var out: Array = []
+	for part: Dictionary in data["parts"]:
+		out.append([part["mesh"], scale * (part["xform"] as Transform3D)])
+	return out
+
+
 ## Height of the model once scaled to `footprint`, for placing labels above it.
 func height(model: String, footprint: float) -> float:
 	var data: Dictionary = _load(model)

@@ -7,7 +7,7 @@ signal command_requested(action: String, value: Variant)
 
 const LINK_LEGEND := "[color=#ff4033]━[/color] war   [color=#59a6ff]━[/color] alliance   [color=#59e666]━[/color] trade   [color=#aaaaaa]━[/color] neutral"
 
-const MAX_HEADLINES := 8
+const MAX_HEADLINES := 5
 const ROUTINE_WINDOW := 100  # days over which routine events are counted for the summary line
 # Events worth a line of their own. Everything else is only counted.
 const HEADLINE_KINDS := ["war", "diplomacy", "region", "era"]
@@ -43,6 +43,7 @@ var _unit_names := {}
 var _region_names := {}
 var _resources: Array = []
 var _log_lines: Array[String] = []
+var _help: Label
 var _relations := {}  # "a:b" with a < b -> relation from the latest tick
 var _deals := {}  # "a:b" with a < b -> deal
 
@@ -74,7 +75,10 @@ func _ready() -> void:
 			+ "[ and ] : smaller / larger text")
 	help.add_theme_font_size_override("font_size", 12)
 	help.modulate = Color(1, 1, 1, 0.6)
+	help.visible = false  # H or the ? button shows the keys
 	column.add_child(help)
+	_help = help
+	_button(buttons, "?", toggle_help)
 	var legend := RichTextLabel.new()
 	legend.bbcode_enabled = true
 	legend.fit_content = true
@@ -87,7 +91,7 @@ func _ready() -> void:
 
 	# Diplomacy: every war, alliance and trade deal in force. Toggled with the button or Tab.
 	_diplomacy_panel = _panel(root)
-	_diplomacy_panel.position = Vector2(10, 178)
+	_diplomacy_panel.position = Vector2(10, 124)
 	_diplomacy_panel.custom_minimum_size = Vector2(390, 0)
 	_diplomacy_panel.visible = false
 	_diplomacy = RichTextLabel.new()
@@ -143,6 +147,10 @@ func _ready() -> void:
 	root.add_child(_paused_banner)
 
 	_refresh_status()
+
+
+func toggle_help() -> void:
+	_help.visible = not _help.visible
 
 
 func set_connected(connected: bool) -> void:
@@ -535,9 +543,14 @@ func _diplomacy_text(civ_id: int, civ: Dictionary) -> String:
 
 func _panel(parent: Control) -> PanelContainer:
 	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.07, 0.08, 0.1, 0.84)
-	style.set_corner_radius_all(6)
-	style.set_content_margin_all(10)
+	style.bg_color = Color(0.06, 0.075, 0.1, 0.8)
+	style.set_corner_radius_all(12)
+	style.set_content_margin_all(12)
+	style.set_border_width_all(1)
+	style.border_color = Color(1, 1, 1, 0.09)
+	style.shadow_color = Color(0, 0, 0, 0.35)
+	style.shadow_size = 10
+	style.shadow_offset = Vector2(0, 3)
 	var panel := PanelContainer.new()
 	panel.add_theme_stylebox_override("panel", style)
 	parent.add_child(panel)
@@ -548,6 +561,15 @@ func _button(parent: Control, text: String, on_pressed: Callable) -> Button:
 	var button := Button.new()
 	button.text = text
 	button.focus_mode = Control.FOCUS_NONE
+	for state: Array in [["normal", 0.1], ["hover", 0.2], ["pressed", 0.3]]:
+		var style := StyleBoxFlat.new()
+		style.bg_color = Color(1, 1, 1, state[1])
+		style.set_corner_radius_all(8)
+		style.content_margin_left = 12
+		style.content_margin_right = 12
+		style.content_margin_top = 5
+		style.content_margin_bottom = 5
+		button.add_theme_stylebox_override(state[0], style)
 	button.pressed.connect(on_pressed)
 	parent.add_child(button)
 	return button

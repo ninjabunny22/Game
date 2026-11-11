@@ -21,10 +21,11 @@ const LEFT_OUT := {"Stable": ["grass"], "Harbour": ["grass", "dirt"], "Castle": 
 ## Models made of thousands of small parts that never move: each is welded into one mesh
 ## with a surface per material when it is loaded, or every castle on the map would cost
 ## thousands of draw calls.
-const WELDED := ["Castle", "CapitalCastle"]
+const WELDED := ["Castle", "CapitalCastle", "Stable", "Harbour", "Boat"]
 ## Models that stand on their own origin rather than the middle of their bounding box: the
 ## knight's lance reaches far out in front, and centring the box would push the horse back.
 const ON_ORIGIN := ["Knight"]
+const CACHE_VERSION := 1  # raise when welding changes, so old kept meshes are not used
 
 var _prototypes := {}  # name -> {"scene": Node3D, "aabb": AABB}, or {} if it failed to load
 var _tints := {}  # "material name:colour" -> Material
@@ -112,12 +113,27 @@ func _load(model: String) -> Dictionary:
 	var document := GLTFDocument.new()
 	var state := GLTFState.new()
 	var path := ProjectSettings.globalize_path(DIR + model + ".glb")
+	# A welded model is kept from one run to the next: welding the castles takes seconds.
+	var cached := "user://welded/%s-%d-%d.res" % [model, FileAccess.get_modified_time(path), CACHE_VERSION]
+	if model in WELDED and ResourceLoader.exists(cached):
+		var kept := ResourceLoader.load(cached) as ArrayMesh
+		if kept != null and kept.get_surface_count() > 0:
+			var holder := Node3D.new()
+			var instance := MeshInstance3D.new()
+			instance.mesh = kept
+			holder.add_child(instance)
+			_prototypes[model] = {"scene": holder, "aabb": kept.get_aabb()}
+			return _prototypes[model]
 	if FileAccess.file_exists(path) and document.append_from_file(path, state) == OK:
 		var scene := document.generate_scene(state)
 		if scene is Node3D:
 			_strip(scene, LEFT_OUT.get(model, []))
 			if model in WELDED:
 				scene = _weld(scene)
+				DirAccess.make_dir_recursive_absolute("user://welded")
+				ResourceSaver.save((scene.get_child(0) as MeshInstance3D).mesh, cached)
+			else:
+				_fuse(scene)
 			var boxes: Array = []
 			_measure(scene, Transform3D.IDENTITY, boxes)
 			if not boxes.is_empty():
@@ -167,6 +183,80 @@ func _weld(scene: Node3D) -> Node3D:
 	welded.add_child(instance)
 	scene.free()
 	return welded
+
+
+## A rigged figure comes as dozens of small parts, each skinned to the skeleton on its own.
+## Fuse them into one skinned mesh with a surface per material: it moves exactly as before
+## and costs a fraction of the draw calls.
+func _fuse(scene: Node3D) -> void:
+	for skeleton: Skeleton3D in scene.find_children("*", "Skeleton3D", true, false):
+		var groups := {}  # Material -> [vertices, normals, bones, weights, indices]
+		var skin := Skin.new()
+		var fused: Array[MeshInstance3D] = []
+		for part: MeshInstance3D in skeleton.find_children("*", "MeshInstance3D", true, false):
+			if part.mesh == null or part.skin == null or part.get_node_or_null(part.skeleton) != skeleton:
+				continue
+			if not _fusable(part.mesh):
+				continue
+			var offset := skin.get_bind_count()
+			for i in part.skin.get_bind_count():
+				var bone_name := part.skin.get_bind_name(i)
+				if bone_name != &"":
+					skin.add_named_bind(bone_name, part.skin.get_bind_pose(i))
+				else:
+					skin.add_bind(part.skin.get_bind_bone(i), part.skin.get_bind_pose(i))
+			for surface in part.mesh.get_surface_count():
+				var material: Material = part.mesh.surface_get_material(surface)
+				var arrays := part.mesh.surface_get_arrays(surface)
+				var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+				if not groups.has(material):
+					groups[material] = [PackedVector3Array(), PackedVector3Array(), PackedInt32Array(),
+						PackedFloat32Array(), PackedInt32Array()]
+				var group: Array = groups[material]
+				var base: int = group[0].size()
+				group[0].append_array(vertices)
+				group[1].append_array(arrays[Mesh.ARRAY_NORMAL])
+				for bone: int in arrays[Mesh.ARRAY_BONES]:
+					group[2].append(bone + offset)
+				group[3].append_array(arrays[Mesh.ARRAY_WEIGHTS])
+				var indices: Variant = arrays[Mesh.ARRAY_INDEX]
+				for i in (indices.size() if indices != null else vertices.size()):
+					group[4].append(base + (indices[i] if indices != null else i))
+			fused.append(part)
+		if fused.size() < 2:
+			continue
+		var mesh := ArrayMesh.new()
+		for material: Material in groups:
+			var arrays := []
+			arrays.resize(Mesh.ARRAY_MAX)
+			arrays[Mesh.ARRAY_VERTEX] = groups[material][0]
+			arrays[Mesh.ARRAY_NORMAL] = groups[material][1]
+			arrays[Mesh.ARRAY_BONES] = groups[material][2]
+			arrays[Mesh.ARRAY_WEIGHTS] = groups[material][3]
+			arrays[Mesh.ARRAY_INDEX] = groups[material][4]
+			mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+			mesh.surface_set_material(mesh.get_surface_count() - 1, material)
+		var body := MeshInstance3D.new()
+		body.name = "body"
+		body.mesh = mesh
+		body.skin = skin
+		skeleton.add_child(body)
+		body.skeleton = NodePath("..")
+		for part in fused:
+			part.get_parent().remove_child(part)
+			part.free()
+
+
+## Only plain four-weight, untextured parts are fused; anything else is left as it came.
+func _fusable(mesh: Mesh) -> bool:
+	for surface in mesh.get_surface_count():
+		var arrays := mesh.surface_get_arrays(surface)
+		var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		if mesh.surface_get_material(surface) == null or arrays[Mesh.ARRAY_NORMAL] == null \
+				or arrays[Mesh.ARRAY_BONES] == null or arrays[Mesh.ARRAY_WEIGHTS] == null \
+				or arrays[Mesh.ARRAY_BONES].size() != vertices.size() * 4:
+			return false
+	return true
 
 
 func _gather(node: Node, parent: Transform3D, groups: Dictionary) -> void:

@@ -6,12 +6,11 @@ extends Node3D
 ## apart, and models with nothing to paint fly their owner's flag instead. Arcs between capitals show
 ## what holds between two civs: a trade deal (green), an alliance (blue), a war (red).
 ##
-## A tile holds up to three buildings, and buildings belong to named villages. The map
-## shows them two ways, switching with the camera like villagers and labels do:
-##   - from afar, each village is one consolidated cluster (bigger as it grows), and a
-##     capital's town is a ring of houses around its castle or tower;
-##   - closer in, every building is drawn on its own, sharing its tile with the others
-##     there, and each village is named.
+## Every building stands on its own ground and is drawn at every zoom. Finished buildings
+## are drawn in batches (batches.gd); a building site is a node of its own while it rises.
+## Buildings belong to named villages, whose names appear closer in.
+
+const Batches := preload("res://scripts/batches.gd")
 
 const BUILDING_WIDTH := 0.62  # of the plain block used if a model is missing
 const PLINTH_HEIGHT := 0.12
@@ -95,6 +94,10 @@ var _native_name := ""
 var _links: ImmediateMesh
 var _link_labels := {}  # "a:b" -> Label3D naming the war or alliance
 var _detail := 0  # 0 whole-map view, 1 closer, 2 full detail
+var _view_distance := 110.0  # how far the camera is, for what is sized to the screen
+var _batches: Node3D  # batches.gd: every finished building of the pack's
+var _batched := {}  # building key -> true, for the ones drawn there
+var _marker_cache := {}
 var _link_material: StandardMaterial3D
 
 
@@ -104,6 +107,10 @@ func setup(terrain: Node3D, init: Dictionary, civ_colors: Array, models: RefCoun
 	for child in get_children():
 		child.queue_free()
 	_nodes.clear()
+	_batched.clear()
+	_marker_cache.clear()
+	_batches = Batches.new()
+	add_child(_batches)
 	_link_labels.clear()
 	_body_meshes.clear()
 	_plinth_meshes.clear()
@@ -166,6 +173,14 @@ func update(civs: Array, regions: Array) -> void:
 		for building: Dictionary in civ["buildings"]:
 			var key := "b:%d:%d" % [civ_id, int(building["id"])]
 			seen[key] = true
+			# A finished building of the pack's is drawn in the batches, not as a node of its own.
+			if building["complete"] and _batchable(str(building["type"])):
+				if not _batches.has(key):
+					if _nodes.has(key):  # it was a building site until now
+						_nodes[key].queue_free()
+						_nodes.erase(key)
+					_batch_building(key, civ_id, building)
+				continue
 			if not _nodes.has(key):
 				_nodes[key] = _make_building(civ_id, building)
 				# Fell the trees on the ground it stands on.
@@ -173,26 +188,33 @@ func update(civs: Array, regions: Array) -> void:
 			var grown: float = 1.0 if building["complete"] else lerpf(0.15, 1.0, float(building["progress"]))
 			_nodes[key].scale = Vector3(1.0, grown, 1.0)
 		for village: Dictionary in civ["villages"]:
-			var count := int(village["buildings"])
-			var tiers: Array = CAPITAL_TIERS if village["capital"] else VILLAGE_TIERS
-			var tier := 0
-			while count < int(tiers[tier][0]):
-				tier += 1
-			var key := "v:%d:%d:%d" % [civ_id, int(village["id"]), tier]
+			if village["capital"]:
+				continue  # the capital is already labelled
+			var key := "v:%d:%d" % [civ_id, int(village["id"])]
 			seen[key] = true
 			if not _nodes.has(key):
-				var footprint: float = capital_tiles.get("%d:%d" % [int(village["x"]), int(village["y"])], TOWN_FOOTPRINT)
-				_nodes[key] = _make_village(civ_id, village, tier, footprint)
+				_nodes[key] = _make_village(civ_id, village)
 	for key: String in _nodes.keys():
 		if not seen.has(key):
-			_terrain.remove_clearing(key)
+			if not _batches.has(key):
+				_terrain.remove_clearing(key)
 			_nodes[key].queue_free()
 			_nodes.erase(key)
+	for key: String in _batched.keys():
+		if not seen.has(key):
+			_terrain.remove_clearing(key)
+			_batches.remove(key)
+			_batched.erase(key)
+	_batches.flush()
 
 
 ## What the map labels at each zoom. From afar only each civ's own capital is named,
 ## larger so it can be read; other capitals and alliance names appear closer in.
 ## War names always show: they are the news.
+func set_view_distance(distance: float) -> void:
+	_view_distance = distance
+
+
 func set_detail(detail: int) -> void:
 	_detail = detail
 	for node: Node3D in _nodes.values():
@@ -208,7 +230,6 @@ func _show_capital_label(node: Node3D) -> void:
 	var label: Label3D = node.get_meta("label")
 	var is_main: bool = node.get_meta("main")
 	label.visible = is_main or _detail >= 1
-	label.pixel_size = 0.042 if _detail == 0 else (0.02 if _detail == 1 else 0.01)
 
 
 ## Buildings are always drawn one by one; a village's name appears closer in.
@@ -217,23 +238,22 @@ func _show_settled(node: Node3D) -> void:
 		"building":
 			node.visible = true  # everything is drawn to one scale at every zoom
 		"village":
-			node.get_meta("cluster").visible = false
 			if node.has_meta("name_label"):
 				var name_label: Label3D = node.get_meta("name_label")
 				name_label.visible = _detail >= 1
-				name_label.pixel_size = 0.014 if _detail == 1 else 0.007
 
 
 func _show_link_label(label: Label3D) -> void:
 	var is_war: bool = label.get_meta("war", false)
 	label.visible = is_war or _detail >= 1
-	label.pixel_size = 0.04 if _detail == 0 else 0.018
 
 
 ## Redraws the arcs between civ capitals. Every pair of living civs has one, coloured
 ## by what holds between them: red for war, blue for alliance, green for a trade
 ## deal, thin grey for nothing in particular. Wars and alliances carry their name.
 func update_links(civs: Array, relations: Array, deals: Array) -> void:
+	# The arcs are as wide on screen from close up as from across the map.
+	var width := LINK_WIDTH * clampf(_view_distance / 110.0, 0.08, 1.6)
 	var capitals := {}
 	for civ: Dictionary in civs:
 		if civ["alive"] and not civ["settlements"].is_empty():
@@ -253,13 +273,13 @@ func update_links(civs: Array, relations: Array, deals: Array) -> void:
 		var key := "%d:%d" % [a, b]
 		var status: String = relation["status"]
 		if status == "war":
-			named[key] = _add_link(capitals[a], capitals[b], LINK_COLORS["war"], 1.0, LINK_WIDTH * 1.5)
+			named[key] = _add_link(capitals[a], capitals[b], LINK_COLORS["war"], 1.0, width * 1.5)
 		elif status == "alliance":
-			named[key] = _add_link(capitals[a], capitals[b], LINK_COLORS["alliance"], 1.0, LINK_WIDTH)
+			named[key] = _add_link(capitals[a], capitals[b], LINK_COLORS["alliance"], 1.0, width)
 		if trading.has(key):
-			_add_link(capitals[a], capitals[b], LINK_COLORS["deal"], 0.6, LINK_WIDTH)
+			_add_link(capitals[a], capitals[b], LINK_COLORS["deal"], 0.6, width)
 		elif status == "peace":
-			_add_link(capitals[a], capitals[b], LINK_COLORS["neutral"], 0.35, LINK_WIDTH * 0.45)
+			_add_link(capitals[a], capitals[b], LINK_COLORS["neutral"], 0.35, width * 0.45)
 		if named.has(key):
 			_name_link(key, str(relation["name"]) if relation["name"] != null else "", named[key], LINK_COLORS[status])
 	for key: String in _link_labels.keys():
@@ -291,7 +311,8 @@ func _name_link(key: String, text: String, at: Vector3, color: Color) -> void:
 		var label := Label3D.new()
 		label.font_size = 40
 		label.outline_size = 12
-		label.pixel_size = 0.018
+		label.fixed_size = true  # the same size on screen at every zoom
+		label.pixel_size = 0.0005
 		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 		label.no_depth_test = true
 		add_child(label)
@@ -355,64 +376,89 @@ func _make_building(civ_id: int, building: Dictionary) -> Node3D:
 	return root
 
 
-## A village as one cluster of models, for the whole-map view, with its name for closer in.
-## A capital's town has no name of its own (the capital is already labelled) and its
-## houses ring the castle or tower instead of standing at the centre.
-func _make_village(civ_id: int, village: Dictionary, tier: int, footprint: float) -> Node3D:
-	var x := int(village["x"])
-	var y := int(village["y"])
-	var color: Color = _civ_colors[civ_id]
-	var material: Material = _models.tinted_material(color)
+## A village is its buildings; all that is added is its name, for closer in.
+func _make_village(civ_id: int, village: Dictionary) -> Node3D:
 	var root := Node3D.new()
-	root.position = _terrain.tile_position(x, y)
+	root.position = _terrain.tile_position(int(village["x"]), int(village["y"]))
 	root.set_meta("kind", "village")
-	var cluster := Node3D.new()
-	root.add_child(cluster)
-	root.set_meta("cluster", cluster)
-	var start := (x * 5 + y * 3) % 6 * PI / 3
-	var name_label: Label3D = null
-	if village["capital"]:
-		var spec: Array = CAPITAL_TIERS[tier]
-		var houses := int(spec[1])
-		var landmarks: Array = spec[2]
-		var ring := footprint * 0.5 + 0.75
-		for i in houses + landmarks.size():
-			var model_name: String = landmarks[i - houses] if i >= houses else ("building_home_A_green" if i % 2 == 0 else "building_home_B_green")
-			_place(cluster, model_name, material, 1.25 if i >= houses else 0.95, start + TAU * i / (houses + landmarks.size()), ring)
-	else:
-		var spec: Array = VILLAGE_TIERS[tier]
-		var across: float = spec[1]
-		var models: Array = spec[2]
-		# The first model is the landmark at the centre; the rest stand round it.
-		_place(cluster, models[0], material, across * 0.5, start, 0.0)
-		for i in range(1, models.size()):
-			_place(cluster, models[i], material, across * 0.36, start + TAU * i / (models.size() - 1), across * 0.42)
-		name_label = Label3D.new()
-		name_label.text = str(village["name"])
-		name_label.font_size = 40
-		name_label.outline_size = 12
-		name_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-		name_label.no_depth_test = true
-		name_label.modulate = color.lightened(0.6)
-		name_label.position.y = 1.5
-		root.add_child(name_label)
-	if name_label != null:
-		root.set_meta("name_label", name_label)
+	var name_label := Label3D.new()
+	name_label.text = str(village["name"])
+	name_label.font_size = 40
+	name_label.outline_size = 12
+	name_label.fixed_size = true
+	name_label.pixel_size = 0.00038
+	name_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	name_label.no_depth_test = true
+	name_label.modulate = (_civ_colors[civ_id] as Color).lightened(0.6)
+	name_label.position.y = 1.5
+	root.add_child(name_label)
+	root.set_meta("name_label", name_label)
 	_show_settled(root)
 	add_child(root)
 	return root
 
 
-func _place(parent: Node3D, model_name: String, material: Material, footprint: float, angle: float, out: float) -> void:
-	var model: Node3D = _models.instance(model_name, material, footprint)
-	if model == null:
-		return
-	var offset := Vector3(cos(angle), 0, sin(angle)) * out
-	var origin: Vector3 = parent.get_parent().position
-	model.position = offset
-	model.position.y = _terrain.height_at(origin.x + offset.x, origin.z + offset.z) - origin.y
-	model.rotation.y = -angle + PI / 2
-	parent.add_child(model)
+## True for a building type drawn with one of the pack's models, which can go in the batches.
+func _batchable(type: String) -> bool:
+	var spec: Dictionary = BUILDING_MODELS.get(type, {})
+	return spec.has("model") and not spec.has("scene") and not _models.parts(spec["model"], 1.0).is_empty()
+
+
+## Where a building stands and which way it faces: the same for a site and the finished thing.
+func _building_spot(building: Dictionary) -> Transform3D:
+	var x := int(building["x"])
+	var y := int(building["y"])
+	var tiles := int(_building_defs.get(building["type"], {}).get("size", 1))
+	var off := 0.5 if tiles % 2 == 0 else 0.0
+	var spot: Vector3 = _terrain.tile_position(x, y) + Vector3(off, 0, off)
+	spot.y = _terrain.height_at(spot.x, spot.z)
+	return Transform3D(Basis(Vector3.UP, (x * 7 + y * 13) % 4 * PI / 2), spot)
+
+
+## Hand a finished building's parts to the batches: its model, and the flag or pennant with it.
+func _batch_building(key: String, civ_id: int, building: Dictionary) -> void:
+	var type: String = building["type"]
+	var spec: Dictionary = BUILDING_MODELS[type]
+	var tiles := int(_building_defs.get(type, {}).get("size", 1))
+	var color: Color = _civ_colors[civ_id]
+	var x := int(building["x"])
+	var y := int(building["y"])
+	var placed := _building_spot(building)
+	var upright := Transform3D(Basis(), placed.origin)  # flags and pennants do not turn with the model
+	var name: String = spec["model"]
+	if spec.has("alt") and (x + y) % 2 == 1:
+		name = spec["alt"]
+	var material: Material = _models.tinted_material(color) if spec.get("tinted", false) else _models.base_material()
+	var lift := Transform3D(Basis(), Vector3(0, float(spec.get("lift", 0.0)) * tiles, 0))
+	for part: Array in _models.parts(name, float(spec["size"]) * tiles):
+		_batches.add(key, part[0], material, placed * lift * (part[1] as Transform3D))
+	if not spec.get("tinted", false):
+		var at := Transform3D(Basis(), Vector3(0.36, 0.0, 0.36) * tiles)
+		for part: Array in _models.parts("flag_green", 0.42):
+			_batches.add(key, part[0], _models.tinted_material(color), upright * at * (part[1] as Transform3D))
+	if spec.get("marker", false):
+		var top: float = (_models.height(name, float(spec["size"])) + float(spec.get("lift", 0.0))) * tiles
+		var marker: Array = _marker_meshes(Color.html(_building_defs[type]["color"]))
+		_batches.add(key, marker[0], marker[0].material, upright * Transform3D(Basis(), Vector3(-0.3, top + 0.05, -0.3)))
+		_batches.add(key, marker[1], marker[1].material, upright * Transform3D(Basis(), Vector3(-0.17, top + 0.21, -0.3)))
+	_batched[key] = true
+	_terrain.set_clearing(key, placed.origin, tiles * 0.5 + 0.05)
+
+
+## The pole and pennant meshes for a marker in `color`, shared by every marker of that colour.
+func _marker_meshes(color: Color) -> Array:
+	var key := color.to_html(false)
+	if not _marker_cache.has(key):
+		var pole := CylinderMesh.new()
+		pole.top_radius = 0.02
+		pole.bottom_radius = 0.02
+		pole.height = 0.5
+		pole.material = _flat_material(Color(0.25, 0.2, 0.15))
+		var pennant := BoxMesh.new()
+		pennant.size = Vector3(0.26, 0.17, 0.03)
+		pennant.material = _flat_material(color)
+		_marker_cache[key] = [pole, pennant]
+	return _marker_cache[key]
 
 
 ## The direction (as a rotation about the vertical) from a spot to the lowest ground `reach`
@@ -511,7 +557,8 @@ func _make_capital(color: Color, caption: String, x: int, y: int, is_main: bool)
 	label.text = caption
 	label.font_size = 64 if is_main else 44
 	label.outline_size = 16
-	label.pixel_size = 0.02
+	label.fixed_size = true
+	label.pixel_size = 0.00065
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	label.no_depth_test = true
 	label.modulate = color.lightened(0.5)

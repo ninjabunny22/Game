@@ -67,6 +67,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			_hud.toggle_diplomacy()
 		KEY_B:
 			_terrain.toggle_region_borders()
+		KEY_H:
+			_hud.toggle_help()
 		KEY_BRACKETLEFT:
 			_set_ui_scale(get_window().content_scale_factor - UI_SCALE_STEP)
 		KEY_BRACKETRIGHT:
@@ -86,11 +88,19 @@ func _process(delta: float) -> void:
 				Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
 				Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME),
 				Performance.get_monitor(Performance.OBJECT_NODE_COUNT)])
+			var parts: Array[String] = []
+			for system: Node in [_terrain, _civ_view, _unit_view, _hud]:
+				var kinds := {}
+				for node: Node in system.find_children("*", "", true, false):
+					kinds[node.get_class()] = kinds.get(node.get_class(), 0) + 1
+				parts.append("%s %s" % [system.get_script().resource_path.get_file(), kinds])
+			print("  ", "  ".join(parts))
 	# CIVSIM_QUIT_AT=<tick> closes the viewer once the game reaches that tick, for scripted runs.
 	var quit_at := OS.get_environment("CIVSIM_QUIT_AT")
 	if quit_at != "" and _tick >= int(quit_at):
 		get_tree().quit()
 	var distance: float = _camera.distance()
+	_civ_view.set_view_distance(distance)
 	var detail := 0 if distance > FAR_VIEW else (1 if distance > NEAR_VIEW else 2)
 	if detail != _detail:
 		_detail = detail
@@ -145,20 +155,59 @@ func _on_tick(tick: int, data: Dictionary) -> void:
 
 
 func _add_lighting() -> void:
+	# A soft afternoon: warm low sun, cool sky fill, a little haze toward the horizon.
+	var sky_material := ProceduralSkyMaterial.new()
+	sky_material.sky_top_color = Color(0.24, 0.44, 0.74)
+	sky_material.sky_horizon_color = Color(0.74, 0.82, 0.9)
+	sky_material.ground_bottom_color = Color(0.13, 0.2, 0.3)
+	sky_material.ground_horizon_color = Color(0.74, 0.82, 0.9)
+	sky_material.sun_angle_max = 12.0
 	var sky := Sky.new()
-	sky.sky_material = ProceduralSkyMaterial.new()
+	sky.sky_material = sky_material
 	var environment := Environment.new()
 	environment.background_mode = Environment.BG_SKY
 	environment.sky = sky
 	environment.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	environment.ambient_light_energy = 0.9
-	environment.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	environment.ambient_light_energy = 0.75
+	environment.tonemap_mode = Environment.TONE_MAPPER_ACES
+	environment.tonemap_white = 6.0
+	environment.adjustment_enabled = true
+	environment.adjustment_saturation = 1.12
+	environment.adjustment_contrast = 1.04
+	# Contact shadows where buildings and trees meet the ground.
+	environment.ssao_enabled = true
+	environment.ssao_radius = 0.9
+	environment.ssao_intensity = 1.6
+	environment.ssao_power = 1.4
+	# Bright roofs, water glints and snow bloom a little.
+	environment.glow_enabled = true
+	environment.glow_intensity = 0.35
+	environment.glow_bloom = 0.08
+	environment.glow_hdr_threshold = 1.05
+	# Distance haze, so the far side of the map recedes instead of ending.
+	environment.fog_enabled = true
+	environment.fog_light_color = Color(0.72, 0.8, 0.9)
+	environment.fog_density = 0.0016
+	environment.fog_aerial_perspective = 0.4
+	environment.fog_sky_affect = 0.0
 	var world_environment := WorldEnvironment.new()
 	world_environment.environment = environment
 	add_child(world_environment)
 
 	var sun := DirectionalLight3D.new()
-	sun.rotation_degrees = Vector3(-52.0, -35.0, 0.0)
+	sun.rotation_degrees = Vector3(-46.0, -38.0, 0.0)
+	sun.light_color = Color(1.0, 0.95, 0.86)
+	sun.light_energy = 1.25
 	sun.shadow_enabled = true
-	sun.directional_shadow_max_distance = 300.0
+	sun.shadow_blur = 1.6
+	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+	sun.directional_shadow_blend_splits = true
+	sun.directional_shadow_max_distance = 260.0
 	add_child(sun)
+	# A weak cool light from the other side keeps the shaded faces of buildings readable.
+	var fill := DirectionalLight3D.new()
+	fill.rotation_degrees = Vector3(-30.0, 140.0, 0.0)
+	fill.light_color = Color(0.7, 0.8, 1.0)
+	fill.light_energy = 0.22
+	fill.shadow_enabled = false
+	add_child(fill)

@@ -144,18 +144,18 @@ func _show_army(entry: Dictionary) -> void:
 	if _detail == 0:
 		label.visible = is_field
 		label.text = str(entry.get("size", 0))
-		label.pixel_size = 0.05
+		label.pixel_size = 0.0007
 		label.position.y = 7.4
 	elif _detail == 1:
 		label.visible = is_field
 		label.text = str(entry.get("size", 0))
-		label.pixel_size = 0.011
+		label.pixel_size = 0.0005
 		label.position.y = 1.3
 	else:
 		# Up close: exactly what is in the army, and who leads it.
 		label.visible = entry.get("caption", "") != ""
 		label.text = entry.get("caption", "")
-		label.pixel_size = 0.007
+		label.pixel_size = 0.00034
 		label.position.y = 1.3
 
 
@@ -254,6 +254,7 @@ func _make_army(civ: int, army: Dictionary, look: String) -> Dictionary:
 
 	var label := Label3D.new()
 	label.font_size = 44
+	label.fixed_size = true  # the same size on screen at every zoom
 	label.outline_size = 12
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	label.no_depth_test = true
