@@ -103,16 +103,22 @@ def test_nothing_is_demolished_for_a_marginal_gain(sim):
     before = len(civ.buildings)
 
     events: list = []
-    # A farm stands on four tiles, so four houses would have to go for it.
-    assert farm.size == 2
-    assert sim.ai._make_room(civ, mods, farm, 4 * 1.5 * last_house, needs, tick=100, events=events) is None
+    assert sim.ai._make_room(civ, mods, farm, 1.5 * last_house, needs, tick=100, events=events) is None
     assert len(civ.buildings) == before and not events
 
-    freed = sim.ai._make_room(civ, mods, farm, 4 * 2.5 * last_house, needs, tick=100, events=events)
+    freed = sim.ai._make_room(civ, mods, farm, 2.5 * last_house, needs, tick=100, events=events)
     ground = footprint(sim.world, "farm", freed)
     assert freed is not None and not set(ground) & set(civ.buildings_by_tile())
     assert any(sim.world.yields[t].get("food", 0) > 0 for t in ground), "the freed ground suits the new building"
-    assert len(civ.buildings) == before - 4
+    assert len(civ.buildings) == before - 1
+
+    # A larger building needs its whole square cleared: four houses go for a 2x2 university.
+    civ.last_demolition = -10_000
+    university = sim.building_defs["university"]
+    before = len(civ.buildings)
+    site = sim.ai._make_room(civ, mods, university, 1e9, needs, tick=100, events=events)
+    assert university.size == 2 and site is not None
+    assert len(civ.buildings) in (before - 4, before - 3), "three if the farm's freed tile is part of the square"
 
 
 # The construction techs each make demolition a little less wasteful, one per era.

@@ -30,6 +30,8 @@ var _ready_for_ticks := false
 var _civ_colors: Array = []
 var _territory_rev := -1
 var _detail := -1  # how much the map shows, set from how far the camera is
+var _perf_clock := 0.0  # CIVSIM_PERF=1 prints frame rate and draw calls every few seconds
+var _tick := 0
 
 
 func _ready() -> void:
@@ -74,7 +76,20 @@ func _unhandled_key_input(event: InputEvent) -> void:
 
 
 ## Labels and figures are shown according to zoom, so the far view stays readable.
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	if OS.get_environment("CIVSIM_PERF") == "1":
+		_perf_clock += delta
+		if _perf_clock >= 3.0:
+			_perf_clock = 0.0
+			print("perf tick %d: %d fps, %d draw calls, %d objects, %d nodes" % [
+				_tick, Engine.get_frames_per_second(),
+				Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
+				Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME),
+				Performance.get_monitor(Performance.OBJECT_NODE_COUNT)])
+	# CIVSIM_QUIT_AT=<tick> closes the viewer once the game reaches that tick, for scripted runs.
+	var quit_at := OS.get_environment("CIVSIM_QUIT_AT")
+	if quit_at != "" and _tick >= int(quit_at):
+		get_tree().quit()
 	var distance: float = _camera.distance()
 	var detail := 0 if distance > FAR_VIEW else (1 if distance > NEAR_VIEW else 2)
 	if detail != _detail:
@@ -118,6 +133,7 @@ func _on_init(data: Dictionary) -> void:
 func _on_tick(tick: int, data: Dictionary) -> void:
 	if not _ready_for_ticks:
 		return
+	_tick = tick
 	var rev := int(data["territory_rev"])
 	if rev != _territory_rev:
 		_territory_rev = rev

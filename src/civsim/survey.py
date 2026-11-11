@@ -25,20 +25,22 @@ from .strategy import make_brain
 DEFAULT_SEEDS = (1, 2, 3, 7, 42, 101, 2024, 31337)
 
 
-def survey(seed: int, ticks: int) -> dict:
+def survey(seed: int, ticks: int, brain_name: str = "utility") -> dict:
     """Play one game with the built-in rules brain and return its counts."""
     sim = Simulation(SimConfig(seed=seed))
-    brain = make_brain("rules")
+    brain = make_brain(brain_name)
     world = sim.world
     counts = dict.fromkeys((
         "army_ticks_afloat", "army_ticks_aboard", "embarkations", "embarkations_from_port",
-        "villager_ticks_afloat", "army_ticks_no_route",
+        "villager_ticks_afloat", "army_ticks_no_route", "wars_declared", "alliances_formed",
     ), 0)
     first_harbour = None
     was_at: dict[int, int] = {}  # army id -> tile last tick
     for _ in range(ticks):
         harbour_land = {civ.id: ports(civ, world) for civ in sim.civs}  # as it stood when armies moved
-        sim.step_with(brain)
+        for event in sim.step_with(brain):
+            counts["wars_declared"] += "declares war" in event.get("text", "")
+            counts["alliances_formed"] += "form an alliance" in event.get("text", "")
         for civ in sim.civs:
             if first_harbour is None and any(b.type == "harbour" and b.complete for b in civ.buildings):
                 first_harbour = sim.tick
@@ -75,15 +77,17 @@ def survey(seed: int, ticks: int) -> dict:
                 under[tile] = under.get(tile, 0) + 1
     large["built_tiles"] = len(under)
     large["overlapping_tiles"] = sum(1 for count in under.values() if count > 1)
-    return {"seed": seed, "ticks": ticks, "first_harbour_tick": first_harbour, **counts, "large": large}
+    return {"seed": seed, "ticks": ticks, "first_harbour_tick": first_harbour, **counts, "large": large,
+            "alive": sum(civ.alive for civ in sim.civs), "population": round(sum(c.population for c in sim.civs))}
 
 
 def report(results: list[dict]) -> str:
-    lines = ["seed    harbour@  afloat  aboard  put-out  from-port  villagers-afloat  no-route"]
+    lines = ["seed    harbour@  afloat  aboard  put-out  from-port  villagers-afloat  no-route  wars  alliances  alive  population"]
     for r in results:
         lines.append(f"{r['seed']:<7d} {r['first_harbour_tick'] or '-':>8}  {r['army_ticks_afloat']:6d}  "
                      f"{r['army_ticks_aboard']:6d}  {r['embarkations']:7d}  {r['embarkations_from_port']:9d}  "
-                     f"{r['villager_ticks_afloat']:16d}  {r['army_ticks_no_route']:8d}")
+                     f"{r['villager_ticks_afloat']:16d}  {r['army_ticks_no_route']:8d}  {r['wars_declared']:4d}  "
+                     f"{r['alliances_formed']:9d}  {r['alive']:5d}  {r['population']:10d}")
     total = {key: sum(r[key] for r in results) for key in
              ("army_ticks_afloat", "army_ticks_aboard", "embarkations", "embarkations_from_port")}
     with_ships = sum(1 for r in results if r["army_ticks_aboard"])
@@ -105,9 +109,10 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="civsim.survey", description=__doc__.split("\n\n")[0])
     parser.add_argument("--seeds", type=int, nargs="+", default=list(DEFAULT_SEEDS))
     parser.add_argument("--ticks", type=int, default=6000, help="ticks per game")
+    parser.add_argument("--brain", default="utility", help='who plays the civs: "utility" (default) or "rules"')
     args = parser.parse_args(argv)
     with ProcessPoolExecutor() as pool:
-        results = list(pool.map(survey, args.seeds, [args.ticks] * len(args.seeds)))
+        results = list(pool.map(survey, args.seeds, [args.ticks] * len(args.seeds), [args.brain] * len(args.seeds)))
     print(report(results))
 
 

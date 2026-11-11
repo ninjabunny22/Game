@@ -19,9 +19,10 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--paused", action="store_true", help="start paused; a viewer can resume or step")
     parser.add_argument("--headless", action="store_true", help="no server: run --ticks at full speed and report")
     parser.add_argument("--ticks", type=int, default=1000, help="ticks to run with --headless")
-    parser.add_argument("--llm", default="ollama", metavar="PROVIDER",
-                        help='who answers the strategic check-ins: "ollama" (default) or "rules" for the '
-                             "built-in deterministic policy, which needs no model")
+    parser.add_argument("--llm", default="utility", metavar="PROVIDER",
+                        help='who answers the strategic check-ins: "utility" (default), the built-in '
+                             'strategist, which needs no model; "rules" for the simple policy the tests '
+                             'use; or "ollama" to ask a local language model')
     parser.add_argument("--model", help="model name for the LLM provider (default: llama3.1:8b for ollama)")
     parser.add_argument("--llm-url", help="base URL of the LLM provider (default: http://localhost:11434 for ollama)")
     args = parser.parse_args(argv)

@@ -94,7 +94,12 @@ class RuleBrain:
 
 
 def make_brain(provider: str, model: str | None = None, base_url: str | None = None) -> Brain:
-    """"rules" for the deterministic policy, otherwise an LLM provider name (see llm.make_client)."""
+    """"utility" for the built-in strategist, "rules" for the simple deterministic policy,
+    otherwise an LLM provider name (see llm.make_client)."""
+    if provider == "utility":
+        from .utility import UtilityBrain
+
+        return UtilityBrain()
     if provider == "rules":
         return RuleBrain()
     from ..llm import make_client

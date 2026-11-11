@@ -52,6 +52,7 @@ FALLOFF_POWER = 0.6  # ... but gently: rising costs and upkeep are what really l
 STORE_NEED = 0.4  # how much a completely full store makes the civ want more room for it
 UPKEEP_CAUTION = 0.2  # don't add upkeep in a resource that is below this share of storage and not growing
 TILES_PER_EXPANSION = 4  # claiming budget per expansion; a river tile without bridges uses more of it
+HARBOUR_NEED = 0.6  # ... and a harbour, once it can build one
 STABLES_NEED = 0.5  # how much a civ at peace wants stables, on the scale of the other needs
 NO_FOREST = 6  # wood work slots on the land (capitals aside) below which expansion stops costing wood
 WATER_MARGIN = 1.15  # look for more water once supply is below this multiple of consumption
@@ -315,6 +316,9 @@ class CivAI:
             return max(needs["store"][res] for res in bdef.stores)
         if bdef.need_resource:
             return needs["resource"][bdef.need_resource]
+        if bdef.id == "harbour":
+            # Ships are the only way across open water: wanted for war as much as for the catch.
+            return max(needs[bdef.category], needs["military"], HARBOUR_NEED)
         if bdef.id == "stables":
             # Worth having in peace too: horses work the land as well as carrying cavalry.
             return max(needs["military"], STABLES_NEED)

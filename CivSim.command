@@ -1,8 +1,10 @@
 #!/bin/bash
 # Starts everything CivSim needs, in order, and opens the viewer:
-#   1. Ollama (only if it is not already running)
-#   2. the Python simulation
-#   3. the Godot viewer, once the simulation is accepting connections
+#   1. the Python simulation
+#   2. the Godot viewer, once the simulation is accepting connections
+# The civs are played by the built-in strategist, which needs no model. Run with
+# "--llm ollama" to have a local language model play them instead: Ollama is then
+# started first (if it is not already running).
 # Closing the Godot window stops the simulation, and Ollama too if this script started it.
 #
 # Double-click this file in Finder, or run it from a terminal:
@@ -54,7 +56,7 @@ sim_listening() { nc -z 127.0.0.1 "$SIM_PORT" 2>/dev/null; }
 
 find_godot() {
     local app
-    for app in "${GODOT:-}" "/Applications/Godot.app" "$HOME/Applications/Godot.app" "$HOME/Downloads/Godot.app" \
+    for app in "${GODOT:-}" "$ROOT/Godot.app" "/Applications/Godot.app" "$HOME/Applications/Godot.app" "$HOME/Downloads/Godot.app" \
                "$(mdfind "kMDItemCFBundleIdentifier == 'org.godotengine.godot'" 2>/dev/null | head -1)"; do
         [ -z "$app" ] && continue
         if [ -x "$app/Contents/MacOS/Godot" ]; then
@@ -76,7 +78,11 @@ echo
 
 GODOT_BIN="$(find_godot)"
 [ -n "$GODOT_BIN" ] || fail "Godot not found. Put Godot.app in /Applications, or set GODOT=/path/to/Godot.app."
-command -v ollama >/dev/null || fail "The 'ollama' command was not found. Install it from https://ollama.com."
+USE_OLLAMA=""
+case " $* " in *" --llm ollama "*|*" --llm=ollama "*) USE_OLLAMA=1 ;; esac
+if [ -n "$USE_OLLAMA" ]; then
+    command -v ollama >/dev/null || fail "The 'ollama' command was not found. Install it from https://ollama.com."
+fi
 sim_listening && fail "Something is already listening on port $SIM_PORT. Is another copy of the sim running?"
 
 if [ ! -x "$PYTHON" ]; then
@@ -85,30 +91,32 @@ if [ ! -x "$PYTHON" ]; then
     "$PYTHON" -m pip install -q -e "$ROOT" || fail "Could not install the simulation's dependencies."
 fi
 
-# -- 1. Ollama -----------------------------------------------------------------
+# -- Ollama, only when a language model plays the civs -----------------------------------------------------------------
 
-if ollama_up; then
-    echo "[1/3] Ollama is already running; using it."
-else
-    echo "[1/3] Starting Ollama..."
-    ollama serve >"$LOGS/ollama.log" 2>&1 &
-    OLLAMA_PID=$!
-    for _ in $(seq 1 60); do
-        ollama_up && break
-        kill -0 "$OLLAMA_PID" 2>/dev/null || fail "Ollama exited while starting. See $LOGS/ollama.log"
-        sleep 0.5
-    done
-    ollama_up || fail "Ollama did not come up within 30 seconds. See $LOGS/ollama.log"
+if [ -n "$USE_OLLAMA" ]; then
+    if ollama_up; then
+        echo "[0/2] Ollama is already running; using it."
+    else
+        echo "[0/2] Starting Ollama..."
+        ollama serve >"$LOGS/ollama.log" 2>&1 &
+        OLLAMA_PID=$!
+        for _ in $(seq 1 60); do
+            ollama_up && break
+            kill -0 "$OLLAMA_PID" 2>/dev/null || fail "Ollama exited while starting. See $LOGS/ollama.log"
+            sleep 0.5
+        done
+        ollama_up || fail "Ollama did not come up within 30 seconds. See $LOGS/ollama.log"
+    fi
+
+    if ! ollama list 2>/dev/null | awk '{print $1}' | grep -qx "$MODEL"; then
+        echo "      Model $MODEL is not installed; downloading it (about 5 GB, one time)..."
+        ollama pull "$MODEL" || fail "Could not download $MODEL."
+    fi
 fi
 
-if ! ollama list 2>/dev/null | awk '{print $1}' | grep -qx "$MODEL"; then
-    echo "      Model $MODEL is not installed; downloading it (about 5 GB, one time)..."
-    ollama pull "$MODEL" || fail "Could not download $MODEL."
-fi
+# -- 1. Simulation ---------------------------------------------------------------
 
-# -- 2. Simulation ---------------------------------------------------------------
-
-echo "[2/3] Starting the simulation..."
+echo "[1/2] Starting the simulation..."
 "$PYTHON" -m civsim --port "$SIM_PORT" "$@" >"$LOGS/sim.log" 2>&1 &
 SIM_PID=$!
 for _ in $(seq 1 60); do
@@ -121,9 +129,9 @@ for _ in $(seq 1 60); do
 done
 sim_listening || fail "The simulation did not start listening within 30 seconds. See $LOGS/sim.log"
 
-# -- 3. Viewer -------------------------------------------------------------------
+# -- 2. Viewer -------------------------------------------------------------------
 
-echo "[3/3] Opening the viewer. Close the Godot window to stop everything."
+echo "[2/2] Opening the viewer. Close the Godot window to stop everything."
 "$GODOT_BIN" --path "$ROOT/godot" >"$LOGS/godot.log" 2>&1
 
 echo

@@ -10,6 +10,7 @@ COST_GROWTH_PER_COPY = 0.2
 # A tile holds one building. Each type has its own size: it stands on a square of that many
 # tiles a side (BuildingDef.size), and no two buildings' ground overlaps.
 FILL_FIRST = 1000.0  # a site beside something already built is preferred to breaking new ground
+HARBOUR_SPREAD = 12  # tiles a civ's harbours keep apart, so they serve different shores
 FILL_FIRST_YIELD = 1.0  # ... for buildings placed by yield, worth half a point of yield
 CASTLE_REACH = 1  # a capital's castle stands on its own tile and the tiles this far around it
 
@@ -171,6 +172,11 @@ def find_site(civ, world: WorldMap, bdef: BuildingDef, ground: tuple | None = No
     free, beside_something = ground or survey_ground(civ, world)
     cx, cy = world.xy(civ.capital.tile)
     resource = bdef.placement.partition(":")[2]
+    # A harbour is for getting somewhere: it goes on the shore nearest a capital the civ does
+    # not hold, and well away from any harbour it already has.
+    own = {s.tile for s in civ.settlements}
+    abroad = [world.xy(tile) for tile in world.capital_tiles if tile not in own]
+    harbours = [world.xy(b.tile) for b in civ.buildings if b.type == bdef.id]
     best, best_score = None, -math.inf
     for tile in sorted(free):
         ground = footprint(world, bdef.id, tile) if bdef.size > 1 else (tile,)
@@ -186,6 +192,9 @@ def find_site(civ, world: WorldMap, bdef: BuildingDef, ground: tuple | None = No
             if tile_yield <= 0:
                 continue
             score = 2 * tile_yield - 0.15 * distance + (FILL_FIRST_YIELD if beside else 0.0)
+        elif bdef.placement == "coast" and abroad:
+            score = -min(math.hypot(x - ax, y - ay) for ax, ay in abroad)
+            score -= sum(HARBOUR_SPREAD for hx, hy in harbours if math.hypot(x - hx, y - hy) < HARBOUR_SPREAD)
         else:
             score = -distance + (FILL_FIRST if beside else 0.0)
         if score > best_score:

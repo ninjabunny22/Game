@@ -1,0 +1,127 @@
+"""The built-in strategist: what it decides, and that whatever it says is a valid answer."""
+
+import copy
+
+import pytest
+
+from civsim.config import SimConfig
+from civsim.diplomacy import Stance
+from civsim.simulation import Simulation
+from civsim.strategy import CheckinRequest, make_brain, parse_stances, stance_context
+from civsim.strategy.utility import UtilityBrain
+
+
+@pytest.fixture
+def context():
+    sim = Simulation(SimConfig(seed=3))
+    for _ in range(60):
+        sim.step()
+    context = stance_context(sim, sim.civs[0])
+    you = context["you"]
+    you["diplomacy_points"] = 10_000
+    you["max_soldiers"] = 10_000
+    you["weights"] = dict(you["weights"], military=1.3)
+    you["water"].update(urgency=0.0, status="comfortable")
+    for n in context["neighbors"]:
+        n.update(relation="peace", truce=False, in_reach=True, army_vs_yours="comparable", intel=None,
+                 at_war_with=[], allied_with=[], distrusted_ticks_left=0, their_stance_toward_you="trade",
+                 your_current_stance="trade", war_ticks=None, water_rich=False,
+                 population=you["population"], territory=you["territory"])
+    return context
+
+
+def decide(context) -> dict[str, dict]:
+    reply = UtilityBrain().decide(CheckinRequest(context["you"]["id"], context["tick"], context))
+    assert reply["reason"] and len(reply["stances"]) == len(context["neighbors"])
+    return {entry["civ"]: entry for entry in reply["stances"]}
+
+
+def test_it_is_the_default_brain_and_needs_no_model():
+    assert make_brain("utility").name == "utility"
+
+
+def test_it_trades_with_equals_and_attacks_the_weak_within_reach(context):
+    first, second = context["neighbors"][:2]
+    assert all(entry["stance"] == "trade" for entry in decide(context).values()), "no war from parity"
+    first["army_vs_yours"] = "much weaker"
+    stances = decide(context)
+    assert stances[first["name"]]["stance"] == "aggression"
+    assert 0.4 <= stances[first["name"]]["troop_commitment"] <= 0.9
+    assert stances[second["name"]]["stance"] == "trade"
+
+
+@pytest.mark.parametrize("change", [
+    {"truce": True}, {"in_reach": False}, {"relation": "alliance"},
+])
+def test_it_does_not_attack_across_a_truce_out_of_reach_or_an_ally(context, change):
+    target = context["neighbors"][0]
+    target.update(army_vs_yours="much weaker", **change)
+    assert decide(context)[target["name"]]["stance"] != "aggression"
+
+
+def test_it_never_proposes_a_war_it_cannot_declare(context):
+    target = context["neighbors"][0]
+    target["army_vs_yours"] = "much weaker"
+    for lack in ({"diplomacy_points": 0}, {"max_soldiers": 0}):
+        poor = copy.deepcopy(context)
+        poor["you"].update(lack)
+        assert decide(poor)[target["name"]]["stance"] != "aggression"
+
+
+def test_it_opens_no_second_front_unless_the_target_is_helpless(context):
+    enemy, other = context["neighbors"][:2]
+    enemy.update(relation="war", war_ticks=20)
+    other["army_vs_yours"] = "weaker"
+    stances = decide(context)
+    assert stances[enemy["name"]]["stance"] == "aggression", "an even war is kept up while it is young"
+    assert stances[other["name"]]["stance"] != "aggression"
+
+
+def test_it_seeks_peace_in_a_war_that_is_lost_or_has_dragged_on(context):
+    enemy = context["neighbors"][0]
+    enemy.update(relation="war", war_ticks=20, army_vs_yours="stronger")
+    assert decide(context)[enemy["name"]]["stance"] == "ignore"
+    enemy.update(army_vs_yours="comparable", war_ticks=400)
+    assert decide(context)[enemy["name"]]["stance"] == "ignore"
+    enemy.update(army_vs_yours="much weaker")
+    assert decide(context)[enemy["name"]]["stance"] == "aggression", "but a winning war is finished"
+
+
+def test_it_allies_against_a_shared_enemy_and_against_a_threat(context):
+    enemy, friend = context["neighbors"][:2]
+    enemy.update(relation="war", war_ticks=20)
+    friend["at_war_with"] = [enemy["name"]]
+    assert decide(context)[friend["name"]]["stance"] == "ally"
+
+    enemy.update(relation="peace", war_ticks=None, their_stance_toward_you="aggression", army_vs_yours="stronger")
+    friend["at_war_with"] = []
+    stances = decide(context)
+    assert stances[friend["name"]]["stance"] == "ally"
+    assert stances[enemy["name"]]["stance"] == "ignore", "no trade with someone about to attack"
+
+
+def test_a_thirsty_civ_courts_whoever_has_water_and_fights_for_it_only_as_a_last_resort(context):
+    wet = context["neighbors"][0]
+    wet.update(water_rich=True, army_vs_yours="much weaker")
+    context["you"]["water"].update(urgency=0.5, status="short")
+    assert decide(context)[wet["name"]]["stance"] != "aggression"
+    context["you"]["water"].update(urgency=0.9, status="critical")
+    wet["their_stance_toward_you"] = "ignore"
+    assert decide(context)[wet["name"]]["stance"] == "aggression"
+
+
+def test_whole_games_get_a_valid_answer_at_every_checkin():
+    brain = make_brain("utility")
+    for seed in (5, 11):
+        sim = Simulation(SimConfig(seed=seed))
+        answered = 0
+        for _ in range(1500):
+            sim.step()
+            for request in sim.take_requests():
+                reply = brain.decide(request)
+                intents, reason = parse_stances(reply, request.context, request.tick)
+                assert reason and len(intents) == len(request.context["neighbors"])
+                assert all(isinstance(intent.stance, Stance) for intent in intents.values())
+                sim.submit(request, reply)
+                answered += 1
+        assert answered >= 100

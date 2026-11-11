@@ -6,7 +6,7 @@
     "color": "#c8a26b", "height": 0.5
   },
   "farm": {
-    "name": "Farm", "size": 2, "category": "food", "placement": "yield:food",
+    "name": "Farm", "category": "food", "placement": "yield:food",
     "cost": {"wood": 15}, "build_time": 10, "upkeep": {"wood": 0.03, "water": 0.08},
     "effects": {"yield_mult": {"food": 0.12}},
     "color": "#e6d36a", "height": 0.3
