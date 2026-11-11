@@ -194,7 +194,8 @@ def test_armies_march_tile_by_tile_and_take_the_ground_in_their_way(sim):
 
 
 @pytest.mark.usefixtures("no_war_minimum")  # this one is about the battle, not the declaration
-def test_battle_the_stronger_army_wins_and_the_loser_falls_back(sim):
+def test_battle_the_stronger_army_wins_and_the_loser_falls_back(sim, monkeypatch):
+    monkeypatch.setattr("civsim.military.warfare.OUTMATCHED", 1e9)  # it fights on regardless: this is about the battle
     a, b = sim.civs[0], sim.civs[1]
     army = go_to_war(sim, a, b, soldiers=(20, 80))
     pop_a, pop_b = a.population, b.population

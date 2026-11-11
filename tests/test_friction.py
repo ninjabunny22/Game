@@ -25,8 +25,8 @@ def neighbours(sim):
     return touching, apart
 
 
-def test_civs_think_every_ten_days():
-    assert CHECKIN_INTERVAL == 10
+def test_civs_think_every_day():
+    assert CHECKIN_INTERVAL == 1
 
 
 def test_neighbours_at_peace_come_to_resent_each_other_and_distant_civs_do_not(sim, monkeypatch):
@@ -181,7 +181,7 @@ def test_rivals_fight_sooner_ally_less_and_stab_each_other_in_the_back(context):
     # Allied, the stronger of the two turns on the other once it is clearly ahead ...
     power = you["military_power"]
     other.update(relation="alliance", intel={"military_power": round(power / 1.5)}, their_stance_toward_you="ally",
-                 alliance_ticks=50, rival=False, army_vs_yours="comparable")
+                 alliance_ticks=150, at_war_with=["Someone"], rival=False, army_vs_yours="comparable")
     assert decide(context)[other["name"]]["stance"] == "ally"
     other["rival"] = True
     assert decide(context)[other["name"]]["stance"] == "aggression"

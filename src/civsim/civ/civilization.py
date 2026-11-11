@@ -107,6 +107,10 @@ class Civilization:
     sick_until: int = 0
     sick_rest: int = 0  # no new outbreak before this tick
     last_war: int = 0  # the last tick it was at war with anyone (0 = never)
+    strategy_since: int = 0  # the tick it settled on its present strategy
+    plan_target: int | None = None  # the civ it is preparing a war against, if any ...
+    plan_since: int = 0  # ... since when ...
+    plan: str = ""  # ... and what it is doing about it, in words
     last_rout: int = -10_000  # the last tick one of its armies was routed
 
     # Orders from a human ruler (see ruler.py); None leaves the choice to the civ's AI.

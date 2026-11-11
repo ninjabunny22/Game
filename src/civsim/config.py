@@ -6,6 +6,7 @@ class SimConfig:
     seed: int = 0
     map_seed: int | None = None  # the map to play on; None = whatever the game's own seed makes
     map_name: str = ""
+    difficulty: str = "normal"  # how hard the other civs go on a human ruler: easy, normal or hard
     width: int = 96
     height: int = 96
     num_civs: int = 4
@@ -16,6 +17,7 @@ class SimConfig:
 
 
 MAX_CIVS = 5
+DIFFICULTIES = ("easy", "normal", "hard")
 # The three maps a game can be played on. `civs` is how many suit the map: enough left
 # unclaimed at the start that there is room to grow before the civs meet.
 MAP_SIZES = {

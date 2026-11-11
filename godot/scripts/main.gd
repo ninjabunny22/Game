@@ -128,9 +128,9 @@ func _on_connection_changed(connected: bool) -> void:
 
 
 ## The menu asks for a game: the sim builds it and sends its map, as for any game.
-func _on_start_requested(mode: String, size: String, civs: int, seed_text: String, map_id: String = "") -> void:
+func _on_start_requested(mode: String, size: String, civs: int, seed_text: String, map_id: String = "", difficulty: String = "normal") -> void:
 	_starting = mode
-	var game := {"mode": mode, "size": size, "civs": civs}
+	var game := {"mode": mode, "size": size, "civs": civs, "difficulty": difficulty}
 	if map_id != "":
 		game["map"] = map_id
 	if seed_text.is_valid_int():

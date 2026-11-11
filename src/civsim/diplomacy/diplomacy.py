@@ -51,6 +51,10 @@ class Diplomacy:
         self.player: int | None = None  # the civ a human rules, if any: it is never made peace for
         self.now = 0
         self.wars_started = 0  # how many wars between civs there have been in the game
+        self.caution: dict[tuple[int, int], float] = {}  # (civ, other) -> extra edge it wants before attacking it
+        self.betrayed: set[tuple[int, int]] = set()  # (victim, betrayer): never forgotten
+        self.demands: dict[tuple[int, int], int] = {}  # (demander, target) -> tick the demand was made
+        self.tribute_paid: dict[tuple[int, int], int] = {}  # (payer, asker) -> tick tribute was last paid
         self._ills = random.Random(7 + sum(civ.capital.tile for civ in civs))  # its own dice: outbreaks never disturb the game's
         self._alliance_breaks: dict[tuple[int, int], int] = {}  # (breaker, former ally) -> tick it broke the alliance
         self.distrust_until: dict[int, int] = {}  # betrayer -> tick until which others hold it against them
@@ -192,6 +196,38 @@ class Diplomacy:
                         self.remember(a, b, -rules.RIVAL_FRICTION)
                         self.remember(b, a, -rules.RIVAL_FRICTION)
 
+    def learn(self, civ_id: int, other: int, amount: float) -> None:
+        """What `civ_id` has learned about fighting `other`: more caution after a defeat, less after a win."""
+        low, high = rules.CAUTION_RANGE
+        self.caution[(civ_id, other)] = max(low, min(high, self.caution.get((civ_id, other), 0.0) + amount))
+
+    def _demands(self, a, b, to_b: Intent, to_a: Intent, relation: Relation, tick: int, events: list) -> None:
+        """Tribute demanded and paid between two civs at peace."""
+        for asker, target, ask, answer in ((a, b, to_b, to_a), (b, a, to_a, to_b)):
+            key = (asker.id, target.id)
+            if key in self.demands and tick - self.demands[key] > rules.DEMAND_LAPSE:
+                del self.demands[key]
+            if ask.demand and ask.stance is Stance.AGGRESSION and key not in self.demands \
+                    and tick >= relation.truce_until:
+                self.demands[key] = tick
+                self._log(tick, events, "diplomacy", [asker, target],
+                          f"{asker.name} demands tribute from {target.name}, or it will be war")
+            elif answer.pay and key in self.demands:
+                self.pay_demand(target, asker, tick, events)
+
+    def pay_demand(self, payer, asker, tick: int, events: list) -> bool:
+        """`payer` hands over the tribute `asker` has demanded and is left in peace for a while."""
+        if self.demands.pop((asker.id, payer.id), None) is None:
+            return False
+        relation = self.relation(payer.id, asker.id)
+        self.tribute_paid[(payer.id, asker.id)] = tick
+        self._pay_tribute(payer, {asker.id: 1.0}, rules.DEMAND_TRIBUTE)
+        relation.truce_until = max(relation.truce_until, tick + rules.DEMAND_TRUCE)
+        self.remember(payer.id, asker.id, -0.4)
+        self._log(tick, events, "diplomacy", [payer, asker],
+                  f"{payer.name} pays {asker.name} tribute to be left in peace")
+        return True
+
     def sick(self, civ) -> bool:
         return self.now < civ.sick_until
 
@@ -286,6 +322,8 @@ class Diplomacy:
                     self._make_peace(relation, tick, events, f"{loser.name} sues for peace and {winner.name} accepts")
             return
 
+        if relation.status == "peace":
+            self._demands(civ_a, civ_b, to_b, to_a, relation, tick, events)
         if hostile:
             if relation.status == "alliance":
                 other = civ_b if hostile[0] is civ_a else civ_a
@@ -293,7 +331,9 @@ class Diplomacy:
                 self._alliance_breaks[(hostile[0].id, other.id)] = tick
                 self._log(tick, events, "diplomacy", [hostile[0], other],
                           f"{hostile[0].name} breaks its alliance with {other.name}")
-            declarer = next((civ for civ in hostile
+            # A civ still mustering, or waiting on a demand, holds its hand.
+            striking = [civ for civ in hostile if not self.intents[(civ.id, (civ_b if civ is civ_a else civ_a).id)].hold]
+            declarer = next((civ for civ in striking
                              if civ.diplomacy_points >= rules.WAR_COST and self.war_ready(civ)), None)
             target = civ_b if declarer is civ_a else civ_a
             if declarer and tick >= relation.truce_until and self.in_reach(declarer.id, target.id, tick):
@@ -305,6 +345,10 @@ class Diplomacy:
                 self._log(tick, events, "war", [declarer, target],
                           f"{declarer.name} declares war on {target.name}: {name} begins")
                 self.remember(target.id, declarer.id, -1.0)  # an attack is not forgotten quickly
+                self.demands.pop((declarer.id, target.id), None)
+                for ally in self.allies(declarer.id):
+                    if self.relation(ally, target.id).status == "war":
+                        self.remember(ally, declarer.id, rules.HELP_CAME)  # it came when it was needed
                 if betrayal:
                     self._betray(relation.war, declarer, target, tick, events)
                 for ally in self.allies(target.id):
@@ -385,6 +429,7 @@ class Diplomacy:
         # A betrayal while already distrusted adds to the time rather than restarting it.
         self.distrust_until[betrayer.id] = max(self.distrust_until.get(betrayer.id, 0), tick) + rules.DISTRUST_TICKS
         self.remember(victim.id, betrayer.id, -1.5)
+        self.betrayed.add((victim.id, betrayer.id))
         for other in self.civs:  # and everyone else has seen what its word is worth
             if other not in (betrayer.id, victim.id):
                 self.remember(other, betrayer.id, -0.4)
@@ -393,6 +438,8 @@ class Diplomacy:
                   f"others will distrust {betrayer.name} for {self.distrust_until[betrayer.id] - tick} ticks")
 
     def _set_status(self, relation: Relation, status: str, tick: int) -> None:
+        if relation.status == "alliance" and status != "alliance":
+            relation.alliance_ended = tick
         relation.status = status
         relation.since = tick
         if status != "alliance":
@@ -544,6 +591,8 @@ class Diplomacy:
             self._log(tick, events, "war", [captor, loser],
                       f"{captor.name} takes {region.capital_name}; all of {region.name} falls with it")
             self.remember(loser.id, captor.id, -0.5)
+            self.learn(loser.id, captor.id, rules.LESSON_LOST)
+            self.learn(captor.id, loser.id, rules.LESSON_WON)
         if loser is None:
             return
         military = getattr(self, "military", None)
@@ -595,6 +644,8 @@ class Diplomacy:
             loser = self.civs[war.b if leader == war.a else war.a]
             lead = war.tiles_taken.get(winner.id, 0) - war.tiles_taken.get(loser.id, 0)
             ceded = self._region_to_cede(winner, loser) if lead >= rules.CEDE_LEAD else None
+            self.learn(loser.id, winner.id, rules.LESSON_LOST)
+            self.learn(winner.id, loser.id, rules.LESSON_WON)
             if ceded is not None:
                 text += f"; {loser.name} cedes {ceded.name} to {winner.name}"
                 self.remember(loser.id, winner.id, -0.5)
@@ -708,6 +759,12 @@ class Diplomacy:
 
     def _end_war(self, relation: Relation, tick: int, events: list, truce: int, text: str) -> None:
         war = relation.war
+        if tick - war.start >= rules.HELP_WAR:
+            # Allies who sat a long war out are remembered for it.
+            for side, enemy in ((war.a, war.b), (war.b, war.a)):
+                for ally in self.allies(side):
+                    if ally != enemy and self.relation(ally, enemy).status != "war":
+                        self.remember(side, ally, rules.HELP_STAYED_AWAY)
         relation.war = None
         relation.truce_until = tick + truce
         self._set_status(relation, "peace", tick)
@@ -768,6 +825,8 @@ class Diplomacy:
                         mobilisation = max(mobilisation, rules.MUSTER * cap)
                     if mine.stance is Stance.AGGRESSION:  # and enough to be allowed to declare at all
                         mobilisation = max(mobilisation, min(cap, 1.05 * self.war_army(civ) / max(civ.population, 1.0)))
+                        if mine.hold:  # preparing a war: raise the army it means to fight with first
+                            mobilisation = max(mobilisation, mine.commitment * cap)
                     if (mine.stance is Stance.AGGRESSION and civ.march_target is None
                             and not self.in_reach(civ.id, other_id, tick)):
                         civ.march_target = other_id

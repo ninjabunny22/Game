@@ -11,7 +11,7 @@ import random
 from websockets.asyncio.server import ServerConnection, broadcast, serve
 from websockets.exceptions import ConnectionClosed
 
-from ..config import game_config
+from ..config import DIFFICULTIES, game_config
 from ..simulation import Simulation
 from ..strategy import Brain, CheckinRequest
 from . import protocol
@@ -85,9 +85,7 @@ class SimServer:
                     continue
                 self.paused = True  # the game is decided: stop for the moment; play can be resumed
             for request in self.sim.take_requests():
-                task = asyncio.create_task(self._answer(request))
-                self._thinking.add(task)
-                task.add_done_callback(self._thinking.discard)
+                self._answer(request)
             self._broadcast(protocol.tick_message(self.sim, self.paused, self.speed))
             # Keep a steady cadence, but don't try to catch up after a stall.
             next_tick = max(next_tick, loop.time() - 1 / self.speed) + 1 / self.speed
@@ -102,20 +100,14 @@ class SimServer:
         except TimeoutError:
             return False
 
-    async def _answer(self, request: CheckinRequest) -> None:
-        """Ask the brain off the event loop; the sim applies the answer on its next tick."""
+    def _answer(self, request: CheckinRequest) -> None:
+        """Answer a check-in on the spot; the sim applies the answer on its next tick."""
         reply = None
-        sim = self.sim  # the game this check-in belongs to, which may be over before the answer comes
         try:
-            # Each civ's call runs on its own thread, independent of the others.
-            reply = await asyncio.to_thread(self.brain.decide, request)
+            reply = self.brain.decide(request)
         except Exception:
             log.exception("strategy brain failed on the check-in for civ %d", request.civ_id)
-        finally:
-            sim.submit(request, reply)
-        if reply is not None and sim is self.sim:
-            log.info("tick %d: check-in for %s answered: %s", request.tick,
-                     sim.civs[request.civ_id].name, reply.get("reason") or "")
+        self.sim.submit(request, reply)
 
     # -- clients -------------------------------------------------------------
 
@@ -157,8 +149,10 @@ class SimServer:
                 seed = random.SystemRandom().randrange(2**31)
             try:
                 chosen = value.get("map")
+                level = value.get("difficulty")
                 sim = Simulation(game_config(value.get("size", "medium"), value.get("civs"), seed,
-                                             chosen if isinstance(chosen, str) and chosen else None))
+                                             chosen if isinstance(chosen, str) and chosen else None,
+                                             difficulty=level if level in DIFFICULTIES else "normal"))
             except ValueError as exc:
                 self._broadcast(protocol.error_message(self.sim, str(exc)))
                 return

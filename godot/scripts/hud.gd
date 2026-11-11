@@ -560,6 +560,8 @@ func _compact_text(info: Dictionary, civ: Dictionary) -> String:
 	var ill := ""
 	if civ.get("sickness") != null:
 		ill = "\n[color=#c9a23a]Struck by %s (%d days left)[/color]" % [civ["sickness"]["name"], int(civ["sickness"]["days"])]
+	if str(civ.get("plan", "")) != "":
+		goal += "\n[color=#d98a5a]%s[/color]" % civ["plan"]
 	return "%s\n%s\n%s%s%s" % [title, facts, _status_line(int(civ["id"]), civ), ill, goal]
 
 

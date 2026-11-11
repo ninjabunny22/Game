@@ -263,7 +263,8 @@ def test_a_civ_with_no_capital_left_is_destroyed(sim):
     assert not b.alive and not b.armies
 
 
-def test_weaker_attacker_gains_nothing_and_bleeds(sim):
+def test_weaker_attacker_gains_nothing_and_bleeds(sim, monkeypatch):
+    monkeypatch.setattr("civsim.military.warfare.OUTMATCHED", 1e9)  # it fights on regardless: this is about the battle
     a, b = sim.civs[0], sim.civs[1]
     make_neighbours(sim, a, b)
     edge = make_neighbours(sim, a, b)

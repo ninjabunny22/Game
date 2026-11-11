@@ -37,7 +37,11 @@ from ..map import WorldMap, find_path, region_neighbours, step_cost
 from .army import XP_PER_LEVEL_STEP, Army, Captive, Commander
 from .units import BASE_UNIT, UNIT_TYPES, unit_strength
 
-GARRISON_KEEP = 0.2  # share of the soldiers that stays to hold the capital during a war
+GARRISON_KEEP = 0.2  # share of the soldiers that stays to hold the capital during a war ...
+GUARDED_KEEP = 0.35  # ... or while a civ it is not yet fighting is set on attacking it
+WALL_DETOUR = 4  # tiles further an army will go for a capital one point less strongly held
+OUTMATCHED = 1.8  # an army falls back from enemies within reach this many times its strength
+DANGER_RADIUS = 3  # ... counted this many tiles around it
 REINFORCE_RATE = 0.05  # share of the army that can reach a field army per tick once it has left home
 MIN_FIELD_ARMY = 3.0  # soldiers below which an army will not set out
 REPLAN_TICKS = 15
@@ -254,7 +258,11 @@ class Military:
                   if a.role == "field" and a.state != "returning" and a.target_region is None]
         if not active:
             return
-        keep = GARRISON_KEEP * civ.soldiers
+        # More stays at home while someone it is not yet fighting is set on attacking it.
+        watched = any(self.diplomacy.intent(other, civ.id).stance.value == "aggression"
+                      for other in self.diplomacy.others(civ.id)
+                      if self.civs[other].alive and other not in enemies)
+        keep = (GUARDED_KEEP if watched else GARRISON_KEEP) * civ.soldiers
         each = (civ.soldiers - keep) / len(active)
         for army in active:
             spare = garrison.size - keep
@@ -397,14 +405,21 @@ class Military:
                 army.state = "marching"
             elif war and civ.id in war.aggressors and rested and army.size >= MIN_FIELD_ARMY:
                 # Make for the nearest capital the enemy holds: taking it takes its region.
-                others = sorted((s.tile for s in enemy.settlements), key=lambda t: (self._gap(army.tile, t), t))
+                # Make for the capital that is cheapest to take: near, and not too strongly held.
+                others = sorted((s.tile for s in enemy.settlements),
+                                key=lambda t: (self._gap(army.tile, t) + WALL_DETOUR * self.tile_price(civ, t), t))
                 goal = others[0]
                 if army.state == "idle":
                     army.state = "marching"
+                if self._outmatched(civ, army):
+                    # No sense in being cut to pieces: fall back, rest, and come again stronger.
+                    army.state, army.path, army.siege_progress = "retreating", [], 0.0
+                    goal = self._refuge(civ, army.tile)
             else:
                 intruder = self._nearest_intruder(civ, army, enemy)
                 goal = intruder.tile if intruder else capital
-                army.state = "marching" if intruder and army.size >= MIN_FIELD_ARMY else "idle"
+                # A beaten army rests until it has rallied, whoever is at the gates.
+                army.state = "marching" if intruder and rested and army.size >= MIN_FIELD_ARMY else "idle"
                 if army.state == "idle":
                     goal = capital
 
@@ -431,6 +446,22 @@ class Military:
                 path = self._route(civ, army.tile, capital)
             army.path = path or []
             army.path_tick = tick
+
+    def _outmatched(self, civ, army: Army) -> bool:
+        """Whether enemy armies close by are far too strong for this one to face. An army that
+        is holding a capital stays to see it through."""
+        if self._holding(army):
+            return False
+        x, y = self.world.xy(army.tile)
+        against = 0.0
+        for enemy_id in self.diplomacy.enemies(civ.id):
+            for other in self.civs[enemy_id].armies:
+                if other.role != "field" or other.size < 0.5 or other.state in ("retreating", "returning"):
+                    continue
+                ox, oy = self.world.xy(other.tile)
+                if max(abs(ox - x), abs(oy - y)) <= DANGER_RADIUS:
+                    against += self.army_strength(other)
+        return against > OUTMATCHED * self.army_strength(army)
 
     def _route(self, civ, start: int, goal: int, max_nodes: int = 6000) -> list[int] | None:
         """The way an army of this civ would go. Open water needs boats, and can only be put out
@@ -580,8 +611,9 @@ class Military:
                 return
 
     def _broken(self, army: Army, tick: int) -> bool:
-        """A garrison beaten in battle cannot fight again until it has rallied."""
-        return army.role == "garrison" and tick < self._rally.get(army.id, 0)
+        """An army beaten in battle cannot fight again until it has rallied: a garrison where it
+        stands, a field army once it has fallen back to a capital and is resting there."""
+        return tick < self._rally.get(army.id, 0) and (army.role == "garrison" or army.state == "idle")
 
     def _spare(self, loser: Army, winner: Army) -> None:
         """Not all the beaten side's losses are dead: 60% are wounded and 30% got away unharmed."""

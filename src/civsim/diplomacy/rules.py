@@ -69,6 +69,20 @@ BEATEN_TO_IT = 0.6  # held against whoever takes a native region by the others w
 # and come to resent each other for it. Who they are is reckoned afresh every time.
 RIVALRY = 0.06  # held against each other per reckoning by the strongest and the second strongest
 
+# Demands: a civ strong enough may ask for tribute before it attacks. Paying buys a truce.
+DEMAND_TRIBUTE = 0.15  # share of its stock a civ hands over to be left alone
+DEMAND_TRUCE = 150  # ticks of truce that buys
+DEMAND_LAPSE = 60  # ticks after which an unanswered demand is forgotten
+
+# What a war teaches: a civ beaten by another wants a bigger edge before it tries again, and
+# one that won grows bolder. Kept per pair, on the scale of the edge itself.
+LESSON_LOST = 0.2
+LESSON_WON = -0.1
+CAUTION_RANGE = (-0.2, 0.6)
+HELP_CAME = 0.6  # what a civ at war thinks of an ally who joins it ...
+HELP_STAYED_AWAY = -0.3  # ... and of one who never did, once the war is over
+HELP_WAR = 100  # ticks a war must have lasted for staying out of it to be held against an ally
+
 # Ceding land: a side far ahead takes a whole region rather than tribute when peace is made.
 CEDE_LEAD = 20  # tiles taken, more than the other side
 

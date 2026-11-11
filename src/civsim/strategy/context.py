@@ -26,6 +26,7 @@ def army_band(their_power: float, your_power: float) -> str:
     return next((label for limit, label in ARMY_BANDS if ratio < limit), STRONGEST_BAND)
 
 
+MARCH_CACHE_TICKS = 50  # how long a measured march to a neighbour's capital is trusted
 ROUT_MEMORY = 100  # ticks for which a lost battle is still plain for all to see
 
 
@@ -33,6 +34,29 @@ def _abroad(sim, civ) -> bool:
     """Whether most of a civ's soldiers are with armies off its own land."""
     away = sum(army.size for army in civ.armies if army.role == "field" and sim.world.owner[army.tile] != civ.id)
     return civ.soldiers >= 1 and away > 0.5 * civ.soldiers
+
+
+def _since(sim, tick: int | None) -> int | None:
+    return None if tick is None else sim.tick - tick
+
+
+def _march(sim, civ, other) -> tuple[int | None, float]:
+    """How far an army of `civ` would have to go to the nearest capital of `other` it can get
+    to (None if there is no way), and how strongly that capital is held."""
+    cache = sim.__dict__.setdefault("_march_cache", {})
+    known = cache.get((civ.id, other.id))
+    if known is not None and sim.tick - known[0] < MARCH_CACHE_TICKS:
+        return known[1], known[2]
+    military, world = sim.military, sim.world
+    start = civ.capital.tile
+    result: tuple[int | None, float] = (None, 0.0)
+    for target in sorted((s.tile for s in other.settlements), key=lambda t: (military._gap(start, t), t)):
+        path = military._route(civ, start, target)
+        if path is not None:
+            result = (len(path), round(military.tile_price(civ, target), 2))
+            break
+    cache[(civ.id, other.id)] = (sim.tick, *result)
+    return result
 
 
 def stance_context(sim, civ) -> dict:
@@ -52,6 +76,8 @@ def stance_context(sim, civ) -> dict:
             deal_text = (f"you send {mine[1]:g} {mine[0]}/tick, you receive {theirs[1]:g} {theirs[0]}/tick, "
                          f"{deal.end - sim.tick} ticks left")
         theirs = diplomacy.intent(other_id, civ.id)
+        march, walls = _march(sim, civ, other)
+        demanded = diplomacy.demands.get((civ.id, other_id))
         offer = None
         if theirs.give:
             offer = {"gives": theirs.give, "wants": theirs.want}
@@ -73,6 +99,7 @@ def stance_context(sim, civ) -> dict:
             # How long the two have been at peace, if they are: a long peace makes the restless bold.
             "peace_ticks": sim.tick - relation.since if relation.status == "peace" else None,
             "alliance_ticks": sim.tick - relation.since if relation.status == "alliance" else None,
+            "since_alliance": sim.tick - relation.alliance_ended,  # how long since they were last allies
             "at_war_with": [sim.civs[e].name for e in diplomacy.enemies(other_id)],
             "allied_with": [sim.civs[e].name for e in diplomacy.allies(other_id)],
             "truce": sim.tick < relation.truce_until,
@@ -81,6 +108,19 @@ def stance_context(sim, civ) -> dict:
             # long ago it was last beaten in the field (None if not lately).
             "army_abroad": _abroad(sim, other),
             "routed_ticks_ago": sim.tick - other.last_rout if sim.tick - other.last_rout <= ROUT_MEMORY else None,
+            # The way to their nearest capital an army could take, in tiles (None: no way there),
+            # and how strongly it is held (terrain and walls; 1 is open ground).
+            "march": march,
+            "walls": walls,
+            "holds_your_capital": any(r.owner == civ.id and r.held_by == other_id for r in sim.world.regions),
+            "you_hold_their_capital": any(r.owner == other_id and r.held_by == civ.id for r in sim.world.regions),
+            # What past wars with them have taught you: the extra edge you want before trying again.
+            "caution": round(diplomacy.caution.get((civ.id, other_id), 0.0), 2),
+            "betrayed_you": (civ.id, other_id) in diplomacy.betrayed,
+            # Tribute: whether they are demanding it of you, and how long ago you demanded it of them.
+            "demands_tribute": (other_id, civ.id) in diplomacy.demands,
+            "your_demand_ticks": sim.tick - demanded if demanded is not None else None,
+            "paid_you_ticks": _since(sim, diplomacy.tribute_paid.get((other_id, civ.id))),
             # Sickness is plain to see: a civ laid low by it fights worse until it passes.
             "sick": diplomacy.sick(other),
             # True when you and they are the two strongest civs: each stands in the other's way.
@@ -104,7 +144,14 @@ def stance_context(sim, civ) -> dict:
             "weights": (civ.born or civ.personality).weights,
             # The long-term strategy it settled on at its last check-in ("" at the start).
             "strategy": {"kind": civ.strategy_kind, "target": sim.civs[civ.strategy_target].name
-                         if civ.strategy_target is not None else None},
+                         if civ.strategy_target is not None else None, "since": civ.strategy_since},
+            # The war it is preparing, if any: against whom and since when.
+            "plan": {"target": sim.civs[civ.plan_target].name, "since": civ.plan_since}
+            if civ.plan_target is not None else None,
+            "routed_ticks_ago": sim.tick - civ.last_rout if sim.tick - civ.last_rout <= ROUT_MEMORY else None,
+            # How long since it last paid anyone tribute (None: never).
+            "paid_tribute_ticks": _since(sim, max((tick for (payer, _), tick in diplomacy.tribute_paid.items()
+                                                   if payer == civ.id), default=None)),
             "era": tree.eras[tree.era_of(civ.known_techs)],
             "sick": diplomacy.sick(civ),
             # How long since it was last at war with anyone.
@@ -131,6 +178,9 @@ def stance_context(sim, civ) -> dict:
             "water": _water_report(civ, mods),
         },
         "neighbors": neighbors,
+        # The civ a human rules, if any, and how hard the others are to go on it.
+        "player": sim.civs[sim.ruler.civ_id].name if sim.ruler.civ_id is not None else None,
+        "difficulty": sim.config.difficulty,
         "neutral_regions": sum(1 for region in sim.world.regions if region.neutral),
         "recent_events": [f"tick {e['tick']}: {e['text']}" for e in diplomacy.recent_history(civ.id, HISTORY_LENGTH)],
         "diplomacy_costs": {"open_trade": DEAL_FEE, "form_alliance": ALLIANCE_COST, "declare_war": WAR_COST},

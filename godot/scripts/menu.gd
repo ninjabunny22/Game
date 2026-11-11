@@ -6,7 +6,7 @@ extends CanvasLayer
 ## suggests a number and limits the choice to what it has room for. A game to be ruled then
 ## shows its civs, paused, for the player to pick one.
 
-signal start_requested(mode: String, size: String, civs: int, seed_text: String, map_id: String)
+signal start_requested(mode: String, size: String, civs: int, seed_text: String, map_id: String, difficulty: String)
 signal civ_chosen(civ_id: int)  # -1: watch after all
 
 const ACCENT := Color(0.36, 0.62, 1.0)
@@ -23,6 +23,9 @@ var _mode := "watch"
 var _size := "medium"
 var _civs := 4
 var _mode_cards := {}
+var _difficulty := "normal"  # how hard the other civs go on a ruler
+var _difficulty_row: HBoxContainer
+var _difficulty_buttons := {}
 var _map := ""  # the map asked for by id, or "" for any of the size's
 var _map_row: HBoxContainer
 var _map_buttons := {}
@@ -120,6 +123,23 @@ func show_menu(lobby: Dictionary) -> void:
 	_civ_hint.modulate = Color(1, 1, 1, 0.6)
 	column.add_child(_civ_hint)
 
+	# How hard the other civs go on you; it only matters when you rule one.
+	_difficulty_row = HBoxContainer.new()
+	_difficulty_row.add_theme_constant_override("separation", 8)
+	_difficulty_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	column.add_child(_difficulty_row)
+	_difficulty_buttons.clear()
+	for level: Array in [["easy", "Easy"], ["normal", "Normal"], ["hard", "Hard"]]:
+		var id: String = level[0]
+		var button := Button.new()
+		button.text = str(level[1])
+		button.focus_mode = Control.FOCUS_NONE
+		button.custom_minimum_size = Vector2(120, 34)
+		button.pressed.connect(func() -> void: _set_difficulty(id))
+		_difficulty_row.add_child(button)
+		_difficulty_buttons[id] = button
+	_set_difficulty(_difficulty)
+
 	var last := HBoxContainer.new()
 	last.add_theme_constant_override("separation", 12)
 	last.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -134,7 +154,7 @@ func show_menu(lobby: Dictionary) -> void:
 	start.custom_minimum_size = Vector2(230, 44)
 	start.add_theme_font_size_override("font_size", 20)
 	_style_button(start, ACCENT.darkened(0.1), ACCENT, 12)
-	start.pressed.connect(func() -> void: start_requested.emit(_mode, _size, _civs, _seed.text.strip_edges(), _map))
+	start.pressed.connect(func() -> void: start_requested.emit(_mode, _size, _civs, _seed.text.strip_edges(), _map, _difficulty))
 	last.add_child(start)
 
 	_set_mode(_mode)
@@ -196,8 +216,18 @@ func _clear() -> void:
 	_pick = null
 
 
+func _set_difficulty(level: String) -> void:
+	_difficulty = level
+	for key: String in _difficulty_buttons:
+		var chosen: bool = key == level
+		_style_button(_difficulty_buttons[key], ACCENT.darkened(0.25) if chosen else Color(1, 1, 1, 0.07),
+				ACCENT.darkened(0.1) if chosen else Color(1, 1, 1, 0.14), 10)
+
+
 func _set_mode(mode: String) -> void:
 	_mode = mode
+	if _difficulty_row != null:
+		_difficulty_row.visible = mode == "rule"
 	for id: String in _mode_cards:
 		_light(_mode_cards[id], id == mode)
 

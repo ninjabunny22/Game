@@ -96,6 +96,17 @@ The overlay is built for watching:
   its temper, and the two strongest civs resent each other, ally less and are quicker to
   betray one another. An alliance lasts only while both sides still choose it, and is
   let go after 100 days in which neither ally is at war.
+- **Judgement.** Civs reconsider every day, and keep their word to themselves: a war is
+  fought for 50 days before peace is sought, an alliance kept for 100, a goal held for 200.
+  A war is forecast before it is started (the march, the walls, who would join, what must
+  stay home), prepared against one target (the army is raised first, shown on the civ's
+  card), and where the gap is wide tribute is demanded first; the weak and peaceable pay.
+  A civ beaten by another wants a bigger edge next time, and never again allies with one
+  that betrayed it. Armies make for the capital cheapest to take, keep more at home while
+  a third civ threatens, and fall back from fights they cannot win. Builders prepare long
+  and guard their homes, Expansionists strike fast, Merchants pay others to fight.
+  Research heads for the techs the civ's goal needs. When you rule a civ, the menu's
+  Easy / Normal / Hard sets how hard the others go on you.
 - **Headline log.** Only wars, peace, regions and capitals changing hands,
   alliances, betrayals, routs and new eras get a line. Routine events
   (buildings captured, discoveries, trade changes) are counted in one summary
@@ -305,7 +316,7 @@ demolition refund (35%), Banking for cheaper trade deals. Six buildings come
 with them: Bank, Academy, Harbour (must be on the water), Fortress, Reservoir
 and Factory.
 
-**Strategic layer.** Every 10 ticks (staggered between civs) the sim raises a
+**Strategic layer.** Every tick the sim raises a
 check-in for each civ: its own state, each neighbour's visible state and recent
 dealings between them. A *brain* answers with one stance per neighbour -
 `trade`, `ally`, `ignore` or `aggression` - plus terms (a resource to give and

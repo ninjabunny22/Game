@@ -14,7 +14,7 @@ from .strategy import parse_stances, stance_context
 STANCES = ("trade", "ally", "aggression", "ignore")
 COMMANDS = ("take_control", "release_control", "set_stance", "set_focus", "set_research", "set_build",
             "answer_proposal")
-PROPOSALS = {"alliance": "ally", "trade": "trade", "peace": "ignore"}  # what saying yes to each means
+PROPOSALS = {"alliance": "ally", "trade": "trade", "peace": "ignore", "tribute": "ignore"}  # what saying yes to each means
 PROPOSAL_REST = 300  # ticks before a civ that was refused asks the same thing again
 
 
@@ -26,6 +26,7 @@ class Ruler:
         self.stances: dict[int, dict] = {}  # other civ id -> {"stance", "commitment"}; absent = left to the strategist
         self.refused: dict[tuple[int, str], int] = {}  # (civ, kind of proposal) -> tick until which it is not put again
         self._put: set[tuple[int, str]] = set()  # proposals already announced
+        self._news: list[dict] = []  # events from the ruler's own answers, for the next tick's log
 
     @property
     def civ(self):
@@ -67,7 +68,12 @@ class Ruler:
                           if p["civ"] == value.get("civ") and p["kind"] == value.get("kind")), None)
             if offer is None:
                 return "no such proposal is on the table"
-            if value.get("accept") is True:
+            if offer["kind"] == "tribute":
+                if value.get("accept") is True:
+                    self.sim.diplomacy.pay_demand(civ, self.sim.civs[offer["civ"]], self.sim.tick, self._news)
+                else:
+                    self.refused[(offer["civ"], "tribute")] = self.sim.tick + PROPOSAL_REST  # and war follows
+            elif value.get("accept") is True:
                 self.stances[offer["civ"]] = {"stance": PROPOSALS[offer["kind"]], "commitment": 0.7}
                 self._apply_stances()
             else:
@@ -160,6 +166,8 @@ class Ruler:
                         text += " and will pay tribute"
                     elif diplomacy.ahead(war) == other_id:
                         text += ", but you would pay tribute"
+            elif relation.status == "peace" and (other_id, civ.id) in diplomacy.demands:
+                kind, text = "tribute", f"{other.name} demands tribute, or it will be war"
             elif relation.status == "peace" and sim.tick >= relation.truce_until:
                 if theirs.stance is Stance.ALLY and mine.stance is not Stance.ALLY:
                     kind, text = "alliance", f"{other.name} proposes an alliance"
@@ -177,7 +185,8 @@ class Ruler:
         standing = {(p["civ"], p["kind"]): p for p in self.proposals()}
         fresh = [p for key, p in standing.items() if key not in self._put]
         self._put = set(standing)
-        return [{"civ": p["civ"], "kind": "diplomacy", "text": p["text"] + " (answer in the ruler's panel)"}
+        news, self._news = self._news, []
+        return news + [{"civ": p["civ"], "kind": "diplomacy", "text": p["text"] + " (answer in the ruler's panel)"}
                 for p in fresh]
 
     # -- what the player is shown ----------------------------------------------

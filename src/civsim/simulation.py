@@ -30,6 +30,7 @@ from .ruler import Ruler
 from .strategy import CHECKIN_INTERVAL, Brain, CheckinRequest, parse_stances, stance_context
 from .tech import TechTree, advance_research
 
+EASY_INTERVAL = 10  # days between the other civs' decisions on the easy setting
 DOMINATION_SHARE = 0.7  # holding this share of all regions wins the game
 SCORE_PER_REGION = 100
 SCORE_PER_TECH = 20
@@ -156,17 +157,24 @@ class Simulation:
 
         The clock must not move until they answer, or that civ would miss a decision.
         """
-        spacing = CHECKIN_INTERVAL // len(self.civs)
+        interval = self.checkin_interval()
+        spacing = interval // len(self.civs)
         answered = {request.civ_id for request, _ in self._inbox}
         return [civ.id for civ in self.civs
                 if civ.alive and civ.id in self._awaiting and civ.id not in answered
-                and (self.tick + 1 - civ.id * spacing) % CHECKIN_INTERVAL == 0]
+                and (self.tick + 1 - civ.id * spacing) % interval == 0]
+
+    def checkin_interval(self) -> int:
+        """How often the civs reconsider: every day, or every ten on the easy setting while a
+        human rules one of them."""
+        return EASY_INTERVAL if self.config.difficulty == "easy" and self.ruler.civ_id is not None else CHECKIN_INTERVAL
 
     def _schedule_checkins(self) -> None:
         """Every civ checks in once per interval; they are staggered so the calls don't arrive at once."""
-        spacing = CHECKIN_INTERVAL // len(self.civs)
+        interval = self.checkin_interval()
+        spacing = interval // len(self.civs)
         for civ in self.civs:
-            if (self.tick - civ.id * spacing) % CHECKIN_INTERVAL != 0:
+            if (self.tick - civ.id * spacing) % interval != 0:
                 continue
             if civ.id in self._awaiting or not civ.alive:
                 continue  # the previous one is still unanswered (don't pile up), or the civ is gone
@@ -184,8 +192,20 @@ class Simulation:
                 continue  # no answer: previous stances stand
             intents, reason = parse_stances(reply, request.context, self.tick)
             self._adopt_strategy(civ, reply.get("strategy"), request.context)
+            self._adopt_plan(civ, reply.get("plan"), request.context)
             self.diplomacy.set_intents(civ.id, self.ruler.overrule(civ.id, request.context, intents))
             civ.last_reason = reason
+
+    def _adopt_plan(self, civ, plan: object, context: dict) -> None:
+        """Remember the war a strategist says it is preparing, so it can be seen and stuck to."""
+        names = {n["name"]: n["id"] for n in context["neighbors"]}
+        target = names.get(plan.get("target")) if isinstance(plan, dict) else None
+        if target is None:
+            civ.plan_target, civ.plan = None, ""
+            return
+        if target != civ.plan_target:
+            civ.plan_target, civ.plan_since = target, self.tick
+        civ.plan = " ".join(str(plan.get("text") or "").split())[:120]
 
     def _adopt_strategy(self, civ, strategy: object, context: dict) -> None:
         """Take up the long-term strategy a strategist has settled on, if it sent a usable one.
@@ -193,6 +213,8 @@ class Simulation:
         if not isinstance(strategy, dict) or not isinstance(strategy.get("kind"), str):
             return
         names = {n["name"]: n["id"] for n in context["neighbors"]}
+        if strategy["kind"][:40] != civ.strategy_kind:
+            civ.strategy_since = self.tick
         civ.strategy_kind = strategy["kind"][:40]
         civ.strategy_target = names.get(strategy.get("target"))
         civ.strategy = " ".join(str(strategy.get("text") or "").split())[:120]

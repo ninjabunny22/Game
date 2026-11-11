@@ -28,7 +28,7 @@ from ..simulation import Simulation
 from ..config import MAP_SIZES, MAPS
 from ..diplomacy import rules
 
-PROTOCOL_VERSION = 15
+PROTOCOL_VERSION = 16
 RULER_COMMANDS = ("take_control", "release_control", "set_stance", "set_focus", "set_research", "set_build",
                   "answer_proposal")
 GAME_COMMANDS = ("new_game", "end_game")  # start a game from the menu; go back to the menu
@@ -163,6 +163,8 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
             # What it is working toward, in words, and what the realm concentrates on.
             "strategy": civ.strategy,
             "focus": civ.focus,
+            # The war it is preparing, in words ("" when it is not).
+            "plan": civ.plan,
             # The sickness a long war has brought on the civ, and how many days it has left; null when well.
             "sickness": {"name": civ.sickness, "days": max(0, civ.sick_until - sim.tick)} if civ.sickness else None,
             "regions": [region.id for region in world.regions if region.owner == civ.id],

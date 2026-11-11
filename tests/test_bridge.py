@@ -107,12 +107,9 @@ def test_the_clock_waits_for_a_strategist_who_has_not_answered():
         sim.step()
         held += sim.take_requests()
     request = held[0]
-    assert sim.waiting_for() == [], "not yet: its next check-in is a whole interval away"
-    for _ in range(CHECKIN_INTERVAL - 1):
-        assert request.civ_id not in sim.waiting_for()
-        sim.step()
-        for other in sim.take_requests():  # everyone else answers at once
-            sim.submit(other, None)
+    assert CHECKIN_INTERVAL == 1
+    for other in held[1:]:  # everyone else answers at once
+        sim.submit(other, None)
     assert sim.waiting_for() == [request.civ_id], "its next check-in is due and the last is unanswered"
     sim.submit(request, None)
     assert sim.waiting_for() == [], "answered: the clock may move again"

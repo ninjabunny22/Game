@@ -45,6 +45,14 @@ CATEGORY_OF_RESOURCE = {
 }
 MATERIALS = ("wood", "stone", "ore", "gold")
 
+GOAL_PULL = 0.4  # how much a tech on the way to what the civ is concentrating on is preferred
+GOAL_EFFECTS = {  # what each focus is after in the tech tree
+    "military": ("military", "defense", "capture_speed", "mobilization", "casualties", "commander_xp"),
+    "science": ("science_mult",),
+    "economy": ("income", "build_speed", "build_slots"),
+    "expansion": ("expand_cost", "bridges", "boats", "boat_range"),
+    "growth": ("growth", "housing", "water_mult"),
+}
 LOOKAHEAD = 0.25  # how much what a tech leads to counts beside what it gives now
 MIN_SCORE = 0.12  # below this nothing is worth doing; just stockpile
 GOAL_STICKINESS = 1.2  # bonus for the goal already being saved for, to avoid flip-flopping
@@ -142,10 +150,34 @@ class CivAI:
         for tech in self.tech_tree.available(civ.known_techs):
             if not self._feasible(civ, tech.materials, mods):
                 continue
-            score = self._tech_value(civ, tech, needs) + LOOKAHEAD * self._opens(civ, tech, needs)
+            score = (self._tech_value(civ, tech, needs) + LOOKAHEAD * self._opens(civ, tech, needs)
+                     + self._toward_goal(civ, tech))
             if score > best_score:
                 best, best_score = tech, score
         civ.research = Research(best.id) if best else None
+
+    def _toward_goal(self, civ: Civilization, tech: Tech) -> float:
+        """A civ concentrating on something researches its way toward the techs that serve it,
+        however many steps off they are: the fewer the steps, the stronger the pull."""
+        wanted = GOAL_EFFECTS.get(civ.focus)
+        if not wanted:
+            return 0.0
+        known = set(civ.known_techs)
+        techs = self.tech_tree.techs
+        best = 0.0
+        for goal in techs.values():
+            if goal.id in known or not any(key in goal.effects for key in wanted):
+                continue
+            missing, stack = set(), [goal.id]
+            while stack:  # the goal and everything still to be learned before it
+                tech_id = stack.pop()
+                if tech_id in known or tech_id in missing:
+                    continue
+                missing.add(tech_id)
+                stack.extend(techs[tech_id].prereqs)
+            if tech.id in missing:
+                best = max(best, GOAL_PULL / len(missing))
+        return best
 
     def _opens(self, civ: Civilization, tech: Tech, needs: dict) -> float:
         """What learning this tech leads to: the best of the techs it is the last thing missing

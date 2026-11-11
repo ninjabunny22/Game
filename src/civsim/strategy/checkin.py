@@ -13,7 +13,7 @@ from ..diplomacy import Intent, Stance
 from ..diplomacy.rules import MAX_RATE, MIN_RATE
 from ..economy.rules import RESOURCES
 
-CHECKIN_INTERVAL = 10
+CHECKIN_INTERVAL = 1  # every civ reconsiders every day
 MAX_REASON_LENGTH = 200
 
 STANCE_ALIASES = {
@@ -64,6 +64,9 @@ def parse_stances(reply: object, context: dict, tick: int) -> tuple[dict[int, In
             _apply_water_priority(intent, context["you"], neighbor)
         elif stance is Stance.AGGRESSION:
             intent.commitment = _number(entry.get("troop_commitment"), 0.5, 0.1, 1.0)
+            intent.hold = entry.get("hold") is True
+            intent.demand = entry.get("demand") is True
+        intent.pay = entry.get("pay_tribute") is True
         intents[neighbor["id"]] = intent
     reason = reply.get("reason")
     return intents, " ".join(reason.split())[:MAX_REASON_LENGTH] if isinstance(reason, str) else ""

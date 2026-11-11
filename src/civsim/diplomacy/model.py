@@ -24,6 +24,9 @@ class Intent:
     want: str | None = None
     want_rate: float = 0.0
     commitment: float = 0.0  # aggression: share of full mobilisation, 0..1
+    hold: bool = False  # aggression: muster for the war but do not declare it yet
+    demand: bool = False  # aggression: demand tribute first; war follows a refusal
+    pay: bool = False  # pay the tribute the other civ has demanded
     tick: int = 0
 
 
@@ -76,4 +79,5 @@ class Relation:
     since: int = 0
     alliance_name: str = ""  # set while the two are allied
     truce_until: int = 0
+    alliance_ended: int = -10_000  # tick the two last stopped being allies
     war: War | None = None

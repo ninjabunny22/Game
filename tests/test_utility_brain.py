@@ -22,10 +22,12 @@ def context():
     you["max_soldiers"] = 10_000
     you["weights"] = dict(you["weights"], military=1.3)
     you["water"].update(urgency=0.0, status="comfortable")
+    you.update(personality="Scholar", plan=None, soldiers=you["max_soldiers"])  # no tactics of its own; army raised
     for n in context["neighbors"]:
         n.update(relation="peace", truce=False, in_reach=True, army_vs_yours="comparable", intel=None,
                  at_war_with=[], allied_with=[], distrusted_ticks_left=0, their_stance_toward_you="trade",
                  your_current_stance="trade", war_ticks=None, water_rich=False, standing=0.0,
+                 march=10, walls=1.0, caution=0.0, alliance_ticks=None, peace_ticks=60,
                  population=you["population"], territory=you["territory"])
     return context
 
@@ -81,6 +83,11 @@ def test_it_opens_no_second_front_unless_the_target_is_helpless(context):
 def test_it_seeks_peace_in_a_war_that_is_lost_or_has_dragged_on(context):
     enemy = context["neighbors"][0]
     enemy.update(relation="war", war_ticks=20, army_vs_yours="stronger")
+    assert decide(context)[enemy["name"]]["stance"] == "aggression", "a war is given a season first"
+    context["you"]["routed_ticks_ago"] = 5
+    assert decide(context)[enemy["name"]]["stance"] == "ignore", "unless the army has just been broken"
+    context["you"]["routed_ticks_ago"] = None
+    enemy["war_ticks"] = 60
     assert decide(context)[enemy["name"]]["stance"] == "ignore"
     enemy.update(army_vs_yours="comparable", war_ticks=400)
     assert decide(context)[enemy["name"]]["stance"] == "ignore"
