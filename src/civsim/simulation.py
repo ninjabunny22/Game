@@ -30,6 +30,10 @@ from .ruler import Ruler
 from .strategy import CHECKIN_INTERVAL, Brain, CheckinRequest, parse_stances, stance_context
 from .tech import TechTree, advance_research
 
+DOMINATION_SHARE = 0.6  # holding this share of all regions wins the game
+SCORE_PER_REGION = 100
+SCORE_PER_TECH = 20
+
 CIV_NAMES = ["Aurelia", "Kheshet", "Norvald", "Zhanlu", "Tamari", "Ossyria", "Valmere", "Iskandar"]
 CIV_COLORS = ["#d9433b", "#3b7dd9", "#e8c33a", "#a04fd6", "#3bbf9a", "#e07b2e", "#e86fb0", "#f0f0f0"]
 
@@ -67,6 +71,7 @@ class Simulation:
         self._inbox: list[tuple[CheckinRequest, dict | None]] = []
         self._awaiting: set[int] = set()  # civs whose check-in is still unanswered
         self.ruler = Ruler(self)  # a human player's hand on one civ, if any
+        self.victory: dict | None = None  # {"civ", "kind", "tick"} once the game is decided; play goes on
 
     def step(self) -> list[dict]:
         self.tick += 1
@@ -88,9 +93,43 @@ class Simulation:
             advance_research(civ, self.tech_tree, events)
         self.diplomacy.update(self.tick, events)
         self.villages.update(self.tick, events)
+        self._check_victory(events)
         self._schedule_checkins()
         self.events = events
         return events
+
+    # -- winning ---------------------------------------------------------------
+
+    def score(self, civ) -> int:
+        """How a civ stands: its regions first, then its people and what it has learned."""
+        if not civ.alive:
+            return 0
+        regions = sum(1 for region in self.world.regions if region.owner == civ.id)
+        return round(SCORE_PER_REGION * regions + civ.population + SCORE_PER_TECH * len(civ.known_techs))
+
+    def _check_victory(self, events: list[dict]) -> None:
+        """The game is won by the last civ standing, by whoever holds most of the map, or on the
+        last day by the highest score. It is decided once; the world carries on afterwards."""
+        if self.victory is not None:
+            return
+        living = [civ for civ in self.civs if civ.alive]
+        if not living:
+            return
+        winner, kind = None, ""
+        held = {civ.id: sum(1 for region in self.world.regions if region.owner == civ.id) for civ in living}
+        leader = max(living, key=lambda civ: (held[civ.id], civ.id))
+        if len(living) == 1 and len(self.civs) > 1:
+            winner, kind = living[0], "conquest"
+        elif held[leader.id] >= DOMINATION_SHARE * len(self.world.regions):
+            winner, kind = leader, "domination"
+        elif self.config.end_tick and self.tick >= self.config.end_tick:
+            winner, kind = max(living, key=lambda civ: (self.score(civ), -civ.id)), "score"
+        if winner is None:
+            return
+        self.victory = {"civ": winner.id, "kind": kind, "tick": self.tick}
+        how = {"conquest": "is the last civ standing", "domination": "holds most of the known world",
+               "score": "stands highest when the age ends"}[kind]
+        events.append({"civ": winner.id, "kind": "era", "text": f"{winner.name} {how}: victory"})
 
     # -- strategic check-ins -------------------------------------------------
 

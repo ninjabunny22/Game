@@ -28,6 +28,7 @@ var _expanded := -1  # civ whose card shows full detail, or -1
 var _latest := {}  # civ id -> its state in the latest tick
 var _paused_banner: Label
 var _ruler_box: VBoxContainer  # the player's own panel: which civ they rule and their orders
+var _victory: Variant = null  # who has won and how, once the game is decided
 var _ruler_signature := ""  # what the panel was last built from, so it is only rebuilt on a change
 var _routine: Array = []  # [tick, kind] of recent routine events
 
@@ -359,6 +360,8 @@ func update(tick: int, data: Dictionary) -> void:
 	for civ: Dictionary in data["civs"]:
 		_latest[int(civ["id"])] = civ
 	_refresh_ruler(data.get("ruler"))
+	_victory = data.get("victory")
+	_refresh_status()
 	_armies.clear()
 	for army: Dictionary in data["armies"]:
 		var owner := int(army["civ"])
@@ -501,8 +504,14 @@ func _refresh_status() -> void:
 	for civ_id in _waiting_for:
 		if _civ_info.has(int(civ_id)):
 			holding.append(str(_civ_info[int(civ_id)]["name"]))
-	_paused_banner.visible = _connected and (_paused or not holding.is_empty())
+	_paused_banner.visible = _connected and (_paused or not holding.is_empty() or _victory != null)
 	_paused_banner.text = "PAUSED" if _paused or holding.is_empty() else "Waiting for %s to decide" % " and ".join(holding)
+	if _victory != null and _civ_info.has(int(_victory["civ"])):
+		# The game is decided; it can be played on, so the banner also says if it is paused.
+		var how: String = {"conquest": "by conquest", "domination": "by holding most of the world",
+			"score": "on score"}.get(_victory["kind"], "")
+		_paused_banner.text = "★ %s wins %s (day %d)%s" % [_civ_info[int(_victory["civ"])]["name"], how,
+			int(_victory["tick"]), "\npaused: Resume to play on" if _paused else ""]
 	if not _connected:
 		_status.text = "Waiting for sim on ws://127.0.0.1:8765 ..."
 		return
@@ -518,9 +527,9 @@ func _compact_text(info: Dictionary, civ: Dictionary) -> String:
 		info["color"], info["name"], info["personality"]]
 	if not civ["alive"]:
 		return title + "\n[color=#e07a6a]Destroyed[/color]"
-	var facts := "%s   %d region%s   Pop %d   Army %d" % [
+	var facts := "%s   %d region%s   Pop %d   Army %d   [color=#d9c36a]Score %d[/color]" % [
 		civ["era_name"], civ["regions"].size(), "" if civ["regions"].size() == 1 else "s",
-		int(civ["population"]), int(civ["soldiers"])]
+		int(civ["population"]), int(civ["soldiers"]), int(civ.get("score", 0))]
 	return "%s\n%s\n%s" % [title, facts, _status_line(int(civ["id"]), civ)]
 
 

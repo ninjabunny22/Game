@@ -25,16 +25,29 @@ python3 -m venv .venv
 
 .venv/bin/python -m civsim                 # random seed, ws://127.0.0.1:8765, 2 ticks/s
 .venv/bin/python -m civsim --seed 42 --tick-rate 10
-.venv/bin/python -m civsim --llm rules     # no language model: built-in deterministic strategy
+.venv/bin/python -m civsim --rule 0        # play civ 0 yourself (ruler's view)
+.venv/bin/python -m civsim --llm ollama    # a local language model plays the civs
 .venv/bin/python -m civsim --headless --seed 42 --ticks 1500 --llm rules   # no server, prints a summary
 .venv/bin/python -m pytest
 .venv/bin/python -m civsim.survey                # eight full games: counts ships, crossings and large-building overlaps
 ```
 
-By default the strategic layer talks to a local [Ollama](https://ollama.com)
-server at `http://localhost:11434` using `llama3.1:8b` (`ollama pull llama3.1:8b`).
-`--model` and `--llm-url` change that. If Ollama is not running the sim still
-runs; civs simply keep their previous stances. The tests never need a model.
+By default the civs are played by the built-in strategist (`strategy/utility.py`),
+which needs no model: at each check-in it weighs attacking, allying and trading with
+every neighbour from the civ's personality and the situation, and says why. `--llm rules`
+uses the simpler policy the tests run on. `--llm ollama` asks a local
+[Ollama](https://ollama.com) server instead (`http://localhost:11434`, `llama3.1:8b`;
+`--model` and `--llm-url` change that), and the launcher then starts Ollama first.
+
+**Playing a civ.** Any civ can be taken in hand from the viewer's panel ("Rule a civ
+yourself"), or from the start with `--rule N`. A ruler sets what the realm
+concentrates on, what to research and build next, and how to stand toward each other
+civ; whatever is left on Auto is still decided by the civ itself, and the civ can be
+handed back at any time (`ruler.py`).
+
+**Winning.** The last civ standing wins by conquest, a civ holding 60% of the regions
+wins by domination, and otherwise the highest score (regions, people, techs) wins on
+day 8000 (`SimConfig.end_tick`). The game pauses when it is decided and can be played on.
 
 Then open `godot/` in Godot 4.3 or newer and press Play (or
 `godot --path godot`). The viewer and the sim can start in either order; the

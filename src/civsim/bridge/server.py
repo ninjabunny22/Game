@@ -74,6 +74,8 @@ class SimServer:
                     continue
 
             self.sim.step()
+            if self.sim.victory and self.sim.victory["tick"] == self.sim.tick:
+                self.paused = True  # the game is decided: stop for the moment; play can be resumed
             for request in self.sim.take_requests():
                 task = asyncio.create_task(self._answer(request))
                 self._thinking.add(task)

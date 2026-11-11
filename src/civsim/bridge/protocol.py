@@ -148,6 +148,7 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
         civs.append({
             "id": civ.id,
             "alive": civ.alive,
+            "score": sim.score(civ),
             "regions": [region.id for region in world.regions if region.owner == civ.id],
             "population": int(civ.population),
             "housing": int(mods.housing),
@@ -266,6 +267,8 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
         "territory": world.encode_territory(),
         "territory_rev": world.territory_rev,
         "civs": civs,
+        # Who has won, how ("conquest", "domination" or "score") and when; null while undecided.
+        "victory": sim.victory,
         # The civ a human rules and the orders in force, or null when every civ plays itself.
         "ruler": sim.ruler.state(),
         "armies": armies,
