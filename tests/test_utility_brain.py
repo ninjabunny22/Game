@@ -25,7 +25,7 @@ def context():
     for n in context["neighbors"]:
         n.update(relation="peace", truce=False, in_reach=True, army_vs_yours="comparable", intel=None,
                  at_war_with=[], allied_with=[], distrusted_ticks_left=0, their_stance_toward_you="trade",
-                 your_current_stance="trade", war_ticks=None, water_rich=False,
+                 your_current_stance="trade", war_ticks=None, water_rich=False, standing=0.0,
                  population=you["population"], territory=you["territory"])
     return context
 

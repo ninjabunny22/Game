@@ -93,6 +93,13 @@ The overlay is built for watching:
   been beaten is attacked sooner. A game nobody has fought in does not end on score.
 - **Ceding land.** A side at least twenty tiles behind when peace is made gives up a region
   (never its home) instead of paying tribute.
+- **More war, sooner.** Civs reconsider every 10 days. Restlessness sets in after about 250
+  days of peace for the most warlike and 500 for the most peaceable; truces last 50 days
+  (150 after a capital falls). Neighbours build a grudge along a shared border and over
+  native land both are settling. A civ much bigger than a neighbour attacks it whatever
+  its temper, and the two strongest civs resent each other, ally less and are quicker to
+  betray one another. An alliance lasts only while both sides still choose it, and one
+  with nothing left to guard against wears out.
 - **Headline log.** Only wars, peace, regions and capitals changing hands,
   alliances, betrayals, routs and new eras get a line. Routine events
   (buildings captured, discoveries, trade changes) are counted in one summary

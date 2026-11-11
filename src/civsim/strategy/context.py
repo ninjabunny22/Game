@@ -40,6 +40,7 @@ def stance_context(sim, civ) -> dict:
     tree = sim.tech_tree
     mods = sim.modifiers[civ.id]
 
+    top = diplomacy.rivals() or ()
     neighbors = []
     for other_id in diplomacy.others(civ.id):
         other = sim.civs[other_id]
@@ -71,6 +72,7 @@ def stance_context(sim, civ) -> dict:
             "war_ticks": sim.tick - relation.war.start if relation.war else None,
             # How long the two have been at peace, if they are: a long peace makes the restless bold.
             "peace_ticks": sim.tick - relation.since if relation.status == "peace" else None,
+            "alliance_ticks": sim.tick - relation.since if relation.status == "alliance" else None,
             "at_war_with": [sim.civs[e].name for e in diplomacy.enemies(other_id)],
             "allied_with": [sim.civs[e].name for e in diplomacy.allies(other_id)],
             "truce": sim.tick < relation.truce_until,
@@ -81,6 +83,8 @@ def stance_context(sim, civ) -> dict:
             "routed_ticks_ago": sim.tick - other.last_rout if sim.tick - other.last_rout <= ROUT_MEMORY else None,
             # Sickness is plain to see: a civ laid low by it fights worse until it passes.
             "sick": diplomacy.sick(other),
+            # True when you and they are the two strongest civs: each stands in the other's way.
+            "rival": civ.id in top and other_id in top,
             "active_deal": deal_text,
             # What you make of them from what has passed between you: -3 a bitter grudge, 3 a proven friend.
             "standing": round(diplomacy.standing[(civ.id, other_id)], 2),

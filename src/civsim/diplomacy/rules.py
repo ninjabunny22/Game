@@ -41,8 +41,8 @@ WAR_MIN_SHARE = 0.10  # ... and this share of its population under arms
 REACH = 4  # max gap, in tiles, across which two territories can fight
 MIN_WAR = 50  # ticks before a war can end by mutual consent
 MAX_WAR = 400  # ticks after which both sides are exhausted
-TRUCE = 100
-SURRENDER_TRUCE = 300
+TRUCE = 50
+SURRENDER_TRUCE = 150
 TRIBUTE = 0.5  # share of the loser's stock taken on surrender
 # Sickness: a long war wears a people down, and sooner or later something breaks out in the camps.
 SICKNESS_AFTER = 250  # ticks a civ must have been at war before an outbreak is possible
@@ -55,6 +55,19 @@ SICKNESS_MILITARY = -0.25  # while it lasts: weaker soldiers ...
 SICKNESS_GROWTH = -0.6  # ... slower growth ...
 SICKNESS_YIELD = -0.1  # ... and less of everything from the land
 SICKNESSES = ("camp fever", "the flux", "the sweating sickness", "a plague", "the pox")
+
+# Friction: neighbours rub each other up the wrong way. What a civ holds against another grows
+# with the border they share, and with wanting the same native land.
+FRICTION_INTERVAL = 25  # ticks between reckonings
+BORDER_FRICTION = 0.04  # held against each other per reckoning along a long shared border ...
+LONG_BORDER = 20  # ... which is this many tiles; a shorter one counts in proportion
+RIVAL_SHARE = 0.1  # share of a native region a civ must have settled to count as after it
+RIVAL_FRICTION = 0.03  # held against each other per reckoning by two civs after the same region
+BEATEN_TO_IT = 0.6  # held against whoever takes a native region by the others who were after it
+
+# Rivalry: the two strongest civs are each the only thing between the other and first place,
+# and come to resent each other for it. Who they are is reckoned afresh every time.
+RIVALRY = 0.06  # held against each other per reckoning by the strongest and the second strongest
 
 # Ceding land: a side far ahead takes a whole region rather than tribute when peace is made.
 CEDE_LEAD = 20  # tiles taken, more than the other side

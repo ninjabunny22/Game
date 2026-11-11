@@ -148,6 +148,50 @@ class Diplomacy:
         if who != of and (who, of) in self.standing:
             self.standing[(who, of)] = max(-3.0, min(3.0, self.standing[(who, of)] + amount))
 
+    def shared_border(self, a, b) -> int:
+        """How many of `a`'s tiles touch `b`'s land."""
+        small, other = (a, b) if len(a.territory) <= len(b.territory) else (b, a)
+        owner, neighbors = self.world.owner, self.world.neighbors
+        return sum(1 for tile in small.territory if any(owner[n] == other.id for n in neighbors(tile)))
+
+    def might(self, civ) -> float:
+        """How strong a civ is, all told: its people, its land and the army it could field."""
+        return civ.population + len(civ.territory) + self.power(civ)
+
+    def rivals(self) -> tuple[int, int] | None:
+        """The strongest civ and the second strongest, as things stand now."""
+        living = sorted((civ for civ in self.civs.values() if civ.alive), key=lambda c: (-self.might(c), c.id))
+        return (living[0].id, living[1].id) if len(living) >= 2 else None
+
+    def _friction(self) -> None:
+        """Neighbours at peace come to resent each other: over the border they share, and over
+        native land both are settling. Allies do not."""
+        top = self.rivals()
+        if top is not None:
+            # Whatever else is between them, allies or not: there is room for only one at the top.
+            self.remember(top[0], top[1], -rules.RIVALRY)
+            self.remember(top[1], top[0], -rules.RIVALRY)
+        for (a, b), relation in self.relations.items():
+            civ_a, civ_b = self.civs[a], self.civs[b]
+            if relation.status != "peace" or not (civ_a.alive and civ_b.alive):
+                continue
+            border = self.shared_border(civ_a, civ_b)
+            if border:
+                rub = rules.BORDER_FRICTION * min(1.0, border / rules.LONG_BORDER)
+                self.remember(a, b, -rub)
+                self.remember(b, a, -rub)
+        if self.natives is None:
+            return
+        for region in self.world.regions:
+            if not region.neutral:
+                continue
+            after = sorted(c for c, share in self.natives.shares(region).items() if share >= rules.RIVAL_SHARE)
+            for i, a in enumerate(after):
+                for b in after[i + 1:]:
+                    if self.relation(a, b).status == "peace":
+                        self.remember(a, b, -rules.RIVAL_FRICTION)
+                        self.remember(b, a, -rules.RIVAL_FRICTION)
+
     def sick(self, civ) -> bool:
         return self.now < civ.sick_until
 
@@ -186,6 +230,8 @@ class Diplomacy:
         for civ in self.civs.values():
             if civ.alive and self.enemies(civ.id):
                 civ.last_war = tick
+        if tick % rules.FRICTION_INTERVAL == 0:
+            self._friction()
         for pair in self.standing:
             self.standing[pair] *= rules.MEMORY_FADE  # old deeds count for less
         for civ in self.civs.values():
@@ -267,11 +313,12 @@ class Diplomacy:
 
         friendly = to_b.stance in FRIENDLY and to_a.stance in FRIENDLY
         if relation.status == "alliance":
-            if not friendly:
+            # An alliance lasts only while both still choose it: trading on is not enough.
+            if not (to_b.stance is Stance.ALLY and to_a.stance is Stance.ALLY):
                 self._set_status(relation, "peace", tick)
                 # Walking away is no offence in itself, but attacking soon afterwards is betrayal.
                 for civ, intent, other in ((civ_a, to_b, civ_b), (civ_b, to_a, civ_a)):
-                    if intent.stance not in FRIENDLY:
+                    if intent.stance is not Stance.ALLY:
                         self._alliance_breaks[(civ.id, other.id)] = tick
                 self._log(tick, events, "diplomacy", [civ_a, civ_b],
                           f"The alliance between {civ_a.name} and {civ_b.name} lapses")
@@ -467,6 +514,11 @@ class Diplomacy:
         world = self.world
         loser = self.civs.get(region.owner) if region.owner is not None else None
         was_main = loser is not None and loser.capital.tile == region.capital
+        if loser is None and self.natives is not None:
+            # Whoever else was settling a native region does not forgive being beaten to it.
+            for other, share in self.natives.shares(region).items():
+                if other != captor.id and share >= rules.RIVAL_SHARE:
+                    self.remember(other, captor.id, -rules.BEATEN_TO_IT)
         shares = self.spoils_shares(captor, loser) if loser else {captor.id: 1.0}
         for tile in region.tiles:
             owner = world.owner[tile]

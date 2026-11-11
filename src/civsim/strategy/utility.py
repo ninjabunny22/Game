@@ -14,8 +14,16 @@ ATTACK_THRESHOLD = 0.5  # an attack must be worth at least this to be launched
 ALLY_THRESHOLD = 0.6
 WAR_WEARY_TICKS = 300  # a war this old is only kept up from a position of strength
 RUNAWAY = 1.5  # a neighbour this many times our size is running away with the game
-LONG_PEACE = 800  # ticks at peace, divided by its taste for war, after which any civ starts to itch
-RESTLESS_PER_TICK = 0.2 / 400  # ... more with every season that passes, up to RESTLESS_MAX
+ALLIANCE_FATIGUE = 0.6  # how much an alliance with no purpose left loses of its appeal ...
+ALLIANCE_WEARS = 800  # ... over this many ticks
+RIVAL_ATTACK = 0.3  # how much more a war with the other of the two strongest is worth
+RIVAL_ALLY = 0.5  # ... and how much less an alliance with it
+RIVAL_BETRAYAL = 0.8  # ... and the share of the usual edge at which that ally is turned on
+BULLY = 1.4  # from this many times a neighbour's size a civ wants the war for its own sake ...
+BULLY_MAX = 0.8  # ... more the bigger the gap, up to this
+OVERBEARING = 1.6  # ... and from this, no past friendship stands in the way
+LONG_PEACE = 350  # ticks at peace, divided by its taste for war, after which any civ starts to itch
+RESTLESS_PER_TICK = 0.8 / 250  # ... more with every season that passes, up to RESTLESS_MAX
 RESTLESS_MAX = 1.6
 EXPOSED_EDGE = 1.3  # how much weaker a civ caught off balance is taken to be
 SICK_EDGE = 1.3  # how much weaker a civ struck by sickness is taken to be
@@ -74,7 +82,7 @@ class UtilityBrain:
 
             attack, why_attack = self._attack(you, n, edge, military, thirst, supplier, can_declare,
                                               bool(my_wars), runaway, strategy, backing, friends_wars)
-            ally, why_ally = self._ally(n, edge, thirst, my_enemies, threats, runaway)
+            ally, why_ally = self._ally(n, edge, thirst, my_enemies, threats, runaway, len(friends))
             if attack >= ATTACK_THRESHOLD and attack >= ally:
                 entry.update(stance="aggression", troop_commitment=self._commitment(edge, len(my_wars) + 1))
                 notes.append((4, f"{why_attack}: attacking {n['name']}"))
@@ -156,6 +164,12 @@ class UtilityBrain:
             # betrayal already against their name.
             lone = not [name for name in n["allied_with"] if name != you["name"]]
             ease = SICK_BETRAYAL if sick else 1.0  # a friend's weakness is some rulers' opportunity
+            if n.get("rival") and not sick:
+                # The two strongest working together: whoever strikes first takes it all.
+                if (military >= 1.0 and edge >= BETRAYAL_EDGE * RIVAL_BETRAYAL and not at_war
+                        and not you["distrusted_ticks_left"] and n.get("standing", 0.0) < 0.5):
+                    return 1.0 + (edge - BETRAYAL_EDGE * RIVAL_BETRAYAL) * military, \
+                        f"only {n['name']} stands between us and first place"
             if sick and military >= BETRAYAL_MILITARY * ease and edge >= BETRAYAL_EDGE * ease and lone \
                     and not at_war and not you["distrusted_ticks_left"] and n.get("standing", 0.0) < 1.5:
                 return 1.1 + (edge - BETRAYAL_EDGE * ease) * military, f"{n['name']} is sick and cannot defend itself"
@@ -174,6 +188,9 @@ class UtilityBrain:
         if sick:
             score += 0.35
             why = f"{n['name']} is laid low by sickness"
+        if n.get("rival"):
+            score += RIVAL_ATTACK
+            why = f"only {n['name']} stands between us and first place"
         if exposed and not sick:
             score += 0.3
             why = (f"{n['name']}'s army is away" if n.get("army_abroad") else f"{n['name']} has just lost a battle")
@@ -186,7 +203,15 @@ class UtilityBrain:
         else:
             score -= 0.6 if strategy["kind"] == "survival" else 0.3
         # Memory: a grudge is a reason, and a proven friend is not attacked lightly.
+        # The big lean on the small: the wider the gap in people and land, the better a war looks,
+        # and a civ far bigger than its neighbour forgets what it owes it.
+        ratio = (you["population"] + you["territory"]) / max(1, n["population"] + n["territory"])
+        if ratio >= BULLY:
+            score += min(BULLY_MAX, 0.5 * (ratio - 1.0))
+            why = f"{n['name']} is small and ours for the taking"
         standing = n.get("standing", 0.0)
+        if ratio >= OVERBEARING:
+            standing = min(standing, 0.0)
         score -= max(-0.6, min(0.6, 0.35 * standing))
         if standing <= -0.8:
             why = f"{n['name']} has wronged us and is weaker"
@@ -221,16 +246,22 @@ class UtilityBrain:
         return score, why
 
     @staticmethod
-    def _ally(n, edge, thirst, my_enemies, threats, runaway) -> tuple[float, str]:
+    def _ally(n, edge, thirst, my_enemies, threats, runaway, friends=0) -> tuple[float, str]:
         if n["truce"] and n["relation"] != "alliance":
             return 0.0, ""
         score, why = 0.0, f"{n['name']} is a useful friend"
+        shared = [name for name in n["at_war_with"] if name in my_enemies]
+        needed = bool(shared or threats - {n["name"]} or (runaway and runaway != n["name"]))
         if n["relation"] == "alliance":
-            score += 0.7
+            score += 0.5
             why = f"standing by {n['name']}"
+            if not needed:
+                # An alliance with nothing left to guard against wears thin with the years.
+                score -= min(ALLIANCE_FATIGUE, ALLIANCE_FATIGUE * (n.get("alliance_ticks") or 0) / ALLIANCE_WEARS)
+        else:
+            score -= 0.3 * friends  # one good friend is worth more than many"
         if n["their_stance_toward_you"] == "ally":
             score += 0.3
-        shared = [name for name in n["at_war_with"] if name in my_enemies]
         if shared:
             score += 0.6
             why = f"{n['name']} is also fighting {shared[0]}"
@@ -238,13 +269,15 @@ class UtilityBrain:
             score += 0.6
             why = f"threatened by {sorted(threats - {n['name']})[0]}"
         if runaway and runaway != n["name"] and edge <= 2.0:
-            score += 0.4
+            score += 0.5  # the small stand together against a giant
             why = f"{runaway} is running away with it"
         if thirst >= WATER_URGENT and n["water_rich"]:
             score += 0.6
             why = f"{n['name']} has the water we need"
         if n["distrusted_ticks_left"]:
             score -= 0.5
+        if n.get("rival") and not shared:
+            score -= RIVAL_ALLY  # the two at the top do not stay friends for long
         score += max(-0.6, min(0.6, 0.3 * n.get("standing", 0.0)))  # friends are kept, enemies not courted
         if n["name"] in threats:
             score -= 0.6

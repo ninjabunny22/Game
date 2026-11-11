@@ -13,7 +13,7 @@ from ..diplomacy import Intent, Stance
 from ..diplomacy.rules import MAX_RATE, MIN_RATE
 from ..economy.rules import RESOURCES
 
-CHECKIN_INTERVAL = 50
+CHECKIN_INTERVAL = 10
 MAX_REASON_LENGTH = 200
 
 STANCE_ALIASES = {
