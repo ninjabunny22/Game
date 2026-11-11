@@ -244,11 +244,8 @@ func _make_army(civ: int, army: Dictionary, look: String) -> Dictionary:
 		figure = _characters.instance("Commander", color, COMMANDER_HEIGHT)
 		if figure == null:
 			figure = _commander_figure(color)  # the model is missing: the old placeholder
-	elif SOLDIER_MODELS.has(str(army["dominant"])):
-		var soldier: Array = SOLDIER_MODELS[str(army["dominant"])]
-		figure = _characters.instance(soldier[0], color, soldier[1])
-	if figure == null:
-		figure = _soldier_figure(str(army["dominant"]), color)
+	else:
+		figure = _soldier(str(army["dominant"]), color)
 	# The army itself: whoever leads it in front, its soldiers drawn up in ranks behind.
 	var troop := Node3D.new()
 	troop.add_child(figure)
