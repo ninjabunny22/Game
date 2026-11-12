@@ -31,14 +31,10 @@ uniform vec3 mid_color : source_color = vec3(0.16, 0.50, 0.74);
 uniform vec3 deep_color : source_color = vec3(0.07, 0.26, 0.52);
 uniform vec3 foam_color : source_color = vec3(0.96, 0.98, 1.0);
 uniform float depth_range = 3.2;
-uniform float wave_height = 0.045;
+uniform float foam_width = 0.23;
 
-varying vec3 world_position;
-
-void vertex() {
-	world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	VERTEX.y += wave_height * (sin(world_position.x * 0.55 + TIME * 0.9) + cos(world_position.z * 0.45 + TIME * 0.7));
-}
+// The water is still: the surface stays flat at its level, so it never rises over the shore.
+// (A swell used to lift it by up to 0.09, which carried it onto low-lying land.)
 
 void fragment() {
 	// How much water lies between the surface and whatever is behind it.
@@ -49,9 +45,8 @@ void fragment() {
 	float t = clamp(depth / depth_range, 0.0, 1.0);
 	// Three flat bands rather than a smooth fade, to sit with the low-poly models.
 	vec3 color = t < 0.28 ? shallow_color : (t < 0.7 ? mid_color : deep_color);
-	// A line of foam along the shore, breathing in and out.
-	float ripple = 0.5 + 0.5 * sin(world_position.x * 1.7 + world_position.z * 1.3 + TIME * 1.6);
-	float foam = 1.0 - smoothstep(0.0, 0.16 + 0.14 * ripple, depth);
+	// A line of foam along the shore, of a steady width.
+	float foam = 1.0 - smoothstep(0.0, foam_width, depth);
 	ALBEDO = mix(color, foam_color, foam);
 	ALPHA = mix(0.80, 0.97, t);
 	ROUGHNESS = 0.18;
@@ -69,7 +64,8 @@ uniform vec3 light_color : source_color = vec3(0.70, 0.90, 1.0);
 void fragment() {
 	// UV.x runs along the river, UV.y across it.
 	float across = abs(UV.y - 0.5) * 2.0;
-	float streak = smoothstep(0.72, 1.0, 0.5 + 0.5 * sin(UV.x * 9.0 - TIME * 2.6 + UV.y * 3.0)) * (1.0 - across);
+	// Light streaks along the current, standing still.
+	float streak = smoothstep(0.72, 1.0, 0.5 + 0.5 * sin(UV.x * 9.0 + UV.y * 3.0)) * (1.0 - across);
 	float bank = smoothstep(0.72, 1.0, across);
 	ALBEDO = mix(water_color, light_color, max(streak * 0.8, bank * 0.6));
 }
@@ -399,8 +395,6 @@ func _add_sea() -> void:
 	var surface := MeshInstance3D.new()
 	var surface_mesh := PlaneMesh.new()
 	surface_mesh.size = extent
-	surface_mesh.subdivide_width = 160  # enough vertices for the swell to show
-	surface_mesh.subdivide_depth = 160
 	surface.mesh = surface_mesh
 	surface.material_override = _water_material
 	surface.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
