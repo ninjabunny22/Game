@@ -116,8 +116,8 @@ The overlay is built for watching:
   a civ with no ore buys its arms in for more gold. Standing down is quick. A lost army
   takes time and money to replace.
 - **Bigger armies sooner.** A civ starts with 160 people (shown) and grows twice as fast for
-  its first 750 days. Barracks need no research. A **Gold Mine** on a gold deposit raises
-  what it yields by half. Three late techs (Logistics, Quartermasters, Standing Army) each
+  its first 750 days. Barracks need no research. Gold mines on the map pay their region's
+  holder (see Gold mines below). Three late techs (Logistics, Quartermasters, Standing Army) each
   make a soldier 15% cheaper to arm and to pay.
 - **Troop tiers.** Iron Working, Machinery and Gunpowder each let a civ arm its soldiers one
   tier better (strength x1.25, x1.55, x1.9; arms cost x1.15, x1.3, x1.5). Recruits get the
@@ -183,7 +183,7 @@ copies in `godot/assets/`.
 |---|---|---|---|
 | `godot/assets/kaykit/` | Medieval Hexagon | buildings, building sites, props, trees, mountains, rocks, water plants | `scripts/models.gd` |
 | `godot/assets/adventurers/` | Adventurers | the six generals, the foot soldier, their weapons and animations | `scripts/adventurers.gd` |
-| `godot/assets/characters/` | our own | archer, cavalry knight, villager, rider, ship, stable, harbour, castles | `scripts/characters.gd` |
+| `godot/assets/characters/` | our own | archer, cavalry knight, villager, rider, ship, stable, harbour | `scripts/characters.gd` |
 
 The pack's hex ground tiles and its terraced hills and grassy peaks are not used: they are
 shaped for a hex grid, and CivSim's map is square. `godot/tests/check_assets.gd` loads every
@@ -213,15 +213,25 @@ model the viewer uses and checks the animations, weapons and colours
   Types that share a model carry a small pennant in the type's colour; models
   with nothing to repaint (fields, walls, stockpiles) fly their owner's flag.
 - **Buildings.** A building going up shows the pack's three construction stages in turn.
-  The Gold Mine has sacks and crates at its door, barracks a weapon
+  Barracks have a weapon
   rack and an archery butt, the academy a butt and a tent, the market crates. The fortress is
   the catapult tower, and walls alternate with gatehouses.
-- **Castles** stand on 5 x 5 tiles that the simulation keeps free of buildings: 4.4 tiles across
-  for a civ's own capital, 3.6 for its others. The ground under each is levelled so it never
+- **Castles** are put together from the Hexagon pack's pieces and grow with their civ: a
+  palisade and a keep (Ancient), then stone walls with corner towers, towers either side of the
+  gate, a well, a church and a smithy, a tavern and a market with towers along the walls, and
+  catapults on the corners. A civ's own capital is a step ahead of its others; one the natives
+  hold stays at the first stone walls. They stand on 5 x 5 tiles that the simulation keeps free
+  of buildings: 4.4 tiles across for a civ's own capital, 3.6 for its others, with a paved yard. The ground under each is levelled so it never
   sinks into a hillside, then eases back into the land; the shore and water are left as they
   are. Inside the walls stand the castle's hospital (a tent, and one more for each hospital
-  tech), the garrison drawn up in the front court, and the generals in reserve. An army
-  waiting in its own capital stands outside the gate. While an enemy holds a capital, rubble
+  tech) and the generals in reserve. Soldiers without a general (the garrison) are not drawn:
+  click a castle to see who holds it, its garrison, generals, hospital and any enemy hold.
+  When you rule a civ, another civ's garrison shows only as "about N" (within 30 of the
+  truth, steady from day to day) unless one of your armies has besieged or fought at that
+  castle in the last 30 days. An army waiting in its own capital stands outside the gate.
+- **Gold mines** are fixed sites, one at the heart of every gold vein (3 on a small map, 6 on a
+  medium, 11 on a large). Each pays 1 gold a day to whoever holds its region, once that civ knows
+  Mining. Nothing can be built on a mine's tile. While an enemy holds a capital, rubble
   and scaffolding lie against its walls.
 - **Our own figures.** Archers, cavalry knights, villagers, mounted villagers, the stables, the
   harbour, the ship and the two castles are models in `godot/assets/characters` (`Knight.glb`,

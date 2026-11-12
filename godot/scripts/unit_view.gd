@@ -78,6 +78,8 @@ func setup(terrain: Node3D, init: Dictionary, civ_colors: Array, characters: Ref
 func update(armies: Array, villagers: Array) -> void:
 	var seen := {}
 	for army: Dictionary in armies:
+		if army["role"] == "garrison":
+			continue  # a castle's garrison stays inside its walls: click the castle to see it
 		var id := int(army["id"])
 		seen[id] = true
 		var civ := int(army["civ"])

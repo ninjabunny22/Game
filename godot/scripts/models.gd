@@ -43,6 +43,20 @@ func instance(model: String, material: Material, footprint: float) -> Node3D:
 	return root
 
 
+## Like instance(), but standing on the middle of its own ground: some of the pack's pieces
+## (the fences) are drawn off to one side of their origin, along the edge of a hex.
+func instance_centred(model: String, material: Material, footprint: float) -> Node3D:
+	var copy := instance(model, material, footprint)
+	if copy == null:
+		return null
+	var aabb: AABB = _models[model]["aabb"]
+	var centre := aabb.get_center() * copy.scale.x
+	var holder := Node3D.new()
+	copy.position = Vector3(-centre.x, 0, -centre.z)
+	holder.add_child(copy)
+	return holder
+
+
 ## The model's parts as [mesh, transform] pairs, scaled to stand on `footprint` tiles, for
 ## drawing many copies in batches. Empty if the model could not be loaded.
 func parts(model: String, footprint: float) -> Array:

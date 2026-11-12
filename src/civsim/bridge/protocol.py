@@ -120,6 +120,9 @@ def init_message(sim: Simulation, lobby: bool = False) -> str:
              "x": region.capital % world.width, "y": region.capital // world.width}
             for region in world.regions
         ],
+        # Gold mines: fixed sites, each paying the owner of its region (see "regions" in each tick).
+        "mines": [{"x": tile % world.width, "y": tile // world.width, "region": world.region_of[tile]}
+                  for tile in world.mines],
         "native_faction": load_faction(),
         "unit_types": {
             unit.id: {"name": unit.name, "strength": unit.strength, "speed": unit.speed,
@@ -143,10 +146,31 @@ def init_message(sim: Simulation, lobby: bool = False) -> str:
     return encode("init", sim.tick, data)
 
 
+def _settlement(sim: Simulation, civ, settlement, watcher) -> dict:
+    """A capital as the viewer may see it: where it is, and who holds its castle."""
+    world, military = sim.world, sim.military
+    entry = {"name": settlement.name, "x": settlement.tile % world.width, "y": settlement.tile // world.width}
+    actual = heads(military.castle_garrison(civ))
+    if watcher is None or military.garrison_known(watcher, settlement.tile):
+        entry["garrison"] = actual
+    else:
+        entry["about"] = military.garrison_guess(watcher, settlement.tile, actual)
+    # Its generals in reserve, its hospital (all the civ's wounded and beds, spread through its
+    # castles) and, if an enemy has broken in, who and how far the hold has gone.
+    entry["generals"] = [{"name": c.name, "level": c.level} for c in civ.commanders if c.post == settlement.tile]
+    entry["beds"] = heads(military.beds(civ) / max(1, len(civ.settlements)))
+    entry["wounded"] = heads(civ.wounded / max(1, len(civ.settlements)))
+    region = world.regions[world.capital_tiles[settlement.tile]] if settlement.tile in world.capital_tiles else None
+    entry["held_by"] = region.held_by if region is not None else None
+    entry["hold"] = round(region.hold / rules.CAPITAL_HOLD, 3) if region is not None else 0.0
+    return entry
+
+
 def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
     world = sim.world
     tree = sim.tech_tree
     diplomacy = sim.diplomacy
+    watcher = sim.ruler.civ if sim.ruler.civ is not None and sim.ruler.civ.alive else None
     civs = []
     for civ in sim.civs:
         mods = sim.modifiers[civ.id]
@@ -169,6 +193,7 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
             # The sickness a long war has brought on the civ, and how many days it has left; null when well.
             "sickness": {"name": civ.sickness, "days": max(0, civ.sick_until - sim.tick)} if civ.sickness else None,
             "regions": [region.id for region in world.regions if region.owner == civ.id],
+            "mines": sim.mines_held(civ),  # gold mines in its regions, each paying it gold every day
             "population": heads(civ.population),
             "housing": heads(mods.housing),
             "storage": {res: int(mods.storage[res]) for res in RESOURCES},  # hard cap per resource
@@ -177,9 +202,10 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
             "workers": {res: round(civ.workers[res], 1) for res in RESOURCES},
             "idle": round(civ.idle, 1),
             "territory_size": len(civ.territory),
-            "settlements": [
-                {"name": s.name, "x": s.tile % world.width, "y": s.tile // world.width} for s in civ.settlements
-            ],
+            # Each capital, with the soldiers holding its castle: "garrison" exactly, or, when a
+            # human rules another civ that has not attacked this castle lately, only "about"
+            # (within 30 of the truth). The viewer never gets the number it is not meant to see.
+            "settlements": [_settlement(sim, civ, s, watcher) for s in civ.settlements],
             # "x", "y" is the building's tile: the middle of an odd-sized building's square,
             # and the corner nearest the origin of an even-sized one. "village" is the id of
             # the village or town it belongs to.
@@ -242,11 +268,12 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
         })
     armies = []
     villagers = []
-    watcher = sim.ruler.civ if sim.ruler.civ is not None and sim.ruler.civ.alive else None
     for civ in sim.civs:
         for army in civ.armies:
             if army.size < 0.5:
                 continue  # an empty garrison is not drawn
+            if army.role == "garrison" and watcher is not None and civ.id != watcher.id:
+                continue  # how many hold another civ's castles is shown only roughly, by castle
             commander = army.commander
             armies.append({
                 "id": army.id, "civ": civ.id, "x": army.tile % world.width, "y": army.tile // world.width,

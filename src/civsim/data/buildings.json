@@ -65,12 +65,6 @@
     "effects": {"yield_mult": {"ore": 0.25}},
     "color": "#5c4a42", "height": 0.5
   },
-  "gold_mine": {
-    "name": "Gold Mine", "category": "wealth", "placement": "yield:gold", "need_resource": "gold", "requires_tech": "mining",
-    "cost": {"wood": 30, "stone": 15}, "build_time": 14, "upkeep": {"wood": 0.09, "water": 0.03},
-    "effects": {"yield_mult": {"gold": 0.5}},
-    "color": "#d4a514", "height": 0.5
-  },
   "library": {
     "name": "Library", "category": "science", "placement": "center", "requires_tech": "writing",
     "cost": {"wood": 40, "stone": 30}, "build_time": 16, "upkeep": {"gold": 0.15},

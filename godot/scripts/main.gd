@@ -30,6 +30,9 @@ var _auto_started := false
 var _starting := ""  # the mode of the game just asked for from the menu: "watch" or "rule"
 var _models := Models.new()
 var _characters := Characters.new()
+var _civs: Array = []  # the last tick's civs, for picking a castle under the mouse
+var _press_at := Vector2(-1000, -1000)  # where the left button went down
+const CLICK_SLOP := 6.0  # pixels the mouse may move between press and release and still be a click
 var _adventurers := Adventurers.new()
 
 var _ready_for_ticks := false
@@ -59,6 +62,47 @@ func _ready() -> void:
 	_client.tick_received.connect(_on_tick)
 	_client.status_received.connect(_hud.set_status)
 	_hud.command_requested.connect(_client.send_command)
+
+
+## A left click (not a drag, which pans the map) on a castle opens its panel; anywhere else closes it.
+func _unhandled_input(event: InputEvent) -> void:
+	if not (event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT):
+		return
+	if event.pressed:
+		_press_at = event.position
+	elif _press_at.distance_to(event.position) < CLICK_SLOP:
+		var tile: Vector2i = _castle_under(event.position)
+		_hud.show_castle(tile.x, tile.y)
+
+
+## The tile of the capital whose castle is under the screen point, or (-1, -1).
+func _castle_under(at: Vector2) -> Vector2i:
+	var camera := get_viewport().get_camera_3d()
+	if camera == null or _terrain.map_width == 0:
+		return Vector2i(-1, -1)
+	var origin := camera.project_ray_origin(at)
+	var direction := camera.project_ray_normal(at)
+	# Walk down the ray until it meets the ground.
+	var ground := Vector3.INF
+	var t := 0.0
+	while t < camera.far:
+		var point := origin + direction * t
+		var floor_y: float = _terrain.height_at(point.x, point.z)
+		if point.y <= floor_y + 0.6:  # a castle stands well above its ground: aim for its walls
+			ground = point
+			break
+		t += maxf(0.1, (point.y - floor_y) * 0.4)
+	if ground == Vector3.INF:
+		return Vector2i(-1, -1)
+	var best := Vector2i(-1, -1)
+	var nearest := CivView.CAPITAL_FOOTPRINT * 0.5 + 0.4
+	for civ: Dictionary in _civs:
+		for settlement: Dictionary in civ["settlements"]:
+			var gap := Vector2(float(settlement["x"]) - ground.x, float(settlement["y"]) - ground.z).length()
+			if gap < nearest:
+				nearest = gap
+				best = Vector2i(int(settlement["x"]), int(settlement["y"]))
+	return best
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
@@ -163,6 +207,9 @@ func _on_init(data: Dictionary) -> void:
 		_camera.focus(_terrain.tile_position(int(view[0]), int(view[1])), view[2])
 	if OS.get_environment("CIVSIM_DIPLOMACY") == "1":  # start with the diplomacy panel open
 		_hud.toggle_diplomacy()
+	var castle := OS.get_environment("CIVSIM_CASTLE").split_floats(",", false)
+	if castle.size() == 2:  # CIVSIM_CASTLE="x,y" starts with that castle's panel open
+		_hud.show_castle(int(castle[0]), int(castle[1]))
 	if OS.get_environment("CIVSIM_CARD") != "":  # start with one civ's card open, by civ id
 		_hud.toggle_card(int(OS.get_environment("CIVSIM_CARD")))
 	_territory_rev = -1
@@ -206,6 +253,7 @@ func _on_tick(tick: int, data: Dictionary) -> void:
 	if rev != _territory_rev:
 		_territory_rev = rev
 		_terrain.apply_territory(data["territory"], _civ_colors)
+	_civs = data["civs"]
 	_civ_view.update(data["civs"], data["regions"])
 	_civ_view.show_rallies(data.get("rallies", []))
 	_civ_view.update_links(data["civs"], data["relations"], data["deals"])

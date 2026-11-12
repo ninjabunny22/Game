@@ -24,6 +24,8 @@ class WorldMap:
         self.heights: list[float] = [0.0] * size
         self.biomes: list[Biome] = [Biome.OCEAN] * size
         self.deposits: dict[int, str] = {}
+        # Gold mines: one at the heart of every gold vein. Each pays its region's owner.
+        self.mines: list[int] = []
         # Rivers run through land tiles: tile -> size (1 near the source, up to 3 downstream).
         self.rivers: dict[int, int] = {}
         # Where each river tile's water goes next: the next river tile downstream, or the

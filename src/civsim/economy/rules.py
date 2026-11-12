@@ -7,6 +7,7 @@ FOOD_PER_POP = 0.08
 WOOD_PER_POP = 0.01  # fuel; without it the population stops growing
 CONSUMPTION_PER_TECH = 0.04  # each known tech raises per-person food and fuel consumption by this fraction
 TAX_PER_POP = 0.004  # gold
+MINE_GOLD = 1.0  # a day, from each gold mine in a region the civ holds
 
 # Water is not gathered by workers: it flows in from what the territory gives access to.
 WATER_PER_POP = 0.03

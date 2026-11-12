@@ -25,10 +25,6 @@ const BUILDING_MODELS := {
 	"lumber_camp": {"model": "building_lumbermill_green", "size": 0.9, "tinted": true},
 	"quarry": {"model": "building_mine_green", "size": 0.9, "tinted": true, "marker": true},
 	"mine": {"model": "building_mine_green", "size": 0.9, "tinted": true},
-	# A mine with its gold sacked and crated at the door.
-	"gold_mine": {"model": "building_mine_green", "size": 0.8, "tinted": true, "marker": true,
-		"props": [["sack", 0.12, Vector3(0.38, 0, 0.3)], ["crate_B_small", 0.12, Vector3(0.42, 0, 0.12)],
-			["sack", 0.12, Vector3(0.3, 0, 0.42)]]},
 	"granary": {"model": "building_windmill_green", "size": 0.85, "tinted": true},
 	"lumber_yard": {"model": "resource_lumber", "size": 0.8},
 	"stone_yard": {"model": "resource_stone", "size": 0.7},
@@ -59,16 +55,33 @@ const BUILDING_MODELS := {
 }
 # Capitals have their own models in assets/characters; the pack's castle and tower stand in
 # if a file is missing.
-const CAPITAL_SCENE := "CapitalCastle"  # a civ's own capital
-const TOWN_SCENE := "Castle"  # every other region capital
+## Castles are put together from the pack's pieces, and grow with their civ: a palisade and
+## a keep at first, then stone walls and towers, then a church and a smithy inside, then a
+## tavern and a market, towers along the walls, and catapults on the corners. A civ's own
+## capital is a step ahead of its others; a capital the natives hold stays as it began.
+const NATIVE_CASTLE := 1
+const KEEP := "building_castle_green"
 ## A building going up: the pack's three stages, from footings to roof, by how far it has got.
 const SITE_STAGES := ["building_stage_A", "building_stage_B", "building_stage_C"]
 const SITE_SIZE := 0.85
 ## Every pack model drawn other than through BUILDING_MODELS, for the asset check.
-const EXTRA_MODELS := ["building_destroyed", "building_scaffolding", "flag_green", "building_castle_green", "building_tower_A_green", "building_stage_A",
+const EXTRA_MODELS := ["building_destroyed", "building_scaffolding", "flag_green", "wall_straight", "wall_straight_gate",
+	"fence_wood_straight", "fence_wood_straight_gate", "building_tower_base_green", "building_tower_A_green",
+	"building_tower_catapult_green", "building_church_green", "building_blacksmith_green", "building_well_green",
+	"building_tavern_green", "building_market_green", "building_castle_green", "building_tower_A_green", "building_stage_A",
 	"building_stage_B", "building_stage_C", "sack", "crate_A_small", "crate_B_small", "tent", "weaponrack", "target"]
-const CAPITAL_MODEL := "building_castle_green"
-const TOWN_MODEL := "building_tower_A_green"
+## Castle pieces: [model, at level, size as a share of the castle's footprint, where (as a
+## share of the footprint from the centre; the gate is at +z), faces (quarter turns), tinted].
+const CASTLE_INSIDE := [
+	["building_church_green", 3, 0.17, Vector2(-0.24, -0.26), 0, true],
+	["building_blacksmith_green", 3, 0.17, Vector2(0.24, -0.26), 0, true],
+	["building_well_green", 2, 0.08, Vector2(0.0, -0.33), 0, false],
+	["building_tavern_green", 4, 0.16, Vector2(-0.3, 0.0), 1, true],
+	["building_market_green", 4, 0.18, Vector2(0.3, 0.0), 3, true],
+]
+const YARD_STONE := Color(0.5, 0.48, 0.44)  # the paved yard inside stone walls
+const YARD_EARTH := Color(0.55, 0.45, 0.32)  # ... and the packed earth inside a palisade
+const WALL_SEGMENTS := {"main": 5, "town": 3}  # wall pieces along each side; the gate takes the middle one
 # A castle stands on its capital's tile and the two rings around it (5 x 5 tiles), where the
 # sim builds nothing.
 const CAPITAL_FOOTPRINT := 4.4
@@ -78,9 +91,71 @@ const HOSPITAL_TECHS := ["field_medicine", "surgeons", "military_hospitals"]
 const TENT_SIZE := 0.3
 ## Where the tents stand in each castle's courtyard, in tiles from its centre (the gate is at +z).
 const TENT_SPOTS := {
-	"CapitalCastle": [Vector3(1.15, 0, -1.0), Vector3(1.45, 0, -1.0), Vector3(1.15, 0, -0.6), Vector3(1.45, 0, -0.6)],
-	"Castle": [Vector3(0.75, 0, -0.95), Vector3(1.05, 0, -0.95), Vector3(0.75, 0, -0.55), Vector3(1.05, 0, -0.55)],
+	"main": [Vector3(1.15, 0, 1.15), Vector3(1.5, 0, 1.15), Vector3(1.15, 0, 1.5), Vector3(1.5, 0, 1.5)],
+	"town": [Vector3(0.75, 0, 0.8), Vector3(1.05, 0, 0.8), Vector3(0.75, 0, 1.1), Vector3(1.05, 0, 1.1)],
 }
+## Puts a castle together on `root` from the pack's pieces. Returns the height of its keep.
+func _compose_castle(root: Node3D, color: Color, is_main: bool, level: int) -> float:
+	var footprint := CAPITAL_FOOTPRINT if is_main else TOWN_FOOTPRINT
+	var tinted: Material = _models.tinted_material(color)
+	var plain: Material = _models.base_material()
+	var half := footprint * 0.5 - 0.2  # where the walls run
+	var segments: int = WALL_SEGMENTS["main" if is_main else "town"]
+	var length := 2.0 * half / segments
+	var stone := level >= 1
+	# A yard inside the walls: packed earth behind a palisade, paving behind stone walls.
+	var yard := MeshInstance3D.new()
+	var yard_mesh := PlaneMesh.new()
+	yard_mesh.size = Vector2(2.0 * half, 2.0 * half)
+	yard_mesh.material = _flat_material(YARD_STONE if stone else YARD_EARTH)
+	yard.mesh = yard_mesh
+	yard.position.y = 0.025
+	yard.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(yard)
+	for side in 4:
+		var turn := side * PI / 2.0  # side 0 faces the gate's way, +z
+		for i in segments:
+			var along := -half + length * (i + 0.5)
+			var gate := side == 0 and i == segments / 2
+			var piece: String
+			if stone:
+				piece = "wall_straight_gate" if gate else "wall_straight"
+			else:
+				piece = "fence_wood_straight_gate" if gate else "fence_wood_straight"
+			var at := Basis(Vector3.UP, turn) * Vector3(along, 0, half)
+			# The fences run along z in the pack, the walls along x.
+			_castle_piece(root, piece, plain, length * (1.0 if stone else 1.02), at, turn + (0.0 if stone else PI / 2.0))
+			if level >= 4 and side > 0 and i == segments / 2:
+				_castle_piece(root, "building_tower_base_green", tinted, footprint * 0.11, at, turn)  # towers along the walls
+	if stone:
+		var corner := "building_tower_catapult_green" if level >= 5 else "building_tower_A_green"
+		for corner_at: Vector3 in [Vector3(half, 0, half), Vector3(-half, 0, half), Vector3(half, 0, -half), Vector3(-half, 0, -half)]:
+			_castle_piece(root, corner, tinted, footprint * 0.13, corner_at, 0.0)
+	if level >= 2:  # towers either side of the gate
+		for flank: float in [-length * 0.6, length * 0.6]:
+			_castle_piece(root, "building_tower_base_green", tinted, footprint * 0.09, Vector3(flank, 0, half + 0.05), 0.0)
+	var keep_size := footprint * (0.4 if is_main else 0.34)
+	_castle_piece(root, KEEP, tinted, keep_size, Vector3(0, 0, -footprint * 0.04), 0.0)
+	for inside: Array in CASTLE_INSIDE:
+		if level >= int(inside[1]):
+			var spot: Vector2 = inside[3]
+			_castle_piece(root, inside[0], tinted if inside[5] else plain, footprint * float(inside[2]),
+				Vector3(spot.x, 0, spot.y) * footprint, int(inside[4]) * PI / 2.0)
+	return _models.height(KEEP, keep_size)
+
+
+func _castle_piece(root: Node3D, model: String, material: Material, size: float, at: Vector3, turn: float) -> void:
+	var piece: Node3D = _models.instance_centred(model, material, size)
+	if piece != null:
+		piece.position = at
+		piece.rotation.y = turn
+		root.add_child(piece)
+
+
+## A gold mine: a fixed site on its vein, in the colours of whoever holds its region.
+const GOLD_MINE := {"model": "building_mine_green", "size": 0.85, "tinted": true,
+	"props": [["sack", 0.12, Vector3(0.38, 0, 0.3)], ["crate_B_small", 0.12, Vector3(0.42, 0, 0.12)],
+		["sack", 0.12, Vector3(0.3, 0, 0.42)]]}
 ## A capital an enemy has broken into: rubble against its walls while the hold lasts.
 const RUIN_SPOTS := [["building_destroyed", 1.0, Vector3(-1.1, 0, 1.4)], ["building_destroyed", 0.85, Vector3(1.3, 0, -1.2)],
 	["building_scaffolding", 0.9, Vector3(1.25, 0, 1.35)]]
@@ -120,6 +195,7 @@ var _native_name := ""
 var _links: ImmediateMesh
 var _link_labels := {}  # "a:b" -> Label3D naming the war or alliance
 var _civ_names := {}  # civ id -> name
+var _mines: Array = []  # gold mines from the init message: x, y, region
 var _rally_labels := {}  # rally id -> Label3D over the city it gathers in, or the city it marches on
 var _sieges := {}  # region id -> Label3D over a capital an enemy army has broken into
 var _detail := 0  # 0 whole-map view, 1 closer, 2 full detail
@@ -150,6 +226,7 @@ func setup(terrain: Node3D, init: Dictionary, civ_colors: Array, models: RefCoun
 	_civ_colors = civ_colors
 	_add_deposits(init["map"]["deposits"], init["deposit_types"])
 	_regions.clear()
+	_mines = init.get("mines", [])
 	_civ_names.clear()
 	for civ: Dictionary in init["civs"]:
 		_civ_names[int(civ["id"])] = str(civ["name"])
@@ -175,6 +252,7 @@ func setup(terrain: Node3D, init: Dictionary, civ_colors: Array, models: RefCoun
 func update(civs: Array, regions: Array) -> void:
 	var seen := {}
 	_show_sieges(regions)
+	_show_mines(regions, seen)
 	# Capitals still held by the native faction.
 	for region: Dictionary in regions:
 		if region["owner"] != null:
@@ -184,7 +262,7 @@ func update(civs: Array, regions: Array) -> void:
 		seen[key] = true
 		if not _nodes.has(key):
 			var caption := "%s\n%s" % [info["capital"], info["name"]]
-			_nodes[key] = _make_capital(_native_color, caption, int(info["x"]), int(info["y"]), false)
+			_nodes[key] = _make_capital(_native_color, caption, int(info["x"]), int(info["y"]), false, NATIVE_CASTLE)
 			_terrain.set_clearing(key, _nodes[key].position, TOWN_FOOTPRINT * 0.5 + 0.15)
 	for civ: Dictionary in civs:
 		var civ_id := int(civ["id"])
@@ -193,11 +271,13 @@ func update(civs: Array, regions: Array) -> void:
 			# The first capital in the list is the civ's own; it is marked with a star and a taller flag.
 			var is_main := index == 0
 			index += 1
-			var key := "%d:%d:%d:%s" % [civ_id, int(settlement["x"]), int(settlement["y"]), is_main]
+			# A castle grows with its civ: rebuilt when the civ enters a new era.
+			var level := castle_level(int(civ.get("era", 0)), is_main)
+			var key := "%d:%d:%d:%s:%d" % [civ_id, int(settlement["x"]), int(settlement["y"]), is_main, level]
 			seen[key] = true
 			if not _nodes.has(key):
 				var caption := ("★ " if is_main else "") + str(settlement["name"])
-				_nodes[key] = _make_capital(_civ_colors[civ_id], caption, int(settlement["x"]), int(settlement["y"]), is_main)
+				_nodes[key] = _make_capital(_civ_colors[civ_id], caption, int(settlement["x"]), int(settlement["y"]), is_main, level)
 				# A castle is wider than its tile: fell the trees it would stand in.
 				_terrain.set_clearing(key, _nodes[key].position, (CAPITAL_FOOTPRINT if is_main else TOWN_FOOTPRINT) * 0.5 + 0.15)
 			_show_hospital(_nodes[key], civ.get("techs", []), _civ_colors[civ_id], is_main)
@@ -331,6 +411,33 @@ func _show_sieges(regions: Array) -> void:
 			_sieges.erase(id)
 
 
+## Gold mines, each in the colours of its region's holder; redrawn when the region changes hands.
+func _show_mines(regions: Array, seen: Dictionary) -> void:
+	var owners := {}
+	for region: Dictionary in regions:
+		owners[int(region["id"])] = region["owner"]
+	for mine: Dictionary in _mines:
+		var owner: Variant = owners.get(int(mine["region"]))
+		var key := "m:%d:%d:%s" % [int(mine["x"]), int(mine["y"]), str(owner)]
+		seen[key] = true
+		if _nodes.has(key):
+			continue
+		var color: Color = _native_color if owner == null else _civ_colors[int(owner)]
+		var root := Node3D.new()
+		var spot: Vector3 = _terrain.tile_position(int(mine["x"]), int(mine["y"]))
+		spot.y = _terrain.height_at(spot.x, spot.z)
+		root.position = spot
+		root.set_meta("kind", "mine")
+		var model: Node3D = _models.instance(GOLD_MINE["model"], _models.tinted_material(color), float(GOLD_MINE["size"]))
+		if model != null:
+			model.rotation.y = (int(mine["x"]) * 7 + int(mine["y"]) * 13) % 4 * PI / 2
+			root.add_child(model)
+			_add_props(root, GOLD_MINE, color, 1, model.rotation.y)
+		add_child(root)
+		_nodes[key] = root
+		_terrain.set_clearing(key, spot, 0.55)
+
+
 ## The castle's hospital: a tent in the courtyard, and one more for each hospital tech known.
 func _show_hospital(castle: Node3D, techs: Array, color: Color, is_main: bool) -> void:
 	var level := 1
@@ -345,7 +452,7 @@ func _show_hospital(castle: Node3D, techs: Array, color: Color, is_main: bool) -
 		old.queue_free()
 	var hospital := Node3D.new()
 	hospital.name = "hospital"
-	var spots: Array = TENT_SPOTS[CAPITAL_SCENE if is_main else TOWN_SCENE]
+	var spots: Array = TENT_SPOTS["main" if is_main else "town"]
 	for i in mini(level, spots.size()):
 		var tent: Node3D = _models.instance("tent", _models.tinted_material(color), TENT_SIZE)
 		if tent != null:
@@ -695,24 +802,18 @@ func _add_block(root: Node3D, civ_id: int, type: String) -> void:
 	root.add_child(plinth)
 
 
-## A region capital. A civ's own capital is a castle, clearly the largest thing on the
-## map; every other capital is a tall tower. Both wear their holder's colour (the
-## native faction's, for a capital no civ holds), with the name above.
-func _make_capital(color: Color, caption: String, x: int, y: int, is_main: bool) -> Node3D:
+## How far a castle has grown, 0 to 6, from its civ's era: a civ's own capital is a step ahead.
+static func castle_level(era: int, is_main: bool) -> int:
+	return clampi(era + (1 if is_main else 0), 0, 6)
+
+
+## A region capital: a castle built from the pack's pieces, in its holder's colour (the native
+## faction's, for a capital no civ holds), with the name above.
+func _make_capital(color: Color, caption: String, x: int, y: int, is_main: bool, level: int) -> Node3D:
 	var root := Node3D.new()
 	root.position = _terrain.tile_position(x, y)
-	var model_name := CAPITAL_MODEL if is_main else TOWN_MODEL
-	var footprint := CAPITAL_FOOTPRINT if is_main else TOWN_FOOTPRINT
-	var top := 3.0
-	var model: Node3D = _characters.instance(CAPITAL_SCENE if is_main else TOWN_SCENE, color, 0.0, footprint)
-	if model != null:
-		root.add_child(model)
-		top = float(model.get_meta("height"))
-	else:
-		model = _models.instance(model_name, _models.tinted_material(color), footprint)
-	if model != null and model.get_parent() == null:
-		root.add_child(model)
-		top = _models.height(model_name, footprint)
+	var top := _compose_castle(root, color, is_main, level)
+	var model: Node3D = root if root.get_child_count() > 0 else null
 	if model == null:  # no model at all: the old keep
 		var keep := MeshInstance3D.new()
 		var keep_mesh := BoxMesh.new()

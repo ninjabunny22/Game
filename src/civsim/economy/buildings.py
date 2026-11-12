@@ -93,6 +93,8 @@ def placement_problem(civ, world: WorldMap, bdef: BuildingDef, tile: int, withou
     if built is None:
         built = everything_built(civ, world)
     for part in ground:
+        if part in world.mines:
+            return "a gold mine stands here"
         if castle_ground(world, part) or any(
                 _near(world, s.tile, part) for s in civ.settlements if s.tile not in world.capital_tiles):
             return "a capital's castle stands here"
@@ -148,7 +150,7 @@ def may_stand(world: WorldMap, building_type: str, tile: int) -> bool:
     """False for a building that could never have been placed on this tile whoever owned it
     (anything where a castle stands, stables on a capital's tile above all). Checked when
     buildings change hands with their tile."""
-    return not castle_ground(world, tile)
+    return not castle_ground(world, tile) and tile not in world.mines
 
 
 def survey_ground(civ, world: WorldMap) -> tuple[set[int], set[int]]:
@@ -160,7 +162,7 @@ def survey_ground(civ, world: WorldMap) -> tuple[set[int], set[int]]:
                    for n in castle_square(world, s.tile)}
     free, taken = set(), set(built)
     for tile in civ.territory:
-        if castle_ground(world, tile) or tile in own_castles:
+        if castle_ground(world, tile) or tile in own_castles or tile in world.mines:
             taken.add(tile)
         elif tile not in built and BIOME_INFO[world.biomes[tile]].buildable:
             free.add(tile)

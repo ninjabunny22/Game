@@ -22,6 +22,9 @@ var _pause_button: Button
 var _log: RichTextLabel
 var _cards_box: VBoxContainer
 var _diplomacy_panel: PanelContainer
+var _castle_panel: PanelContainer
+var _castle_text: RichTextLabel
+var _castle_at := Vector2i(-1, -1)  # the castle being looked at, by tile; (-1, -1) for none
 var _diplomacy: RichTextLabel
 var _cards := {}  # civ id -> RichTextLabel
 var _expanded := -1  # civ whose card shows full detail, or -1
@@ -146,6 +149,26 @@ func _ready() -> void:
 	_cards_box.custom_minimum_size = Vector2(370, 0)
 	_cards_box.add_theme_constant_override("separation", 10)
 	side.add_child(_cards_box)
+
+	# A castle clicked on the map: who holds it and with how many. Closed by clicking elsewhere.
+	_castle_panel = _panel(root)
+	_castle_panel.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	_castle_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_castle_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_castle_panel.offset_left = -10
+	_castle_panel.offset_right = -10
+	_castle_panel.offset_top = -10
+	_castle_panel.offset_bottom = -10
+	_castle_panel.visible = false
+	_castle_text = RichTextLabel.new()
+	_castle_text.bbcode_enabled = true
+	_castle_text.fit_content = true
+	_castle_text.scroll_active = false
+	_castle_text.custom_minimum_size = Vector2(320, 0)
+	_castle_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_castle_text.add_theme_font_size_override("normal_font_size", 13)
+	_castle_text.add_theme_font_size_override("bold_font_size", 13)
+	_castle_panel.add_child(_castle_text)
 
 	# Impossible to miss when the sim is paused.
 	_paused_banner = Label.new()
@@ -470,6 +493,7 @@ func update(tick: int, data: Dictionary) -> void:
 	for civ: Dictionary in data["civs"]:
 		_latest[int(civ["id"])] = civ
 	_refresh_ruler(data.get("ruler"))
+	_refresh_castle()
 	_victory = data.get("victory")
 	_refresh_status()
 	_armies.clear()
@@ -518,6 +542,41 @@ func _refresh_cards() -> void:
 
 
 ## Opens one civ's card to full detail, or closes it if it is already open.
+## Show the castle standing on tile (x, y), or close the panel if `x` is negative.
+func show_castle(x: int, y: int) -> void:
+	_castle_at = Vector2i(x, y)
+	_refresh_castle()
+
+
+func _refresh_castle() -> void:
+	_castle_panel.visible = false
+	if _castle_at.x < 0:
+		return
+	for civ: Dictionary in _latest.values():
+		for settlement: Dictionary in civ.get("settlements", []):
+			if int(settlement["x"]) != _castle_at.x or int(settlement["y"]) != _castle_at.y:
+				continue
+			var lines: Array[String] = []
+			var main: bool = civ["settlements"][0] == settlement
+			lines.append("[font_size=16][b]%s[/b][/font_size]  %s" % [str(settlement["name"]), _civ_name(int(civ["id"]))])
+			lines.append("[color=#8a93a0]%s[/color]" % ("The capital of the realm" if main else "A regional capital"))
+			if settlement.has("garrison"):
+				lines.append("[color=#8a93a0]Garrison:[/color] %d soldiers" % int(settlement["garrison"]))
+			else:
+				lines.append("[color=#8a93a0]Garrison:[/color] about %d soldiers [color=#8a93a0](attack it to count them)[/color]" % int(settlement["about"]))
+			var generals: Array[String] = []
+			for general: Dictionary in settlement.get("generals", []):
+				generals.append("%s (level %d)" % [general["name"], int(general["level"])])
+			lines.append("[color=#8a93a0]Generals here:[/color] %s" % (", ".join(generals) if not generals.is_empty() else "none"))
+			lines.append("[color=#8a93a0]Hospital:[/color] %d of %d beds taken" % [int(settlement.get("wounded", 0)), int(settlement.get("beds", 0))])
+			if settlement.get("held_by") != null:
+				lines.append("[color=#e07a6a]Held by %s: %d%% taken[/color]" % [
+					str(_civ_info[int(settlement["held_by"])]["name"]), int(float(settlement.get("hold", 0.0)) * 100.0)])
+			_castle_text.text = "\n".join(lines)
+			_castle_panel.visible = true
+			return
+
+
 func toggle_card(civ_id: int) -> void:
 	if not _cards.has(civ_id):
 		return
@@ -689,6 +748,8 @@ func _card_text(info: Dictionary, civ: Dictionary) -> String:
 	for region_id: Variant in civ["regions"]:
 		regions_held.append(_region_names.get(int(region_id), "?"))
 	lines.append("[color=#8a93a0]Regions (%d):[/color] %s" % [regions_held.size(), ", ".join(regions_held)])
+	if int(civ.get("mines", 0)) > 0:
+		lines.append("[color=#d9c36a]Gold mines: %d[/color] [color=#8a93a0](each pays a gold a day, once Mining is known)[/color]" % int(civ["mines"]))
 	lines.append("[b]%s[/b] era   Pop %d/%d   Land %d   Buildings %d" % [
 		civ["era_name"], int(civ["population"]), int(civ["housing"]),
 		int(civ["territory_size"]), civ["buildings"].size(),

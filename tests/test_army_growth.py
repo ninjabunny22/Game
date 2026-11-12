@@ -36,17 +36,31 @@ def test_a_young_civ_starts_larger_and_grows_faster_for_a_while():
     assert early_growth(economy.EARLY_GROWTH_UNTIL + economy.EARLY_GROWTH_FADE) == 0 == early_growth(None)
 
 
-def test_a_gold_mine_is_built_on_gold_and_raises_what_it_yields(sim):
-    mine = sim.building_defs["gold_mine"]
-    assert mine.placement == "yield:gold" and mine.need_resource == "gold" and mine.requires_tech == "mining"
+def test_a_gold_mine_stands_on_every_gold_vein_and_pays_its_regions_owner(sim):
+    from civsim.economy import placement_problem
+    world = sim.world
+    assert "gold_mine" not in sim.building_defs, "a mine is a site on the map, not a building"
+    assert world.mines and all(world.deposits[t] == "gold" for t in world.mines)
+    tile = world.mines[0]
+    region = world.regions[world.region_of[tile]]
     civ = sim.civs[0]
-    before = compute_modifiers(civ, sim.building_defs, sim.tech_tree).yield_mult["gold"]
-    civ.buildings.append(Building("gold_mine", sorted(civ.territory)[0], 1.0, True))
-    assert compute_modifiers(civ, sim.building_defs, sim.tech_tree).yield_mult["gold"] == pytest.approx(before + 0.5)
-    needs = sim.ai.assess_needs(civ, sim.modifiers[civ.id])
-    calm = sim.ai._building_need(mine, needs)
-    civ.unpaid = True
-    assert sim.ai._building_need(mine, sim.ai.assess_needs(civ, sim.modifiers[civ.id])) == 1.0 > calm
+    region.owner = civ.id
+    held = sim.mines_held(civ)
+    assert held >= 1
+    civ.known_techs = []
+    sim.step()
+    assert sim.modifiers[civ.id].income["gold"] == pytest.approx(0.0, abs=1e-9) or "mining" not in civ.known_techs, \
+        "no gold from a mine before Mining is known"
+    civ.known_techs = ["mining"]
+    sim.step()
+    assert sim.modifiers[civ.id].income["gold"] >= economy.MINE_GOLD * held - 1e-9
+    civ.territory.add(tile)
+    world.owner[tile] = civ.id
+    assert placement_problem(civ, world, sim.building_defs["house"], tile) == "a gold mine stands here"
+    sim.civs[1].known_techs = ["mining"]
+    region.owner = sim.civs[1].id  # the region changes hands: so does its mine's gold
+    assert sim.mines_held(sim.civs[1]) >= 1 and sim.mines_held(civ) == held - sum(
+        1 for t in world.mines if world.region_of[t] == region.id)
 
 
 def test_barracks_need_no_research_and_no_ore(sim):
@@ -197,3 +211,36 @@ def test_an_army_is_counted_only_from_close_by_and_scouting_gives_exact_power(si
     sim.diplomacy.relation(a.id, b.id).status = "alliance"
     army.tile = far
     assert military.scouted(a, army), "allies show each other everything"
+
+
+def test_a_castles_garrison_is_only_guessed_at_until_it_is_attacked(sim):
+    import json
+
+    from civsim.bridge import protocol
+    from civsim.config import HEADCOUNT
+    a, b = sim.civs[0], sim.civs[1]
+    military = sim.military
+    b.garrison.units = {"spearman": 37.0}
+    b.soldiers = 37.0
+    tile = b.capital.tile
+    actual = military.castle_garrison(b) * HEADCOUNT
+
+    def castle(data):
+        return next(s for s in data["civs"][b.id]["settlements"] if s["name"] == b.capital.name)
+
+    watching = castle(json.loads(protocol.tick_message(sim, False, 1.0))["data"])
+    assert watching["garrison"] == round(actual) and "about" not in watching, "a spectator sees every number"
+    sim.ruler.command("take_control", {"civ": a.id})
+    guesses = set()
+    for day in range(1, 60):
+        military._tick = day
+        data = json.loads(protocol.tick_message(sim, False, 1.0))["data"]
+        seen = castle(data)
+        assert "garrison" not in seen and abs(seen["about"] - actual) <= warfare.GARRISON_GUESS
+        guesses.add(seen["about"])
+        assert not any(x["role"] == "garrison" and x["civ"] == b.id for x in data["armies"]), "nor is it given away"
+    assert len(guesses) == 1, "the guess holds steady from one day to the next"
+    military.probed[(a.id, tile)] = 59  # one of a's armies at the walls
+    assert castle(json.loads(protocol.tick_message(sim, False, 1.0))["data"])["garrison"] == round(actual)
+    military._tick = 59 + warfare.PROBE_MEMORY + 1
+    assert "about" in castle(json.loads(protocol.tick_message(sim, False, 1.0))["data"]), "and forgotten again in time"

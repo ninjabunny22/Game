@@ -130,9 +130,6 @@ class CivAI:
             "military": 0.1 + 0.9 * civ.military_need,
             # How far the army lags what the civ means to raise: what barracks are for.
             "training": _clamp((civ.soldier_target - civ.soldiers) / max(civ.soldier_target, 1.0), 0, 1),
-            # Gold is what armies run on: wanted badly by a civ that cannot pay or arm its soldiers.
-            "pay": 1.0 if civ.unpaid else _clamp(
-                1.5 * scarcity["gold"] * (civ.soldier_target - civ.soldiers) / max(civ.soldier_target, 1.0), 0, 1),
             # More hospital beds (by research): wanted once soldiers have died for want of one, and by any civ at war.
             "beds": 1.0 if tick - civ.beds_short < BEDS_MEMORY else 0.7 * civ.military_need,
             "expansion": (0.25 + 0.75 * _clamp(3 * idle_share, 0, 1) + (0.4 if wanted else 0.0)
@@ -398,8 +395,6 @@ class CivAI:
     def _building_need(self, bdef: BuildingDef, needs: dict) -> float:
         if bdef.stores:
             return max(needs["store"][res] for res in bdef.stores)
-        if bdef.id == "gold_mine":
-            return max(needs["resource"]["gold"], needs["pay"])
         if bdef.need_resource:
             return needs["resource"][bdef.need_resource]
         if bdef.id == "harbour":

@@ -45,6 +45,8 @@ def place_deposits(world: WorldMap, rng: random.Random) -> None:
                 break
             centres.append(centre)
             _grow_cluster(world, rng, centre, type_id, dtype, rng.randint(*dtype.size))
+            if type_id == "gold":
+                world.mines.append(centre)  # no dice thrown: the map is the same as before
 
 
 def compute_yields(world: WorldMap) -> None:

@@ -66,6 +66,11 @@ REINFORCE_REACH = 40  # tiles from our capital beyond which no help is sent
 REINFORCE_STAY = 30  # ticks the army stays on after the threat has gone
 REINFORCE_RETRY = 150  # ticks before trying again for a capital there was no way to
 SCOUT_RANGE = 6  # tiles within which a civ's armies and capitals can count an army exactly
+# A castle's garrison is known only roughly, to within this many soldiers either way (in the
+# head count shown), unless one of the civ's armies has attacked the castle lately.
+GARRISON_GUESS = 30
+PROBE_MEMORY = 30  # days for which an attack on a castle keeps its garrison known exactly
+GUESS_FRESH = 100  # days after which the guess is made again (it does not wander day to day)
 MIN_FIELD_ARMY = 3.0  # soldiers below which an army will not set out
 REPLAN_TICKS = 15
 DEFENCE_RADIUS = 6  # a defending army also answers threats this close to the capital
@@ -145,6 +150,7 @@ class Military:
         self._no_way: dict[tuple[int, int], int] = {}  # (civ, region) -> tick until which no expedition is sent there
         self._lost: dict[tuple[int, int], dict[str, float]] = {}  # (army id, enemy id) -> soldiers lost in the battle
         self._stay: dict[int, int] = {}  # reinforcing army id -> tick until which it stays though the threat is gone
+        self.probed: dict[tuple[int, int], int] = {}  # (civ, capital tile) -> last tick its armies attacked that castle
         self._named = 0
         self._names = random.Random(sum(civ.capital.tile for civ in civs))  # naming never disturbs the game's dice
         self._tick = 0
@@ -929,6 +935,27 @@ class Military:
                                     f"{civ.name} sends an army to stand with {ally.name} in {self._city_name(tile)}")
                 return
 
+    # -- castles' garrisons ------------------------------------------------------
+
+    def castle_garrison(self, civ) -> float:
+        """Soldiers holding each of the civ's castles: its garrison is spread through them all."""
+        return civ.garrison.size / max(1, len(civ.settlements)) if civ.garrison is not None else 0.0
+
+    def garrison_known(self, viewer, tile: int) -> bool:
+        """Whether `viewer` knows exactly how many hold the castle on `tile`: its own or an
+        ally's, or one its armies have attacked in the last PROBE_MEMORY days."""
+        owner = self.world.owner[tile]
+        if owner == viewer.id or (owner >= 0 and self.diplomacy.relation(viewer.id, owner).status == "alliance"):
+            return True
+        return self._tick - self.probed.get((viewer.id, tile), -10_000) <= PROBE_MEMORY
+
+    def garrison_guess(self, viewer, tile: int, actual: float) -> int:
+        """A rough count of a castle's garrison as `viewer` sees it, in shown heads: within
+        GARRISON_GUESS of the truth, rounded to tens, and the same from one day to the next."""
+        dice = random.Random(f"{self.world.seed}:{viewer.id}:{tile}:{self._tick // GUESS_FRESH}")
+        off = dice.uniform(-(GARRISON_GUESS - 5), GARRISON_GUESS - 5)
+        return max(0, int(round((actual + off) / 10.0)) * 10)
+
     # -- scouting ----------------------------------------------------------------
 
     def scouted(self, viewer, army: Army) -> bool:
@@ -1063,6 +1090,9 @@ class Military:
         busy: set[int] = set()
         seen: set[tuple[int, int]] = set()
         for one, two in pairs:
+            for army, other in ((one, two), (two, one)):
+                if other.role == "garrison":  # fighting a castle's garrison shows how many hold it
+                    self.probed[(army.civ, other.tile)] = tick
             key = (one.id, two.id)
             seen.add(key)
             started = self._battles.setdefault(key, tick)
@@ -1468,6 +1498,8 @@ class Military:
         if war is None or self.world.owner[target] != enemy.id or civ.id not in war.aggressors:
             return
         army.state = "besieging"
+        if target in self.world.capital_tiles:
+            self.probed[(civ.id, target)] = tick  # at the walls: the defenders can be counted
 
         surprised = war.betrayer == civ.id and tick < war.surprise_until
         mods = self.mods[enemy.id]

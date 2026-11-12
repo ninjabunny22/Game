@@ -23,7 +23,7 @@ from .economy import (
     tend_horses,
     recompute_capacity,
 )
-from .economy.rules import START_POPULATION, START_RESOURCES
+from .economy.rules import MINE_GOLD, START_POPULATION, START_RESOURCES
 from .map import generate_map, region_neighbours
 from .military.warfare import Military
 from .ruler import Ruler
@@ -84,6 +84,8 @@ class Simulation:
             if not civ.alive:
                 continue
             mods = compute_modifiers(civ, self.building_defs, self.tech_tree)
+            if "mining" in civ.known_techs:  # a mine is only worked by a civ that knows how
+                mods.income["gold"] += MINE_GOLD * self.mines_held(civ)
             self.diplomacy.apply_modifiers(civ, mods)
             self.modifiers[civ.id] = mods
             self.ai.plan(civ, mods, self.tick, events)
@@ -99,6 +101,12 @@ class Simulation:
         self._schedule_checkins()
         self.events = events
         return events
+
+    def mines_held(self, civ) -> int:
+        """Gold mines in the regions the civ holds: each pays it MINE_GOLD a day."""
+        world = self.world
+        return sum(1 for tile in world.mines if world.region_of[tile] >= 0
+                   and world.regions[world.region_of[tile]].owner == civ.id)
 
     # -- winning ---------------------------------------------------------------
 
