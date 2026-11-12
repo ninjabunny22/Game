@@ -12,8 +12,15 @@ Agreed next, in order:
 2. **Tune by league.** Run `python -m civsim.league --evolve` on the settled timings,
    ideally to one set of numbers per personality. Decide first whether the aim is the
    strongest civs or the most entertaining games.
-3. **Visuals with Blender.** Spearman and swordsman models, archer animations
-   (`archer.glb` has none), battle and siege effects, a terrain pass.
+3. **Visuals with Blender.** What neither KayKit pack has, to be made in the packs' chunky
+   style so it sits beside the generals:
+   - a melee swing for the Adventurers rig (the free pack's nearest is an overarm throw) and
+     a bow shot;
+   - archer and cavalry soldiers, and a mounted general (the pack has no horses);
+   - ship, harbour and stable in the same style (ours are more detailed than the rest);
+   - a hospital and a gold mine of their own (they are the church and the mine, with props);
+   - siege engines in the field, and battle and siege effects;
+   - a spear for the spearman (now a pole and blade added in code).
 
 Later:
 
@@ -34,6 +41,9 @@ Later:
   often too far from the city to arrive in 40 days. To settle in the timing pass.
 - **Population:** head counts are shown at four to the unit; the economy itself is unscaled.
   A denser population (more people per tile, with yields rebalanced) would be a real change.
-- **Hospital and Gold Mine models:** they borrow the church and the mine for now.
+- **Viewer at top speed:** at 60 days a second the viewer falls to 1-2 frames a second after
+  about day 1,800 (it did before the KayKit change too); a paused late map draws at 90+. Each
+  tick's full state is applied in one frame: spread the work, or send deltas.
+- **Labels crowd** from afar where a rally, a siege and a city meet.
 - **Loose ends:** the map names were given without looking at the maps; one large map
   (Wyrmcoast) is slow to simulate.

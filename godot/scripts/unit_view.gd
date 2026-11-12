@@ -1,31 +1,37 @@
 extends Node3D
 ## Armies and villagers on the map.
 ##
-## An army with a commander is shown as the commander, an animated model in the
-## civ's colour that stands, walks or strikes according to what the army is doing,
-## with the count of each unit type written above. An army without one is shown as
-## a single figure of its dominant unit type: a mounted knight for cavalry and an archer
-## for archers, animated and in the civ's colour, and a plain figure (spear, sword and
-## shield) for the rest. An army that has put out from a harbour is shown as a ship until it
+## An army with a commander is led by the general, a character of the KayKit Adventurers
+## pack (adventurers.gd): each general is one of six characters, the same one for life,
+## larger than the ranks and caped in the civ's colour. Behind come the ranks: a knight of
+## the same pack with sword or spear and shield for the foot, our own archer and mounted
+## knight for archers and cavalry. Every figure stands, walks or strikes according to what
+## the army is doing. An army without a commander is led by a figure of its dominant type. An army that has put out from a harbour is shown as a ship until it
 ## lands. Villagers are animated too: walking, hammering at a building, working the
 ## land or drawing water; one with a horse from the stables is shown riding.
 ##
-## How much is drawn follows the zoom. From afar a field army is a single marker
-## in its civ's colour with its size, garrisons and villagers are left out, and
-## nothing is captioned; the figures and the full captions appear closer in.
+## How much is drawn follows the zoom. From afar a field army is a single marker in its
+## civ's colour with its size and its general's name; garrisons and villagers are left out.
+## Closer in, the general and the first few of the ranks; closest, all of them, the full
+## caption, and the generals in reserve standing at the gates of the capitals they hold.
 
 # Everything is drawn to fit the tile grid: figures stand well under a tile tall, beside
 # buildings that fill one tile.
 const FIGURE_SCALE := 0.65
-const COMMANDER_HEIGHT := 0.8  # in tiles
+const COMMANDER_HEIGHT := 0.8  # in tiles: the old placeholder
+const GENERAL_HEIGHT := 0.74  # a general of the Adventurers pack, a head taller than his soldiers
+const FOOT_HEIGHT := 0.56  # a foot soldier of the same pack
+const MID_RANKS := 3  # rank figures shown at middle zoom: enough to read as an army
+const POSTED_SPOT := Vector3(-0.9, 0, 1.4)  # where a general in reserve stands, before the castle
 const VILLAGER_HEIGHT := 0.45
 const RIDER_HEIGHT := 0.62
 const KNIGHT_HEIGHT := 0.72
 const ARCHER_HEIGHT := 0.6
 const SOLDIER_HEIGHT := 0.58  # a man-at-arms: the commander's model, smaller
 ## Unit types with a model of their own for an army without a commander: [model, height].
-const SOLDIER_MODELS := {"cavalry": ["Knight", KNIGHT_HEIGHT], "archer": ["Archer", ARCHER_HEIGHT],
-	"swordsman": ["Commander", SOLDIER_HEIGHT], "spearman": ["Commander", SOLDIER_HEIGHT]}
+const SOLDIER_MODELS := {"cavalry": ["Knight", KNIGHT_HEIGHT], "archer": ["Archer", ARCHER_HEIGHT]}
+## Unit types drawn as the Adventurers knight, each with its own kit (adventurers.gd KITS).
+const FOOT_MODELS := {"swordsman": "Knight:swordsman", "spearman": "Knight:spearman"}
 const SOLDIERS_PER_FIGURE := 48  # an army shows one more figure in its ranks for every so many soldiers
 const MAX_RANKS := 8  # ... up to this many behind whoever leads it
 const RANK_SPACING := 0.34
@@ -47,14 +53,19 @@ var _materials := {}
 var _detail := 0  # 0 whole-map view, 1 closer, 2 full detail
 var _swell := 0.0
 var _characters: RefCounted  # characters.gd
+var _adventurers: RefCounted  # adventurers.gd
+var _posted := {}  # "civ:name" -> {"node", "look", "target"}: generals in reserve, at their capitals
 
 
-func setup(terrain: Node3D, init: Dictionary, civ_colors: Array, characters: RefCounted) -> void:
+func setup(terrain: Node3D, init: Dictionary, civ_colors: Array, characters: RefCounted,
+		adventurers: RefCounted) -> void:
 	_characters = characters
+	_adventurers = adventurers
 	for child in get_children():
 		child.queue_free()
 	_armies.clear()
 	_villagers.clear()
+	_posted.clear()
 	_terrain = terrain
 	_civ_colors = civ_colors
 	_unit_names.clear()
@@ -70,7 +81,7 @@ func update(armies: Array, villagers: Array) -> void:
 		var civ := int(army["civ"])
 		var commander: Variant = army["commander"]
 		# What the piece looks like; rebuilt only when that changes.
-		var look := "%d:%s:%s" % [civ, "commander" if commander != null else str(army["dominant"]), _ranks(army)]
+		var look := "%d:%s:%s" % [civ, str(commander["name"]) if commander != null else "-" + str(army["dominant"]), _ranks(army)]
 		if not _armies.has(id) or _armies[id]["look"] != look:
 			if _armies.has(id):
 				_armies[id]["node"].queue_free()
@@ -85,7 +96,11 @@ func update(armies: Array, villagers: Array) -> void:
 				entry["node"].add_child(boat)
 				entry["boat"] = boat
 		entry["size"] = int(army["size"])
-		entry["caption"] = _army_caption(army)
+		entry["general"] = str(commander["name"]) if commander != null else ""
+		# An army too far from the player's own armies and cities to count is shown roughly.
+		var counted := bool(army.get("scouted", true))
+		entry["size_text"] = str(entry["size"]) if counted else "~%d" % (maxi(1, roundi(entry["size"] / 50.0)) * 50)
+		entry["caption"] = _army_caption(army) if counted else "About %s soldiers" % str(entry["size_text"]).substr(1)
 		_show_army(entry)
 		_aim(entry, _spot(int(army["x"]), int(army["y"]), GARRISON_SPOT if army["role"] == "garrison" else Vector3.ZERO))
 	_drop_missing(_armies, seen)
@@ -131,6 +146,9 @@ func set_detail(detail: int) -> void:
 		_show_army(entry)
 	for entry: Dictionary in _villagers.values():
 		entry["node"].visible = not entry.get("afloat", false)
+	for entry: Dictionary in _posted.values():
+		entry["node"].visible = detail >= 2
+		_characters.set_active(entry["node"], detail >= 2)
 
 
 ## Far: field armies are a marker and a number, garrisons are hidden. Closer: the
@@ -143,20 +161,26 @@ func _show_army(entry: Dictionary) -> void:
 	entry["node"].visible = is_field or _detail >= 1
 	var afloat: bool = entry.get("afloat", false) and entry.has("boat")
 	figure.visible = _detail >= 1 and not afloat
-	for one: Node3D in entry["figures"]:
-		_characters.set_active(one, figure.visible)
+	var figures: Array = entry["figures"]
+	for i in figures.size():
+		# The general and a few of the ranks closer in; every rank only up close.
+		var one: Node3D = figures[i]
+		one.visible = i <= MID_RANKS or _detail >= 2
+		_characters.set_active(one, figure.visible and one.visible)
 	(entry["dust"] as CPUParticles3D).emitting = figure.visible and entry.get("state", "") in AT_ARMS
 	if entry.has("boat"):
 		entry["boat"].visible = _detail >= 1 and afloat
 	marker.visible = _detail == 0 and is_field
 	if _detail == 0:
 		label.visible = is_field
-		label.text = str(entry.get("size", 0))
+		label.text = str(entry.get("size_text", entry.get("size", 0)))
+		if entry.get("general", "") != "":
+			label.text += " · " + str(entry["general"])  # who leads it, readable from afar
 		label.pixel_size = 0.0007
 		label.position.y = 7.4
 	elif _detail == 1:
 		label.visible = is_field
-		label.text = str(entry.get("size", 0))
+		label.text = str(entry.get("size_text", entry.get("size", 0)))
 		label.pixel_size = 0.0005
 		label.position.y = 1.3
 	else:
@@ -168,7 +192,7 @@ func _show_army(entry: Dictionary) -> void:
 
 
 func _process(delta: float) -> void:
-	for group: Dictionary in [_armies, _villagers]:
+	for group: Dictionary in [_armies, _villagers, _posted]:
 		for entry: Dictionary in group.values():
 			var node: Node3D = entry["node"]
 			var target: Vector3 = entry["target"]
@@ -214,7 +238,7 @@ func _spot(x: int, y: int, offset: Vector3) -> Vector3:
 
 
 func _drop_missing(group: Dictionary, seen: Dictionary) -> void:
-	for id: int in group.keys():
+	for id: Variant in group.keys():  # army and villager ids, or "civ:name" for a posted general
 		if not seen.has(id):
 			group[id]["node"].queue_free()
 			group.erase(id)
@@ -228,10 +252,17 @@ func _army_caption(army: Dictionary) -> String:
 	var parts: Array[String] = []
 	for unit_id: String in order:
 		parts.append("%d %s" % [int(units[unit_id]), _unit_names.get(unit_id, unit_id)])
+	var what := ", ".join(parts)
+	if float(army.get("tier", 1.0)) >= 1.05:
+		what += "  (tier %s)" % str(snappedf(float(army["tier"]), 0.1))
+	if bool(army.get("refit", false)):
+		what += "\nGoing home to fill its ranks"
+	elif str(army.get("duty", "")) == "reinforce":
+		what += "\nStanding with an ally"
 	if army["commander"] == null:
-		return ", ".join(parts)
+		return what
 	var commander: Dictionary = army["commander"]
-	return "%s\n%s  (level %d)" % [", ".join(parts), commander["name"], int(commander["level"])]
+	return "%s\n%s  (level %d)" % [what, commander["name"], int(commander["level"])]
 
 
 # -- figures -------------------------------------------------------------------
@@ -241,7 +272,8 @@ func _make_army(civ: int, army: Dictionary, look: String) -> Dictionary:
 	var root := Node3D.new()
 	var figure: Node3D = null
 	if army["commander"] != null:
-		figure = _characters.instance("Commander", color, COMMANDER_HEIGHT)
+		var character: String = _adventurers.general_for(civ, str(army["commander"]["name"]))
+		figure = _adventurers.instance(character, color, GENERAL_HEIGHT)
 		if figure == null:
 			figure = _commander_figure(color)  # the model is missing: the old placeholder
 	else:
@@ -326,14 +358,45 @@ func _ranks(army: Dictionary) -> Array:
 ## One soldier of a unit type: its model if there is one, the plain figure otherwise.
 func _soldier(unit_id: String, color: Color) -> Node3D:
 	var soldier: Node3D = null
-	if SOLDIER_MODELS.has(unit_id):
+	if FOOT_MODELS.has(unit_id):
+		soldier = _adventurers.instance(FOOT_MODELS[unit_id], color, FOOT_HEIGHT)
+	elif SOLDIER_MODELS.has(unit_id):
 		soldier = _characters.instance(SOLDIER_MODELS[unit_id][0], color, SOLDIER_MODELS[unit_id][1])
 	if soldier == null:
 		return _soldier_figure(unit_id, color)
 	if unit_id == "spearman":  # the same man-at-arms, with a spear grounded beside him
-		_part(soldier, _cylinder(0.012, 0.8), WOOD, Vector3(0.17, 0.4, 0.05))
-		_part(soldier, _box(0.035, 0.09, 0.035), STEEL, Vector3(0.17, 0.83, 0.05))
+		_part(soldier, _cylinder(0.012, 0.78), WOOD, Vector3(0.16, 0.39, 0.06))
+		_part(soldier, _box(0.035, 0.09, 0.035), STEEL, Vector3(0.16, 0.81, 0.06))
 	return soldier
+
+
+## Generals in reserve, stationed at capitals: each stands before the castle he holds, seen
+## only up close. `civs` is the tick's list of civs.
+func update_posted(civs: Array) -> void:
+	var seen := {}
+	for civ: Dictionary in civs:
+		var civ_id := int(civ["id"])
+		var crowd := {}  # capital -> generals already standing there
+		for commander: Dictionary in civ.get("commanders_in_reserve", []):
+			if commander.get("x") == null:
+				continue  # not posted anywhere
+			var key := "%d:%s" % [civ_id, commander["name"]]
+			seen[key] = true
+			if not _posted.has(key):
+				var figure: Node3D = _adventurers.instance(_adventurers.general_for(civ_id, str(commander["name"])),
+					_civ_colors[civ_id], GENERAL_HEIGHT)
+				if figure == null:
+					continue
+				add_child(figure)
+				_posted[key] = {"node": figure, "look": key, "target": Vector3.ZERO}
+			var at := "%d,%d" % [int(commander["x"]), int(commander["y"])]
+			var n: int = crowd.get(at, 0)
+			crowd[at] = n + 1
+			var entry: Dictionary = _posted[key]
+			_aim(entry, _spot(int(commander["x"]), int(commander["y"]), POSTED_SPOT + Vector3(0.35 * n, 0, 0)))
+			entry["node"].visible = _detail >= 2
+			_characters.set_active(entry["node"], _detail >= 2)
+	_drop_missing(_posted, seen)
 
 
 func _make_villager(civ: int, task: String, look: String, mounted: bool) -> Dictionary:

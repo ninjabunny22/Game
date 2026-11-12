@@ -9,6 +9,7 @@ const CivView := preload("res://scripts/civ_view.gd")
 const UnitView := preload("res://scripts/unit_view.gd")
 const Models := preload("res://scripts/models.gd")
 const Characters := preload("res://scripts/characters.gd")
+const Adventurers := preload("res://scripts/adventurers.gd")
 const CameraRig := preload("res://scripts/camera_rig.gd")
 const Hud := preload("res://scripts/hud.gd")
 const Menu := preload("res://scripts/menu.gd")
@@ -29,6 +30,7 @@ var _auto_started := false
 var _starting := ""  # the mode of the game just asked for from the menu: "watch" or "rule"
 var _models := Models.new()
 var _characters := Characters.new()
+var _adventurers := Adventurers.new()
 
 var _ready_for_ticks := false
 var _civ_colors: Array = []
@@ -152,7 +154,7 @@ func _on_init(data: Dictionary) -> void:
 		_civ_colors.append(Color.html(civ["color"]))
 	_terrain.build(data["map"], data["biomes"], Color.html(data["native_faction"]["color"]), _models)
 	_civ_view.setup(_terrain, data, _civ_colors, _models, _characters)
-	_unit_view.setup(_terrain, data, _civ_colors, _characters)
+	_unit_view.setup(_terrain, data, _civ_colors, _characters, _adventurers)
 	_hud.setup(data)
 	_camera.focus(_terrain.center(), maxf(_terrain.map_width, _terrain.map_height) * 1.15)
 	# CIVSIM_VIEW="x,y,distance" starts the camera on a tile instead of the whole map.
@@ -208,7 +210,17 @@ func _on_tick(tick: int, data: Dictionary) -> void:
 	_civ_view.show_rallies(data.get("rallies", []))
 	_civ_view.update_links(data["civs"], data["relations"], data["deals"])
 	_unit_view.update(data["armies"], data["villagers"])
+	_unit_view.update_posted(data["civs"])
 	_hud.update(tick, data)
+	# CIVSIM_FOLLOW="distance" keeps the camera on the largest army led by a general, for scripted runs.
+	var follow := OS.get_environment("CIVSIM_FOLLOW")
+	if follow != "":
+		var best: Variant = null
+		for army: Dictionary in data["armies"]:
+			if army["role"] == "field" and army["commander"] != null and not army["afloat"] and (best == null or int(army["size"]) > int(best["size"])):
+				best = army
+		if best != null:
+			_camera.focus(_terrain.tile_position(int(best["x"]), int(best["y"])), float(follow))
 
 
 func _add_lighting() -> void:

@@ -172,11 +172,38 @@ The overlay is built for watching:
 - **Territory** is tinted in a band along each civ's border, leaving the land's
   own colours inside. `B` toggles the region borders.
 
-**Models and water.** Buildings, capitals, trees and mountains are low-poly
-models from the KayKit Medieval Hexagon Pack by Kay Lousberg (CC0; see
-`godot/assets/kaykit/LICENSE.txt`). They are loaded straight from their glTF
-files at run time (`scripts/models.gd`), so nothing needs importing in the
-editor.
+**Models and water.** The art comes from two KayKit packs by Kay Lousberg (CC0), with our
+own models where neither has what is needed. All of it is loaded straight from the files at
+run time, so nothing needs importing in the editor. The packs as downloaded (fbx, obj and
+gltf of everything) are kept in `art/kaykit/`, which git ignores; the game uses only the
+copies in `godot/assets/`.
+
+| Folder | Pack | What it is | Loaded by |
+|---|---|---|---|
+| `godot/assets/kaykit/` | Medieval Hexagon | buildings, building sites, props, trees, mountains, rocks, water plants | `scripts/models.gd` |
+| `godot/assets/adventurers/` | Adventurers | the six generals, the foot soldier, their weapons and animations | `scripts/adventurers.gd` |
+| `godot/assets/characters/` | our own | archer, cavalry knight, villager, rider, ship, stable, harbour, castles | `scripts/characters.gd` |
+
+The pack's hex ground tiles and its terraced hills and grassy peaks are not used: they are
+shaped for a hex grid, and CivSim's map is square. `godot/tests/check_assets.gd` loads every
+model the viewer uses and checks the animations, weapons and colours
+(`Godot --headless --path godot --script res://tests/check_assets.gd`).
+`godot/tests/gallery.gd` lines up every figure and the new buildings and saves pictures of them.
+
+- **Generals** are the Adventurers characters: Knight, Barbarian, Ranger, Rogue, hooded
+  Rogue and Mage, each with a weapon of its own fixed to the rig's hand slots (two-handed
+  sword, axe, bow, daggers, staff and spellbook). A general's character is picked from their
+  name and civ, so they keep it for life. They stand a head taller than their soldiers and
+  lead from the front. Generals in reserve stand at the gate of the capital they hold.
+  From afar the army's marker carries the general's name; at middle zoom the general and
+  three of the ranks show; up close, every rank and the full caption.
+- **Foot soldiers** (swordsmen and spearmen) are the Adventurers knight with visor down,
+  shield, and sword or a spear. The pack's animations are shared from two files on the same
+  rig: idle, walk, run, and for fighting an overarm throw, as the free pack has no sword swing.
+- **Colour.** Each Adventurers character is painted from one texture of flat colour cells;
+  the cells of its cape and trim are repainted in the owner's colour, keeping their
+  shading, and the same texture paints its weapons and shield. Skin, steel and leather are
+  never touched. Each figure's body is fused into one skinned mesh.
 
 - Every model shares one small texture, and the faction-coloured parts all sit
   in one rectangle of it. That rectangle is repainted per owner, so roofs and
@@ -184,18 +211,17 @@ editor.
 - Each building type maps to a model in `BUILDING_MODELS` (`civ_view.gd`).
   Types that share a model carry a small pennant in the type's colour; models
   with nothing to repaint (fields, walls, stockpiles) fly their owner's flag.
-- **Figures.** Commanders, knights, archers, villagers, mounted villagers, the stables, the harbour,
-  the ship and the two castles are separate models in `godot/assets/characters` (`Commander.glb`,
-  `Knight.glb`, `Archer.glb`, `Villager.glb`, `Rider.glb`, `Stable.glb`, `Harbour.glb`, `Boat.glb`, `Castle.glb`,
-  `CapitalCastle.glb`), loaded at run time by
-  `scripts/characters.gd` and put in their civ's colour by swapping one named
-  material. A commander stands, walks or strikes with what his army is doing;
-  a villager walks, hammers at a building, works the land or draws water; a
-  rider stands, walks or trots. A cavalry army without a commander is a knight
-  and an archer army an archer; each plays its `idle`, `walk`, `trot` and fighting
-  (`attack` or `shoot`) animation where its file has one, and otherwise keeps
-  whichever of the others fits. Other armies without a commander are still the
-  plain figures. If a model file is missing the old placeholder is drawn instead.
+- **Buildings.** A building going up shows the pack's three construction stages in turn.
+  The Gold Mine has sacks and crates at its door, the Hospital a field tent, barracks a weapon
+  rack and an archery butt, the academy a butt and a tent, the market crates. The fortress is
+  the catapult tower, and walls alternate with gatehouses.
+- **Our own figures.** Archers, cavalry knights, villagers, mounted villagers, the stables, the
+  harbour, the ship and the two castles are models in `godot/assets/characters` (`Knight.glb`,
+  `Archer.glb`, `Villager.glb`, `Rider.glb`, `Stable.glb`, `Harbour.glb`, `Boat.glb`,
+  `Castle.glb`, `CapitalCastle.glb`), loaded by `scripts/characters.gd` and put in their
+  civ's colour by swapping one named material. A villager walks, hammers at a building, works
+  the land or draws water; a rider stands, walks or trots. If a model file is missing the
+  old placeholder is drawn instead.
 - **One scale.** Everything is drawn to fit the tile grid. A building fills the
   square of tiles the sim gives it (1, 2 or 3 tiles a side by type), figures
   stand well under a tile tall, and trees on built ground are felled. The same

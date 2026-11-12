@@ -206,8 +206,11 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
             # Totals over all the civ's armies; the armies themselves are listed under "armies".
             "soldiers": heads(civ.soldiers),
             "units": whole(shown(civ.unit_counts())),
-            # "post" is the capital a reserve commander is stationed at, which he helps defend.
-            "commanders_in_reserve": [{"name": c.name, "level": c.level, "post": posts.get(c.post)}
+            # "post" is the capital a reserve commander is stationed at, which he helps defend,
+            # and x, y where it stands (null when he has no post).
+            "commanders_in_reserve": [{"name": c.name, "level": c.level, "post": posts.get(c.post),
+                                       "x": c.post % world.width if c.post is not None else None,
+                                       "y": c.post // world.width if c.post is not None else None}
                                       for c in civ.commanders],
             "commanders": sim.military.roster(civ),
             "commander_cap": ROSTER_CAP,

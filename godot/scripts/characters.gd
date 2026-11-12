@@ -1,16 +1,18 @@
 extends RefCounted
-## Loads the models in res://assets/characters straight from their .glb files at run
-## time: the rigged, animated Commander, Villager, Rider and Knight, and the static Stable,
-## Harbour, Boat, Castle and CapitalCastle. Each file is read once; every figure on the map is a copy of that.
+## Loads our own models in res://assets/characters straight from their .glb files at run
+## time: the rigged, animated Archer, Villager, Rider and Knight (cavalry), and the static
+## Stable, Harbour, Boat, Castle and CapitalCastle: what neither KayKit pack has. Generals and
+## foot soldiers are the Adventurers pack's (adventurers.gd). Each file is read once; every figure on the map is a copy of that.
 ##
 ## The models carry plain named materials rather than a texture, so a figure is put in
 ## its civ's colour by swapping the material of that name (the commander's cloth, the
-## villager's tunic) for one in the civ's colour.
+## villager's tunic) for one in the civ's colour. play(), can_play() and set_active() work on
+## any figure that carries an AnimationPlayer as its "player" metadata, the Adventurers' too.
 
 const DIR := "res://assets/characters/"
 ## The material on each model that takes the owner's colour.
 const TEAM_MATERIALS := {
-	"Commander": ["cloth_team"], "Villager": ["tunic_moss"], "Rider": ["tunic_moss", "saddle_blanket"],
+	"Villager": ["tunic_moss"], "Rider": ["tunic_moss", "saddle_blanket"],
 	"Stable": ["cloth_team"], "Boat": ["cloth_team"], "Harbour": ["cloth_team"],
 	"Knight": ["cloth_team", "cloth_deep"], "Archer": ["cloth_team"], "Castle": ["cloth_team"], "CapitalCastle": ["cloth_team"],
 }

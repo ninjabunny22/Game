@@ -16,6 +16,10 @@ const REGION_BORDER_COLOR := Color(0.07, 0.07, 0.09)
 const REGION_BORDER_WIDTH := 0.14
 const LAKE_DEPTH := 0.9  # how far the bed of a lake is sunk below its surface, so the water has depth
 const TREES_PER_TILE := 2
+const STAND_SHARE := 0.35  # share of forest tiles drawn as a stand of trees rather than single ones
+## Trees are drawn at this share of the pack's size, as its buildings are fitted to a tile: at full
+## size a forest stood over the armies and hid their generals.
+const TREE_SCALE := 0.68
 
 const WATER_SHADER := """
 shader_type spatial;
@@ -109,6 +113,7 @@ func build(map: Dictionary, biomes: Array, native_color: Color, models: RefCount
 	var lakes: Array[int] = []
 	var forests: Array[int] = []
 	var mountains: Array[int] = []
+	var hills: Array[int] = []
 
 	var size := map_width * map_height
 	var heights: Array = map["heights"]
@@ -138,6 +143,8 @@ func build(map: Dictionary, biomes: Array, native_color: Color, models: RefCount
 			forests.append(i)
 		elif biome_id == ids.get("Mountain", -1):
 			mountains.append(i)
+		elif biome_id == ids.get("Hills", -1):
+			hills.append(i)
 
 	# Rivers run through land tiles: darken the bank a little under the ribbon drawn by _add_rivers.
 	for river: Dictionary in map.get("rivers", []):
@@ -177,6 +184,8 @@ func build(map: Dictionary, biomes: Array, native_color: Color, models: RefCount
 	_add_region_borders()
 	_add_forests(forests, models)
 	_add_mountains(mountains, models)
+	_add_hills(hills, models)
+	_add_shallows(lakes, models)
 
 
 ## Height of the ground at any point, between tile centres as well as on them.
@@ -435,8 +444,31 @@ func _add_lakes(lakes: Array[int]) -> void:
 	add_child(water)
 
 
-## Trees on every forest tile, a couple per tile, each a little different.
+## Trees on every forest tile: on most a couple of single trees, each a little different;
+## on some a whole stand, so a forest has thickets and glades rather than an even planting.
 func _add_forests(forests: Array[int], models: RefCounted) -> void:
+	var stands := ["trees_A_small", "trees_A_medium", "trees_B_small", "trees_B_medium"]
+	var thick: Array[int] = []
+	var open: Array[int] = []
+	for tile: int in forests:
+		(thick if _hash(tile * 59 + 3) < STAND_SHARE else open).append(tile)
+	for kind in stands.size():
+		var stand_mesh: Mesh = models.mesh(stands[kind])
+		if stand_mesh == null:
+			open.append_array(thick.filter(func(t: int) -> bool: return int(_hash(t * 61) * 1000.0) % stands.size() == kind))
+			continue
+		var places: Array[Transform3D] = []
+		for tile: int in thick:
+			if int(_hash(tile * 61) * 1000.0) % stands.size() != kind:
+				continue
+			var px := float(tile % map_width) + (_hash(tile * 67) - 0.5) * 0.3
+			var pz := float(tile / map_width) + (_hash(tile * 71) - 0.5) * 0.3
+			var basis := Basis(Vector3.UP, _hash(tile * 73) * TAU).scaled(Vector3.ONE * TREE_SCALE * (0.5 + 0.12 * _hash(tile * 79)))
+			places.append(Transform3D(basis, Vector3(px, height_at(px, pz) + 0.02, pz)))
+		var multimesh := _scatter(stand_mesh, places, models.base_material())
+		for i in places.size():
+			_trees.append({"multimesh": multimesh, "index": i, "place": places[i], "felled": false})
+	forests = open
 	var kinds := ["tree_single_A", "tree_single_B"]
 	for kind in kinds.size():
 		var tree_mesh: Mesh = models.mesh(kinds[kind])
@@ -451,7 +483,7 @@ func _add_forests(forests: Array[int], models: RefCounted) -> void:
 					continue
 				var px := float(tile % map_width) + (_hash(tile * 13 + n * 17) - 0.5) * 0.8
 				var pz := float(tile / map_width) + (_hash(tile * 29 + n * 37) - 0.5) * 0.8
-				var basis := Basis(Vector3.UP, roll * TAU).scaled(Vector3.ONE * (0.75 + 0.45 * _hash(tile * 3 + n * 71)))
+				var basis := Basis(Vector3.UP, roll * TAU).scaled(Vector3.ONE * TREE_SCALE * (0.75 + 0.45 * _hash(tile * 3 + n * 71)))
 				places.append(Transform3D(basis, Vector3(px, height_at(px, pz) + 0.05, pz)))
 		var multimesh := _scatter(tree_mesh, places, models.base_material())
 		for i in places.size():
@@ -492,9 +524,63 @@ func _apply_clearings() -> void:
 			(tree["multimesh"] as MultiMesh).set_instance_transform(int(tree["index"]), shown)
 
 
-## Peaks on the mountain tiles: not one per tile, which would be a wall, but enough to read as a range.
+## Peaks on the mountain tiles: not one per tile, which would be a wall, but enough to read as a
+## range, and loose stones between them. (The pack's grassy and wooded peaks rise in
+## hexagonal terraces, which do not sit on a square map.)
 func _add_mountains(mountains: Array[int], models: RefCounted) -> void:
-	var kinds := ["mountain_A", "mountain_B", "mountain_C"]
+	_add_peaks(mountains, ["mountain_A", "mountain_B", "mountain_C"], models)
+	_add_scatter(mountains, ["rock_single_D", "rock_single_E"], 0.3, 0.5, 0.0, models)
+
+
+## A stone here and there on the hills. (The pack's hill models stand on hexagonal plinths,
+## which do not sit on a square map; the relief of the ground itself shows the hills.)
+func _add_hills(hills: Array[int], models: RefCounted) -> void:
+	_add_scatter(hills, ["rock_single_D", "rock_single_E"], 0.2, 0.6, 0.0, models)
+
+
+## Lilies and reeds on some lake tiles, near their edge.
+func _add_shallows(lakes: Array[int], models: RefCounted) -> void:
+	var places := {}  # model -> transforms
+	var kinds := ["waterlily_A", "waterlily_B", "waterplant_A", "waterplant_B", "waterplant_C"]
+	for tile: int in lakes:
+		if _hash(tile * 83 + 1) > 0.35:
+			continue
+		var x := tile % map_width
+		var z := tile / map_width
+		var level := _world_height(x, z) - 0.08 + LAKE_DEPTH
+		for n in 3:
+			var kind: String = kinds[int(_hash(tile * 89 + n * 97) * 1000.0) % kinds.size()]
+			var px := float(x) + (_hash(tile * 101 + n) - 0.5) * 0.8
+			var pz := float(z) + (_hash(tile * 103 + n) - 0.5) * 0.8
+			var basis := Basis(Vector3.UP, _hash(tile * 107 + n) * TAU).scaled(Vector3.ONE * 1.4)
+			if not places.has(kind):
+				places[kind] = [] as Array[Transform3D]
+			(places[kind] as Array[Transform3D]).append(Transform3D(basis, Vector3(px, level, pz)))
+	for kind: String in places:
+		var mesh: Mesh = models.mesh(kind)
+		if mesh != null:
+			_scatter(mesh, places[kind], models.base_material())
+
+
+## One of `kinds` on about `share` of the tiles, off-centre, at about `size` times its own size.
+func _add_scatter(tiles: Array[int], kinds: Array, share: float, size: float, sink: float, models: RefCounted) -> void:
+	for kind in kinds.size():
+		var mesh: Mesh = models.mesh(kinds[kind])
+		if mesh == null:
+			continue
+		var places: Array[Transform3D] = []
+		for tile: int in tiles:
+			var seed := tile * 109 + kinds.size() * 7 + int(size * 100.0)
+			if _hash(seed) > share or int(_hash(seed + 1) * 1000.0) % kinds.size() != kind:
+				continue
+			var px := float(tile % map_width) + (_hash(seed + 2) - 0.5) * 0.7
+			var pz := float(tile / map_width) + (_hash(seed + 3) - 0.5) * 0.7
+			var basis := Basis(Vector3.UP, _hash(seed + 4) * TAU).scaled(Vector3.ONE * size * (0.8 + 0.4 * _hash(seed + 5)))
+			places.append(Transform3D(basis, Vector3(px, height_at(px, pz) + sink, pz)))
+		_scatter(mesh, places, models.base_material())
+
+
+func _add_peaks(mountains: Array[int], kinds: Array, models: RefCounted) -> void:
 	for kind in kinds.size():
 		var peak_mesh: Mesh = models.mesh(kinds[kind])
 		if peak_mesh == null:

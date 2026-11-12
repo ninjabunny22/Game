@@ -14,3 +14,6 @@ logs/
 .DS_Store
 /Godot.app/
 /*.glb
+
+# Source art packs as downloaded (fbx, obj and gltf of everything); the game copies what it uses into godot/assets
+/art/

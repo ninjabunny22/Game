@@ -25,6 +25,13 @@ const BUILDING_MODELS := {
 	"lumber_camp": {"model": "building_lumbermill_green", "size": 0.9, "tinted": true},
 	"quarry": {"model": "building_mine_green", "size": 0.9, "tinted": true, "marker": true},
 	"mine": {"model": "building_mine_green", "size": 0.9, "tinted": true},
+	# A mine with its gold sacked and crated at the door.
+	"gold_mine": {"model": "building_mine_green", "size": 0.8, "tinted": true, "marker": true,
+		"props": [["sack", 0.12, Vector3(0.38, 0, 0.3)], ["crate_B_small", 0.12, Vector3(0.42, 0, 0.12)],
+			["sack", 0.12, Vector3(0.3, 0, 0.42)]]},
+	# A chapel with a field hospital's tent beside it.
+	"hospital": {"model": "building_church_green", "size": 0.62, "tinted": true, "marker": true,
+		"props": [["tent", 0.36, Vector3(0.3, 0, 0.28)]]},
 	"granary": {"model": "building_windmill_green", "size": 0.85, "tinted": true},
 	"lumber_yard": {"model": "resource_lumber", "size": 0.8},
 	"stone_yard": {"model": "resource_stone", "size": 0.7},
@@ -34,7 +41,8 @@ const BUILDING_MODELS := {
 	"reservoir": {"model": "building_well_green", "size": 0.8, "tinted": true, "marker": true},
 	"library": {"model": "building_church_green", "size": 0.8, "tinted": true},
 	"university": {"model": "building_church_green", "size": 0.95, "tinted": true, "marker": true},
-	"market": {"model": "building_market_green", "size": 0.95, "tinted": true},
+	"market": {"model": "building_market_green", "size": 0.9, "tinted": true,
+		"props": [["crate_A_small", 0.12, Vector3(0.42, 0, 0.36)], ["sack", 0.12, Vector3(0.3, 0, 0.44)]]},
 	"bank": {"model": "building_tavern_green", "size": 0.95, "tinted": true, "marker": true},
 	"workshop": {"model": "building_blacksmith_green", "size": 0.9, "tinted": true},
 	"factory": {"model": "building_blacksmith_green", "size": 0.98, "tinted": true, "marker": true},
@@ -42,10 +50,13 @@ const BUILDING_MODELS := {
 	# A quay with a warehouse and a ship alongside; it is turned so the quay is on the water.
 	"harbour": {"scene": "Harbour", "size": 0.95, "faces_water": true,
 		"model": "building_watermill_green", "tinted": true},
-	"barracks": {"model": "building_barracks_green", "size": 0.95, "tinted": true},
-	"academy": {"model": "building_archeryrange_green", "size": 0.95, "tinted": true},
-	"walls": {"model": "wall_straight", "size": 0.98},
-	"fortress": {"model": "building_tower_B_green", "size": 0.9, "tinted": true},
+	# Barracks keep their arms racked outside, and a butt to practise on.
+	"barracks": {"model": "building_barracks_green", "size": 0.88, "tinted": true,
+		"props": [["weaponrack", 0.2, Vector3(0.4, 0, 0.3)], ["target", 0.2, Vector3(0.36, 0, -0.38)]]},
+	"academy": {"model": "building_archeryrange_green", "size": 0.9, "tinted": true,
+		"props": [["target", 0.2, Vector3(0.4, 0, 0.36)], ["tent", 0.3, Vector3(-0.34, 0, 0.36)]]},
+	"walls": {"model": "wall_straight", "alt": "wall_straight_gate", "size": 0.98},
+	"fortress": {"model": "building_tower_catapult_green", "size": 0.8, "tinted": true},
 	# Its own model, from assets/characters.
 	"stables": {"scene": "Stable", "size": 0.95},
 }
@@ -53,6 +64,12 @@ const BUILDING_MODELS := {
 # if a file is missing.
 const CAPITAL_SCENE := "CapitalCastle"  # a civ's own capital
 const TOWN_SCENE := "Castle"  # every other region capital
+## A building going up: the pack's three stages, from footings to roof, by how far it has got.
+const SITE_STAGES := ["building_stage_A", "building_stage_B", "building_stage_C"]
+const SITE_SIZE := 0.85
+## Every pack model drawn other than through BUILDING_MODELS, for the asset check.
+const EXTRA_MODELS := ["flag_green", "building_castle_green", "building_tower_A_green", "building_stage_A",
+	"building_stage_B", "building_stage_C", "sack", "crate_A_small", "crate_B_small", "tent", "weaponrack", "target"]
 const CAPITAL_MODEL := "building_castle_green"
 const TOWN_MODEL := "building_tower_A_green"
 # A castle stands on its capital's tile and the eight around it, where the sim builds nothing.
@@ -190,12 +207,15 @@ func update(civs: Array, regions: Array) -> void:
 						_nodes.erase(key)
 					_batch_building(key, civ_id, building)
 				continue
+			# A site shows the stage it has reached; it is rebuilt as each stage begins.
+			var stage := -1 if building["complete"] else mini(SITE_STAGES.size() - 1, int(float(building["progress"]) * SITE_STAGES.size()))
+			if _nodes.has(key) and int(_nodes[key].get_meta("stage", -1)) != stage:
+				_nodes[key].queue_free()
+				_nodes.erase(key)
 			if not _nodes.has(key):
-				_nodes[key] = _make_building(civ_id, building)
+				_nodes[key] = _make_building(civ_id, building) if stage < 0 else _make_site(civ_id, building, stage)
 				# Fell the trees on the ground it stands on.
 				_terrain.set_clearing(key, _nodes[key].position, float(_nodes[key].get_meta("clearing")))
-			var grown: float = 1.0 if building["complete"] else lerpf(0.15, 1.0, float(building["progress"]))
-			_nodes[key].scale = Vector3(1.0, grown, 1.0)
 		for village: Dictionary in civ["villages"]:
 			if village["capital"]:
 				continue  # the capital is already labelled
@@ -442,8 +462,43 @@ func _make_building(civ_id: int, building: Dictionary) -> Node3D:
 			_add_flag(root, color)
 		if spec.get("marker", false):
 			_add_marker(root, Color.html(_building_defs[type]["color"]), top)
+		_add_props(root, spec, color, tiles, model.rotation.y)
 	add_child(root)
 	return root
+
+
+## A building site: the pack's construction stage, sized to the ground the building will
+## take, with the owner's flag. Without the stage models it is the building itself, growing.
+func _make_site(civ_id: int, building: Dictionary, stage: int) -> Node3D:
+	var tiles := int(_building_defs.get(building["type"], {}).get("size", 1))
+	var model: Node3D = _models.instance(SITE_STAGES[stage], _models.base_material(), SITE_SIZE * tiles)
+	if model == null:
+		var grown := _make_building(civ_id, building)
+		grown.scale = Vector3(1.0, lerpf(0.15, 1.0, float(building["progress"])), 1.0)
+		grown.set_meta("stage", stage)
+		return grown
+	var root := Node3D.new()
+	var placed := _building_spot(building)
+	root.position = placed.origin
+	model.basis = placed.basis
+	root.add_child(model)
+	root.set_meta("kind", "building")
+	root.set_meta("clearing", tiles * 0.5 + 0.05)
+	root.set_meta("stage", stage)
+	_add_flag(root, _civ_colors[civ_id])
+	add_child(root)
+	return root
+
+
+## The small things set out beside a building (crates, a tent, a weapon rack), for a
+## building drawn as a node of its own.
+func _add_props(root: Node3D, spec: Dictionary, color: Color, tiles: int, turn: float) -> void:
+	for prop: Array in spec.get("props", []):
+		var model: Node3D = _models.instance(prop[0], _models.tinted_material(color), float(prop[1]) * tiles)
+		if model != null:
+			model.position = Basis(Vector3.UP, turn) * (prop[2] as Vector3) * tiles
+			model.rotation.y = turn
+			root.add_child(model)
 
 
 ## A village is its buildings; all that is added is its name, for closer in.
@@ -502,6 +557,10 @@ func _batch_building(key: String, civ_id: int, building: Dictionary) -> void:
 	var lift := Transform3D(Basis(), Vector3(0, float(spec.get("lift", 0.0)) * tiles, 0))
 	for part: Array in _models.parts(name, float(spec["size"]) * tiles):
 		_batches.add(key, part[0], material, placed * lift * (part[1] as Transform3D))
+	for prop: Array in spec.get("props", []):
+		var beside := Transform3D(Basis(), (prop[2] as Vector3) * tiles)
+		for part: Array in _models.parts(prop[0], float(prop[1]) * tiles):
+			_batches.add(key, part[0], _models.tinted_material(color), placed * beside * (part[1] as Transform3D))
 	if not spec.get("tinted", false):
 		var at := Transform3D(Basis(), Vector3(0.36, 0.0, 0.36) * tiles)
 		for part: Array in _models.parts("flag_green", 0.42):

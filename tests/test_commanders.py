@@ -191,6 +191,10 @@ def test_protocol_reports_the_roster_and_postings(sim):
     assert state["commanders"] == 3 and state["commander_cap"] == 20
     posts = [c["post"] for c in state["commanders_in_reserve"]]
     assert civ.capital.name in posts and posts.count(None) == 3 - len(civ.settlements)
+    # Where each stands, for the viewer to draw him at the gate.
+    at_capital = next(c for c in state["commanders_in_reserve"] if c["post"] == civ.capital.name)
+    assert (at_capital["x"], at_capital["y"]) == sim.world.xy(civ.capital.tile)
+    assert all(c["x"] is None for c in state["commanders_in_reserve"] if c["post"] is None)
 
 
 def test_long_games_keep_rosters_and_armies_consistent():
