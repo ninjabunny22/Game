@@ -53,8 +53,8 @@ func _init() -> void:
 	var ranks := [
 		_adventurers.instance("Knight:swordsman", COLORS[1], UnitView.FOOT_HEIGHT),
 		_adventurers.instance("Knight:spearman", COLORS[1], UnitView.FOOT_HEIGHT),
-		_characters.instance("Archer", COLORS[1], UnitView.ARCHER_HEIGHT),
-		_characters.instance("Knight", COLORS[1], UnitView.KNIGHT_HEIGHT),
+		_adventurers.instance("Rogue_Hooded:archer", COLORS[1], UnitView.FOOT_HEIGHT),
+		_adventurers.instance("Knight:cavalry", COLORS[1], UnitView.MOUNTED_HEIGHT, true),
 		_characters.instance("Villager", COLORS[1], UnitView.VILLAGER_HEIGHT),
 		_adventurers.instance("Knight", COLORS[1], UnitView.GENERAL_HEIGHT),
 	]

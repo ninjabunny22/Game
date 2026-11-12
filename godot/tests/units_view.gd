@@ -72,7 +72,10 @@ func _init() -> void:
 	_units.update([
 		_army(1, 0, 18, 20, "besieging", general, false),
 		_army(2, 0, 30, 20, "marching", {"name": "Edda", "level": 2, "battles": 1, "wins": 1}, true),
-		_army(3, 0, 14, 20, "marching", {"name": "Farid", "level": 1, "battles": 0, "wins": 0}, false),
+		_army(3, 0, 14, 20, "marching", {"name": "Farid", "level": 1, "battles": 0, "wins": 0}, false,
+			{"cavalry": 160, "swordsman": 40}, "cavalry"),
+		_army(4, 1, 10, 20, "fighting", {"name": "Greta", "level": 2, "battles": 2, "wins": 1}, false,
+			{"archer": 150, "spearman": 50}, "archer"),
 	], [])
 	_units.set_detail(2)
 	var ship: Node3D = _models.instance("civsim_ship", _models.tinted_material(colors[0]), 2.0)
@@ -84,10 +87,11 @@ func _init() -> void:
 	_camera.make_current()
 
 
-func _army(id: int, civ: int, x: int, y: int, state: String, commander: Dictionary, afloat: bool) -> Dictionary:
+func _army(id: int, civ: int, x: int, y: int, state: String, commander: Dictionary, afloat: bool,
+		units := {"swordsman": 120, "spearman": 60}, dominant := "swordsman") -> Dictionary:
 	return {"id": id, "civ": civ, "x": x, "y": y, "role": "field", "state": state, "target_civ": 1,
-		"duty": "attack", "units": {"swordsman": 120, "spearman": 60}, "size": 180, "capacity": 200,
-		"rally": null, "dominant": "swordsman", "afloat": afloat, "boat": afloat, "strength": 200.0,
+		"duty": "attack", "units": units, "size": 200, "capacity": 200,
+		"rally": null, "dominant": dominant, "afloat": afloat, "boat": afloat, "strength": 200.0,
 		"commander": commander, "refit": false, "tier": 1.0, "scouted": true}
 
 
@@ -103,6 +107,19 @@ func _process(_delta: float) -> bool:
 		_camera.look_at_from_position(Vector3(24.4, 1.7, 28.2), Vector3(26, 0.6, 26))
 	elif _frames == 45:
 		_save("ship")
+		_camera.look_at_from_position(Vector3(16.2, 1.0, 21.6), Vector3(14, 0.45, 20))
+	elif _frames == 60:
+		_save("cavalry")
+		_camera.look_at_from_position(Vector3(11.8, 1.1, 22.0), Vector3(10, 0.35, 20))
+	elif _frames == 75:
+		_save("archers_a")
+	elif _frames == 85:
+		_save("archers_b")
+		_camera.look_at_from_position(Vector3(19.5, 1.1, 22.0), Vector3(18, 0.35, 20))
+	elif _frames == 95:
+		_save("swing_a")
+	elif _frames == 101:
+		_save("swing_b")
 		return true
 	return false
 

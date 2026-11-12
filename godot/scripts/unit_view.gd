@@ -25,13 +25,14 @@ const MID_RANKS := 3  # rank figures shown at middle zoom: enough to read as an 
 const POSTED_SPOT := Vector3(-0.85, 0, 1.0)  # where a general in reserve stands: in the castle's front court
 const VILLAGER_HEIGHT := 0.45
 const RIDER_HEIGHT := 0.62
-const KNIGHT_HEIGHT := 0.72
-const ARCHER_HEIGHT := 0.6
 const SOLDIER_HEIGHT := 0.58  # a man-at-arms: the commander's model, smaller
 ## Unit types with a model of their own for an army without a commander: [model, height].
-const SOLDIER_MODELS := {"cavalry": ["Knight", KNIGHT_HEIGHT], "archer": ["Archer", ARCHER_HEIGHT]}
-## Unit types drawn as the Adventurers knight, each with its own kit (adventurers.gd KITS).
-const FOOT_MODELS := {"swordsman": "Knight:swordsman", "spearman": "Knight:spearman"}
+## Unit types drawn from the Adventurers pack, each with its own kit (adventurers.gd KITS): the
+## knight for the foot, the hooded rogue with a bow for archers, the knight on horseback for cavalry.
+const FOOT_MODELS := {"swordsman": "Knight:swordsman", "spearman": "Knight:spearman", "archer": "Rogue_Hooded:archer"}
+const MOUNTED_MODELS := {"cavalry": "Knight:cavalry"}
+const MOUNTED_HEIGHT := 0.8  # a horseman, hooves to helmet
+const MOUNTED_GENERAL_HEIGHT := 0.98
 const SOLDIERS_PER_FIGURE := 48  # an army shows one more figure in its ranks for every so many soldiers
 const MAX_RANKS := 8  # ... up to this many behind whoever leads it
 const RANK_SPACING := 0.34
@@ -90,7 +91,7 @@ func update(armies: Array, villagers: Array) -> void:
 		var civ := int(army["civ"])
 		var commander: Variant = army["commander"]
 		# What the piece looks like; rebuilt only when that changes.
-		var look := "%d:%s:%s" % [civ, str(commander["name"]) if commander != null else "-" + str(army["dominant"]), _ranks(army)]
+		var look := "%d:%s:%s:%s" % [civ, str(commander["name"]) if commander != null else "-", str(army["dominant"]), _ranks(army)]
 		if not _armies.has(id) or _armies[id]["look"] != look:
 			if _armies.has(id):
 				_armies[id]["node"].queue_free()
@@ -290,7 +291,9 @@ func _make_army(civ: int, army: Dictionary, look: String) -> Dictionary:
 	var figure: Node3D = null
 	if army["commander"] != null:
 		var character: String = _adventurers.general_for(civ, str(army["commander"]["name"]))
-		figure = _adventurers.instance(character, color, GENERAL_HEIGHT)
+		# The general of a mounted army rides with it.
+		var mounted := str(army["dominant"]) == "cavalry"
+		figure = _adventurers.instance(character, color, MOUNTED_GENERAL_HEIGHT if mounted else GENERAL_HEIGHT, mounted)
 		if figure == null:
 			figure = _commander_figure(color)  # the model is missing: the old placeholder
 	else:
@@ -401,8 +404,8 @@ func _soldier(unit_id: String, color: Color) -> Node3D:
 	var soldier: Node3D = null
 	if FOOT_MODELS.has(unit_id):
 		soldier = _adventurers.instance(FOOT_MODELS[unit_id], color, FOOT_HEIGHT)
-	elif SOLDIER_MODELS.has(unit_id):
-		soldier = _characters.instance(SOLDIER_MODELS[unit_id][0], color, SOLDIER_MODELS[unit_id][1])
+	elif MOUNTED_MODELS.has(unit_id):
+		soldier = _adventurers.instance(MOUNTED_MODELS[unit_id], color, MOUNTED_HEIGHT, true)
 	if soldier == null:
 		return _soldier_figure(unit_id, color)
 	return soldier

@@ -21,7 +21,7 @@ func _init() -> void:
 
 	# Generals and foot soldiers from the Adventurers pack.
 	var kinds: Array = Adventurers.GENERALS.duplicate()
-	kinds += ["Knight:swordsman", "Knight:spearman"]
+	kinds += ["Knight:swordsman", "Knight:spearman", "Rogue_Hooded:archer", "Knight:cavalry"]
 	for kind: String in kinds:
 		var figure: Node3D = adventurers.instance(kind, red, 0.8)
 		if figure == null:
@@ -63,7 +63,7 @@ func _init() -> void:
 			_fail("%s: the skin changes with the civ" % texture)
 
 	# Our own characters and the pack's buildings and nature.
-	for model: String in ["Archer", "Knight", "Rider", "Villager"]:
+	for model: String in ["Rider", "Villager"]:
 		if not characters.has(model):
 			_fail("%s did not load" % model)
 	var names := {}

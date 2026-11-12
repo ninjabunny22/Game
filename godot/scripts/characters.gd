@@ -1,6 +1,6 @@
 extends RefCounted
 ## Loads our own models in res://assets/characters straight from their .glb files at run
-## time: the rigged, animated Archer, Villager, Rider and Knight (cavalry), which neither
+## time: the rigged, animated Villager and Rider (a villager on horseback), which neither
 ## KayKit pack has. (Castles are put together from the Hexagon pack's pieces in civ_view.gd;
 ## the ship, harbour, stable, gold mine and siege engines are made in Blender, see
 ## tools/blender/make_models.py.) Generals and foot soldiers are the Adventurers pack's
@@ -15,7 +15,6 @@ const DIR := "res://assets/characters/"
 ## The material on each model that takes the owner's colour.
 const TEAM_MATERIALS := {
 	"Villager": ["tunic_moss"], "Rider": ["tunic_moss", "saddle_blanket"],
-	"Knight": ["cloth_team", "cloth_deep"], "Archer": ["cloth_team"],
 }
 
 ## Parts of a model that are left out, by material: none at present (the old stable and
@@ -24,9 +23,9 @@ const LEFT_OUT := {}
 ## Models made of thousands of small parts that never move, welded into one mesh with a
 ## surface per material when loaded: none at present (the old castles, ship and harbour were).
 const WELDED := []
-## Models that stand on their own origin rather than the middle of their bounding box: the
-## knight's lance reaches far out in front, and centring the box would push the horse back.
-const ON_ORIGIN := ["Knight"]
+## Models that stand on their own origin rather than the middle of their bounding box: none now
+## (the old mounted knight's lance reached far out in front).
+const ON_ORIGIN := []
 const CACHE_VERSION := 1  # raise when welding changes, so old kept meshes are not used
 
 var _prototypes := {}  # name -> {"scene": Node3D, "aabb": AABB}, or {} if it failed to load
