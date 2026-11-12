@@ -1,7 +1,11 @@
 # CivSim
 
-Four civilizations compete on a procedurally generated map. A Python simulation
-core runs the world; a Godot 4 project renders it in 3D over a local WebSocket.
+Two to five civilizations compete on a generated map. A Python simulation core runs the
+world; a Godot 4 project renders it in 3D over a local WebSocket.
+
+Project documentation: **CLAUDE.md** (guide and principles), **CIVSIM_STATUS.md** (where
+things stand), **ROADMAP.md** (plans), **ARCHITECTURE.md** (how it fits together). This README
+is the reference for the rules and numbers.
 
 Built so far: **phase 1** (map, civs, economy, rule-based AI, viewer),
 **phase 2** (base tech tree), **phase 3** (upkeep, trade, alliances, war, a
@@ -49,11 +53,12 @@ concentrates on, what to research and build next, and how to stand toward each o
 civ; whatever is left on Auto is still decided by the civ itself, and the civ can be
 handed back at any time (`ruler.py`).
 
-**Winning.** The last civ standing wins by conquest, a civ holding 60% of the regions
-wins by domination, and otherwise the highest score (regions, people, techs) wins on
-day 8000 (`SimConfig.end_tick`). The game pauses when it is decided and can be played on.
+**Winning.** The last civ standing wins by conquest, a civ holding 70% of the regions
+wins by domination, and otherwise the highest score (regions, people, techs) wins on the
+last day (6,000 / 8,000 / 10,000 by map size, `SimConfig.end_tick`), but only once a war has
+been fought. The game pauses when it is decided and can be played on.
 
-Then open `godot/` in Godot 4.3 or newer and press Play (or
+Then open `godot/` in Godot 4.7 or newer and press Play (or
 `godot --path godot`). The viewer and the sim can start in either order; the
 viewer reconnects on its own.
 
