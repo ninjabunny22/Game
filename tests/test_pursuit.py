@@ -5,7 +5,7 @@ import json
 import pytest
 
 from civsim.bridge import protocol
-from civsim.config import SimConfig
+from civsim.config import HEADCOUNT, SimConfig
 from civsim.military import Captive, Commander
 from civsim.military import warfare
 from civsim.simulation import Simulation
@@ -198,7 +198,7 @@ def test_protocol_reports_wounded_and_prisoners(sim):
     captor.wounded = 7.4
     captor.captives.append(Captive(Commander("Test of Nowhere", experience=100), home.id, 0))
     state = json.loads(protocol.tick_message(sim, [], 1.0))["data"]["civs"][0]
-    assert state["wounded"] == 7
+    assert state["wounded"] == round(7.4 * HEADCOUNT), "head counts are shown at four to the unit"
     assert state["captives"] == [{"name": "Test of Nowhere", "level": state["captives"][0]["level"], "home": home.id}]
 
 

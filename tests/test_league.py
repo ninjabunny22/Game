@@ -9,9 +9,9 @@ from civsim.strategy.utility import DEFAULT
 
 
 def test_a_game_pits_half_the_civs_on_changed_numbers_against_the_rest():
-    result = league.play("small", 0, {"ATTACK_THRESHOLD": 0.4}, game=0, ticks=150)
-    assert result["variant"] > 0 and result["standard"] > 0 and result["ended"] == 150
-    other = league.play("small", 0, {"ATTACK_THRESHOLD": 0.4}, game=1, ticks=150)
+    result = league.play("small", 0, {"ATTACK_THRESHOLD": 0.4}, game=0, ticks=400)
+    assert result["variant"] > 0 and result["standard"] > 0 and result["ended"] == 400
+    other = league.play("small", 0, {"ATTACK_THRESHOLD": 0.4}, game=1, ticks=400)
     assert (other["variant"], other["standard"]) != (result["variant"], result["standard"]), "sides are swapped"
     with pytest.raises(ValueError):
         league.play("small", 0, {"NO_SUCH_NUMBER": 1}, game=0, ticks=5)

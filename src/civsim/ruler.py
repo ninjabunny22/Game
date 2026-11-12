@@ -13,8 +13,8 @@ from .strategy import parse_stances, stance_context
 
 STANCES = ("trade", "ally", "aggression", "ignore")
 COMMANDS = ("take_control", "release_control", "set_stance", "set_focus", "set_research", "set_build",
-            "answer_proposal")
-PROPOSALS = {"alliance": "ally", "trade": "trade", "peace": "ignore", "tribute": "ignore"}  # what saying yes to each means
+            "answer_proposal", "start_rally", "cancel_rally")
+PROPOSALS = {"alliance": "ally", "trade": "trade", "peace": "ignore", "tribute": "ignore", "rally": "ally"}  # what saying yes to each means
 PROPOSAL_REST = 300  # ticks before a civ that was refused asks the same thing again
 
 
@@ -68,7 +68,15 @@ class Ruler:
                           if p["civ"] == value.get("civ") and p["kind"] == value.get("kind")), None)
             if offer is None:
                 return "no such proposal is on the table"
-            if offer["kind"] == "tribute":
+            if offer["kind"] == "rally":
+                rally = next(r for r in self.sim.military.rallies if r.leader == offer["civ"])
+                if value.get("accept") is True:
+                    problem = self.sim.military.join_rally(civ, rally, self.sim.tick, self._news)
+                    if problem:
+                        return problem
+                else:
+                    self.refused[(offer["civ"], "rally")] = rally.departs  # not this one
+            elif offer["kind"] == "tribute":
                 if value.get("accept") is True:
                     self.sim.diplomacy.pay_demand(civ, self.sim.civs[offer["civ"]], self.sim.tick, self._news)
                 else:
@@ -78,6 +86,15 @@ class Ruler:
                 self._apply_stances()
             else:
                 self.refused[(offer["civ"], offer["kind"])] = self.sim.tick + PROPOSAL_REST
+        elif action == "start_rally":
+            result = self.sim.military.start_rally(civ, value.get("civ"), self.sim.tick, self._news)
+            if isinstance(result, str):
+                return result
+        elif action == "cancel_rally":
+            rally = self.sim.military.rally_led_by(civ.id)
+            if rally is None:
+                return "you are not leading a rally"
+            self.sim.military.cancel_rally(rally, self.sim.tick, self._news)
         elif action == "set_research":
             tech = value.get("tech")
             if tech is not None and tech not in {t.id for t in self.sim.tech_tree.available(civ.known_techs)}:
@@ -157,6 +174,16 @@ class Ruler:
             relation = diplomacy.relation(civ.id, other_id)
             theirs, mine = diplomacy.intent(other_id, civ.id), diplomacy.intent(civ.id, other_id)
             kind = text = None
+            # An ally gathering a rally against someone we are also fighting asks us to join it.
+            rally = sim.military.rally_led_by(other_id)
+            if (rally is not None and rally.state == "gathering" and relation.status == "alliance"
+                    and diplomacy.relation(civ.id, rally.enemy).status == "war"
+                    and not any(a.rally == rally.id for a in civ.armies)
+                    and sim.tick >= self.refused.get((other_id, "rally"), 0)):
+                out.append({"civ": other_id, "kind": "rally", "popup": True,
+                            "text": f"{other.name} asks you to join its rally at {sim.military._city_name(rally.city)} "
+                                    f"against {sim.military._city_name(rally.target)}: it marches in "
+                                    f"{rally.departs - sim.tick} days"})
             if relation.status == "war":
                 war = relation.war
                 if (sim.tick - war.start >= rules.MIN_WAR and war.guardian is None
@@ -196,6 +223,14 @@ class Ruler:
                 if (not bdef.requires_tech or bdef.requires_tech in civ.known_techs)
                 and (bdef.max_count is None or civ.count(bdef.id) < bdef.max_count)]
 
+    def _rally_state(self, civ) -> dict | None:
+        rally = self.sim.military.rally_led_by(civ.id)
+        if rally is None:
+            return None
+        name = self.sim.military._city_name
+        return {"state": rally.state, "city": name(rally.city), "target": name(rally.target),
+                "days_left": max(0, rally.departs - self.sim.tick) if rally.state == "gathering" else 0}
+
     def state(self) -> dict | None:
         civ = self.civ
         if civ is None:
@@ -207,6 +242,9 @@ class Ruler:
             "civ": civ.id, "alive": True, "focus": self.focus, "focuses": list(FOCUSES),
             "stances": {str(other): order for other, order in self.stances.items()},
             "proposals": self.proposals(),
+            # The rally this civ is leading, if any, and the enemies it could call one against.
+            "rally": self._rally_state(civ),
+            "rally_targets": [e for e in self.sim.diplomacy.enemies(civ.id) if self.sim.military._war_allies(civ, e)],
             "research_order": civ.research_order,
             "research_options": [{"id": t.id, "name": t.name} for t in tree.available(civ.known_techs)],
             "build_order": civ.build_order,

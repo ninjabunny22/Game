@@ -94,6 +94,7 @@ var _native_name := ""
 var _links: ImmediateMesh
 var _link_labels := {}  # "a:b" -> Label3D naming the war or alliance
 var _civ_names := {}  # civ id -> name
+var _rally_labels := {}  # rally id -> Label3D over the city it gathers in, or the city it marches on
 var _sieges := {}  # region id -> Label3D over a capital an enemy army has broken into
 var _detail := 0  # 0 whole-map view, 1 closer, 2 full detail
 var _view_distance := 110.0  # how far the camera is, for what is sized to the screen
@@ -115,6 +116,7 @@ func setup(terrain: Node3D, init: Dictionary, civ_colors: Array, models: RefCoun
 	add_child(_batches)
 	_link_labels.clear()
 	_sieges.clear()
+	_rally_labels.clear()
 	_body_meshes.clear()
 	_plinth_meshes.clear()
 	_terrain = terrain
@@ -229,6 +231,36 @@ func set_detail(detail: int) -> void:
 		_show_settled(node)
 	for label: Label3D in _link_labels.values():
 		_show_link_label(label)
+
+
+## A rally is marked where it gathers, with the days left, and then on the city it marches on.
+func show_rallies(rallies: Array) -> void:
+	var seen := {}
+	for rally: Dictionary in rallies:
+		var id := int(rally["id"])
+		seen[id] = true
+		if not _rally_labels.has(id):
+			var label := Label3D.new()
+			label.font_size = 40
+			label.outline_size = 14
+			label.fixed_size = true
+			label.pixel_size = 0.00065
+			label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+			label.no_depth_test = true
+			add_child(label)
+			_rally_labels[id] = label
+		var mark: Label3D = _rally_labels[id]
+		var gathering: bool = rally["state"] == "gathering"
+		var at: Dictionary = rally["city"] if gathering else rally["target"]
+		mark.position = _terrain.tile_position(int(at["x"]), int(at["y"])) + Vector3(0.0, 7.6, 0.0)
+		var leader := int(rally["leader"])
+		mark.text = ("%s rallies here\n%d soldiers, marching in %d days" % [_civ_names.get(leader, "?"), int(rally["soldiers"]), int(rally["days_left"])]
+				if gathering else "%s's rally is coming\n%d soldiers" % [_civ_names.get(leader, "?"), int(rally["soldiers"])])
+		mark.modulate = (_civ_colors[leader] as Color).lightened(0.4)
+	for id: int in _rally_labels.keys():
+		if not seen.has(id):
+			_rally_labels[id].queue_free()
+			_rally_labels.erase(id)
 
 
 ## A capital an enemy army has broken into shows who holds it and how close it is to falling.

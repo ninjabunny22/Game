@@ -120,6 +120,16 @@ The overlay is built for watching:
   every army gets a home force raised against it, which never leaves its own land. Allies
   at war with the same enemy make for the same capital, and a second army in the breach
   brings a held capital down half as fast again.
+- **Generals and garrisons.** A general leads only so many (30 units at level 1, 8 more a
+  level; every head count shown is four to the unit), and a civ has at most five armies
+  out. The rest of its soldiers wait in its capitals, defend them, and fill the ranks of
+  armies that come home.
+- **Rallies.** A civ at war can call a rally in one of its cities against one enemy city.
+  Allies at war with the same enemy have 40 days to bring an army; whoever is there then
+  marches as a single army under the leader's general, with no limit on its size. The
+  leader can call it off; it breaks up when the city falls or the army is beaten, each
+  ally's survivors going home, and those who helped take a city are paid from the spoils.
+  A ruler can call and cancel rallies, and is asked in a dialogue to join an ally's.
 - **Headline log.** Only wars, peace, regions and capitals changing hands,
   alliances, betrayals, routs and new eras get a line. Routine events
   (buildings captured, discoveries, trade changes) are counted in one summary

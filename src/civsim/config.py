@@ -17,6 +17,10 @@ class SimConfig:
 
 
 MAX_CIVS = 5
+# How many people each unit of population, and each soldier, in the simulation stands for.
+# Every head count shown to a player is multiplied by it; per-person rates inside the sim
+# are for one unit, which is the same thing as that many people at a fraction of the rate each.
+HEADCOUNT = 4
 DIFFICULTIES = ("easy", "normal", "hard")
 # The three maps a game can be played on. `civs` is how many suit the map: enough left
 # unclaimed at the start that there is room to grow before the civs meet.

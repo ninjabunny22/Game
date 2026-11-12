@@ -26,7 +26,7 @@ const SOLDIER_HEIGHT := 0.58  # a man-at-arms: the commander's model, smaller
 ## Unit types with a model of their own for an army without a commander: [model, height].
 const SOLDIER_MODELS := {"cavalry": ["Knight", KNIGHT_HEIGHT], "archer": ["Archer", ARCHER_HEIGHT],
 	"swordsman": ["Commander", SOLDIER_HEIGHT], "spearman": ["Commander", SOLDIER_HEIGHT]}
-const SOLDIERS_PER_FIGURE := 12  # an army shows one more figure in its ranks for every so many soldiers
+const SOLDIERS_PER_FIGURE := 48  # an army shows one more figure in its ranks for every so many soldiers
 const MAX_RANKS := 8  # ... up to this many behind whoever leads it
 const RANK_SPACING := 0.34
 const STRIKES := ["attack", "shoot"]  # what a model's fighting animation may be called

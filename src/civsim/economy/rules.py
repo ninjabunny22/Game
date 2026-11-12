@@ -21,7 +21,7 @@ SCIENCE_PER_POP = 0.015
 SCIENCE_BANK_CAP = 500.0  # most science a civ can hold while it has nothing to spend it on
 
 # Army. Soldiers are part of the population but do not work.
-GARRISON = 0.10  # peacetime share of the population under arms
+GARRISON = 0.15  # peacetime share of the population under arms
 MAX_MOBILIZATION = 0.35
 RECRUIT_RATE = 0.02  # share of the population that can leave the army per tick: standing down is quick
 # Raising soldiers is not: they are trained, a few a day by levy and more for every working

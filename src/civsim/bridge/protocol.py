@@ -25,12 +25,12 @@ from ..map import BIOME_INFO, DEPOSIT_TYPES, Biome, load_faction
 from ..military import UNIT_TYPES
 from ..military.warfare import ROSTER_CAP
 from ..simulation import Simulation
-from ..config import MAP_SIZES, MAPS
+from ..config import HEADCOUNT, MAP_SIZES, MAPS
 from ..diplomacy import rules
 
-PROTOCOL_VERSION = 16
+PROTOCOL_VERSION = 17
 RULER_COMMANDS = ("take_control", "release_control", "set_stance", "set_focus", "set_research", "set_build",
-                  "answer_proposal")
+                  "answer_proposal", "start_rally", "cancel_rally")
 GAME_COMMANDS = ("new_game", "end_game")  # start a game from the menu; go back to the menu
 COMMANDS = ("pause", "resume", "toggle_pause", "step", "set_speed", *RULER_COMMANDS, *GAME_COMMANDS)
 
@@ -168,8 +168,8 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
             # The sickness a long war has brought on the civ, and how many days it has left; null when well.
             "sickness": {"name": civ.sickness, "days": max(0, civ.sick_until - sim.tick)} if civ.sickness else None,
             "regions": [region.id for region in world.regions if region.owner == civ.id],
-            "population": int(civ.population),
-            "housing": int(mods.housing),
+            "population": heads(civ.population),
+            "housing": heads(mods.housing),
             "storage": {res: int(mods.storage[res]) for res in RESOURCES},  # hard cap per resource
             "resources": {res: round(civ.resources[res], 1) for res in RESOURCES},
             "income": {res: round(civ.income[res], 2) for res in RESOURCES},
@@ -203,15 +203,15 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
             "science_rate": round(civ.science_rate, 2),
             "demolition_refund": round(mods.demolition_refund, 2),
             # Totals over all the civ's armies; the armies themselves are listed under "armies".
-            "soldiers": round(civ.soldiers),
-            "units": whole(civ.unit_counts()),
+            "soldiers": heads(civ.soldiers),
+            "units": whole(shown(civ.unit_counts())),
             # "post" is the capital a reserve commander is stationed at, which he helps defend.
             "commanders_in_reserve": [{"name": c.name, "level": c.level, "post": posts.get(c.post)}
                                       for c in civ.commanders],
             "commanders": sim.military.roster(civ),
             "commander_cap": ROSTER_CAP,
             "army_strength": round(diplomacy.strength(civ), 1),
-            "wounded": int(civ.wounded),
+            "wounded": heads(civ.wounded),
             # Horses standing in the stables, and the whole herd including those under riders.
             "horses": int(civ.horses),
             "herd": int(civ.herd),
@@ -242,8 +242,11 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
                 # duty: "attack" (out after the enemy's capitals) or "defend" (a home force on its own land).
                 "duty": army.duty,
                 # Whole soldiers per unit type, adding up exactly to "size".
-                "units": whole(army.units),
-                "size": round(army.size),
+                "units": whole(shown(army.units)),
+                "size": heads(army.size),
+                # How many its commander can lead (null for a rally, which has no limit), and the rally it is with.
+                "capacity": heads(sim.military.capacity(army)) if sim.military.capacity(army) < 1e8 else None,
+                "rally": army.rally,
                 "dominant": army.dominant,
                 # afloat: on open water. boat: aboard ship, which an army on open water always is,
                 # having put out from near one of its civ's harbours; drawn as a ship until it lands.
@@ -296,10 +299,13 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
         # owner is a civ id, or null while the native faction holds the region.
         "regions": [
             # held_by: the civ whose army has broken into the capital, hold: how far (0 to 1) it is to taking it.
-            {"id": region.id, "owner": region.owner, "garrison": round(region.garrison),
+            {"id": region.id, "owner": region.owner, "garrison": heads(region.garrison),
              "held_by": region.held_by, "hold": round(region.hold / rules.CAPITAL_HOLD, 3)}
             for region in world.regions
         ],
+        # Rallies gathering or on the march: who leads, where it gathers, what it is for, how long
+        # until it sets out (0 once it has), who has joined and how many soldiers it has.
+        "rallies": [_rally(sim, rally) for rally in sim.military.rallies],
         "relations": relations,
         "deals": [
             {"id": deal.id, "a": deal.a, "b": deal.b, "ends": deal.end,
@@ -319,6 +325,30 @@ def status_message(sim: Simulation, paused: bool, speed: float) -> str:
 def _status(sim: Simulation, paused: bool, speed: float) -> dict:
     # waiting_for: civs whose strategist has not answered in time; the clock holds until it does.
     return {"paused": paused, "speed": speed, "waiting_for": sim.waiting_for()}
+
+
+def heads(count: float) -> int:
+    """A head count as it is shown: each unit in the simulation stands for HEADCOUNT people."""
+    return round(count * HEADCOUNT)
+
+
+def _rally(sim: Simulation, rally) -> dict:
+    world = sim.world
+    armies = [a for civ in sim.civs for a in civ.armies if a.rally == rally.id]
+    return {
+        "id": rally.id, "leader": rally.leader, "enemy": rally.enemy, "state": rally.state,
+        "city": {"x": rally.city % world.width, "y": rally.city // world.width, "name": sim.military._city_name(rally.city)},
+        "target": {"x": rally.target % world.width, "y": rally.target // world.width,
+                   "name": sim.military._city_name(rally.target)},
+        "days_left": max(0, rally.departs - sim.tick) if rally.state == "gathering" else 0,
+        "members": sorted({a.civ for a in armies} | set(rally.shares)),
+        "soldiers": heads(sum(a.size for a in armies)),
+    }
+
+
+def shown(units: dict[str, float]) -> dict[str, float]:
+    """Soldiers per unit type as head counts to show."""
+    return {unit: count * HEADCOUNT for unit, count in units.items()}
 
 
 def whole(units: dict[str, float]) -> dict[str, int]:

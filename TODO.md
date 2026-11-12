@@ -26,5 +26,9 @@ Later:
 - **Strategist:** finer information than the rough strength bands, breaking truces,
   bluffing, attacks agreed with an ally for a chosen day, stockpiling for a planned war.
 - **Armies:** more than two columns, flanking, defending a particular region.
+- **Rallies are rare** (0-3 called a game, few march): alliances are short and allied armies are
+  often too far from the city to arrive in 40 days. To settle in the timing pass.
+- **Population:** head counts are shown at four to the unit; the economy itself is unscaled.
+  A denser population (more people per tile, with yields rebalanced) would be a real change.
 - **Loose ends:** the map names were given without looking at the maps; one large map
   (Wyrmcoast) is slow to simulate.

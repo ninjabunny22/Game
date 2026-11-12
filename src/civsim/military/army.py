@@ -7,6 +7,9 @@ MAX_COMMANDER_LEVEL = 10
 XP_PER_LEVEL_STEP = 25  # level n needs 25 * (n - 1)^2 experience
 STRENGTH_PER_LEVEL = 0.04  # each level above 1 adds this to the army's strength
 CASUALTIES_PER_LEVEL = 0.02  # ... and takes this off its losses
+CAPACITY = 30.0  # soldiers a new commander can lead ...
+CAPACITY_PER_LEVEL = 8.0  # ... and how many more with each level
+LEADERLESS_CAPACITY = 10.0  # soldiers that will follow an army with no commander at all
 
 
 @dataclass
@@ -30,6 +33,27 @@ class Commander:
     @property
     def casualty_reduction(self) -> float:
         return CASUALTIES_PER_LEVEL * (self.level - 1)
+
+    @property
+    def capacity(self) -> float:
+        """How many soldiers he can lead: the rest of the civ's army waits in its capitals."""
+        return CAPACITY + CAPACITY_PER_LEVEL * (self.level - 1)
+
+
+@dataclass
+class Rally:
+    """Allies gathering their armies in one city to march on an enemy city as one."""
+
+    id: int
+    leader: int  # the civ that called it, whose city it gathers in and whose general leads it
+    enemy: int
+    city: int  # tile of the leader's capital where the armies gather
+    target: int  # tile of the enemy capital it is to take
+    start: int
+    departs: int  # tick the gathering ends and whoever has come marches
+    state: str = "gathering"  # gathering | marching
+    army: int | None = None  # the combined army, once it has set out
+    shares: dict[int, float] = field(default_factory=dict)  # ally civ -> its share of the combined army
 
 
 @dataclass
@@ -67,6 +91,7 @@ class Army:
     pursuit_until: int = 0
     disordered_until: int = 0  # a pursuer is out of formation during the chase and for a while after
     rout_size: float = 0.0  # soldiers this army had when it broke
+    rally: int | None = None  # the rally it has joined, if any
     duty: str = "attack"  # "attack": makes for the enemy's capitals. "defend": stays on its own land
     wing: int = 0  # among the armies sent against one enemy: the main body, or a second column
     boat: bool = False  # aboard ship on open water, having put out from near one of its civ's harbours

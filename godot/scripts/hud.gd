@@ -37,6 +37,7 @@ var _connected := false
 var _tick := 0
 var _seed := 0
 var _map_name := ""
+var _popup: Control = null  # the dialogue asking the player something that will not wait
 var _paused := false
 var _waiting_for: Array = []  # civ ids whose strategist the clock is being held for
 var _armies := {}  # civ id -> that civ's armies, from the latest tick
@@ -204,7 +205,28 @@ func _refresh_ruler(ruler: Variant) -> void:
 	_button(header, "Hand back" if ruler["alive"] else "Watch on", func() -> void: command_requested.emit("release_control", {}))
 	if not ruler["alive"]:
 		return
+	_show_popup(ruler)
+	var leading: Variant = ruler.get("rally")
+	if leading != null:
+		var rally_row := HBoxContainer.new()
+		_ruler_box.add_child(rally_row)
+		var rally_text := Label.new()
+		rally_text.text = ("Your rally gathers at %s for %s: %d days" % [leading["city"], leading["target"], int(leading["days_left"])]
+				if leading["state"] == "gathering" else "Your rally is marching on %s" % leading["target"])
+		rally_text.add_theme_font_size_override("font_size", 13)
+		rally_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		rally_row.add_child(rally_text)
+		_button(rally_row, "Call off", func() -> void: command_requested.emit("cancel_rally", {}))
+	else:
+		for enemy: Variant in ruler.get("rally_targets", []):
+			var foe := int(enemy)
+			var call_row := HBoxContainer.new()
+			_ruler_box.add_child(call_row)
+			_button(call_row, "Call a rally against %s" % str(_civ_info[foe]["name"]), func() -> void:
+				command_requested.emit("start_rally", {"civ": foe}))
 	for offer: Dictionary in ruler.get("proposals", []):
+		if offer.get("popup", false):
+			continue  # asked in a dialogue of its own
 		var from := int(offer["civ"])
 		var row := HBoxContainer.new()
 		_ruler_box.add_child(row)
@@ -251,6 +273,51 @@ func _refresh_ruler(ruler: Variant) -> void:
 		for stance: Array in [["auto", "Auto"], ["trade", "Trade"], ["ally", "Ally"], ["aggression", "Attack"], ["ignore", "Ignore"]]:
 			_choice(row, stance[1], current == stance[0], func() -> void:
 				command_requested.emit("set_stance", {"civ": other, "stance": stance[0]}))
+
+
+## A question that will not wait is put in a dialogue in the middle of the screen: an ally
+## asking the player to join its rally.
+func _show_popup(ruler: Dictionary) -> void:
+	var asked: Variant = null
+	for offer: Dictionary in ruler.get("proposals", []):
+		if offer.get("popup", false):
+			asked = offer
+			break
+	if asked == null:
+		if _popup != null:
+			_popup.queue_free()
+			_popup = null
+		return
+	if _popup != null:
+		_popup.queue_free()
+	var from := int(asked["civ"])
+	var centre := CenterContainer.new()
+	centre.set_anchors_preset(Control.PRESET_FULL_RECT)
+	centre.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(centre)
+	_popup = centre
+	var panel := _panel(centre)
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 12)
+	panel.add_child(column)
+	var title := Label.new()
+	title.text = "A call to arms"
+	title.add_theme_font_size_override("font_size", 20)
+	title.add_theme_color_override("font_color", Color.html(_civ_info[from]["color"]).lightened(0.25))
+	column.add_child(title)
+	var words := Label.new()
+	words.text = str(asked["text"])
+	words.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	words.custom_minimum_size = Vector2(380, 0)
+	column.add_child(words)
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 12)
+	column.add_child(row)
+	_button(row, "Join the rally", func() -> void:
+		command_requested.emit("answer_proposal", {"civ": from, "kind": asked["kind"], "accept": true}))
+	_button(row, "Stay out of it", func() -> void:
+		command_requested.emit("answer_proposal", {"civ": from, "kind": asked["kind"], "accept": false}))
 
 
 ## How things stand between the ruled civ and another: war, alliance, truce or peace.

@@ -205,6 +205,7 @@ func _on_tick(tick: int, data: Dictionary) -> void:
 		_territory_rev = rev
 		_terrain.apply_territory(data["territory"], _civ_colors)
 	_civ_view.update(data["civs"], data["regions"])
+	_civ_view.show_rallies(data.get("rallies", []))
 	_civ_view.update_links(data["civs"], data["relations"], data["deals"])
 	_unit_view.update(data["armies"], data["villagers"])
 	_hud.update(tick, data)
