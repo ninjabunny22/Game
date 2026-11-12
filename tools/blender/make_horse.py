@@ -6,7 +6,7 @@ trot animations to godot/assets/adventurers/civsim_horse.glb. Run from the repos
 A faceted low-poly horse after the user's reference picture: a deep chest and a dipped back,
 a high arched neck under a black mane, a long head with a white blaze, slim legs with knees,
 hocks and fetlocks, black hooves, and a black tail. Body, neck, head, legs and tail are each
-lofted through cross-sections (eight-sided, flat shaded). It is painted from the Adventurers
+lofted through cross-sections (twelve-sided, shaded smooth). It is painted from the Adventurers
 knight's texture, light on top and darker below, so horse and rider share one material; a
 saddle cloth in the owner's colour (the texture's team cell) and a saddle are added. Each part
 is rigid on one bone; it faces -y, like the pack's characters, and a rider sits on "saddle".
@@ -27,7 +27,7 @@ OUT = os.path.join(ROOT, "godot", "assets", "adventurers", "civsim_horse.glb")
 FPS = 30
 CELLS = dict(KNIGHT, coat=(5, 0), dark=(2, 0), muzzle=(6, 0), cloth=(0, 1), steel=(3, 0), blaze=(1, 1))
 LEGS = ("fl", "fr", "bl", "br")
-SIDES = 8
+SIDES = 12  # sides of each cross-section: enough to read as rounded
 
 # The body, rump to chest: (y, z of the middle, half its width, half its depth).
 BODY = [(0.68, 0.84, 0.08, 0.1), (0.62, 0.82, 0.17, 0.21), (0.5, 0.79, 0.22, 0.26),
@@ -94,6 +94,8 @@ def tube(m: Model, cell: str, rings: list, shade: float = 0.7, x: float = 0.0, c
     import bmesh
     bmesh.ops.recalc_face_normals(bm, faces=faces)
     m._paint(faces, cell, min(shade, 1.0 - COAT_START), COAT_START if cell == "coat" else 0.0)
+    for face in faces:
+        face.smooth = True  # shaded smooth: the body reads as one rounded form, not a set of facets
 
 
 def leg_rings(leg: str, which: str) -> list:
