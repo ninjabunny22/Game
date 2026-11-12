@@ -21,7 +21,6 @@ NAMES = [  # per band west to east: north, spine, south
     ("Steelwold", "Falconfell", "Hayley"), ("Walrusmoor", "Ravenfell", "Millcombe"),
     ("Firwick", "Owlfell", "Hopshythe"), ("Iceend", "Duskspine", "Easthaven"),
 ]
-SLOTS = {"West End": (0, 0), "West March": (3, 3), "Middle": (5, 6), "East March": (8, 8), "East End": (11, 11)}
 PEAKS = (2, 10)  # the spine is impassable where these bands begin
 
 
@@ -103,9 +102,11 @@ def blueprint() -> Blueprint:
         best="2 to 5",
         land=[land], coast_noise=1.3, zones=zones, patches=patches, ridges=ridges, lakes=lakes, rivers=rivers,
         deposits=deposits, scatter=[("fish", 40, None)], mines=mines, regions=regions, links=links,
-        # Each slot holds its band's south coast and north coast, the spine between them; the
-        # Middle holds the south coasts of the two central bands, the Crossroads above them.
-        starts={slot: (_k(NAMES[a][2]), _k(NAMES[b][0] if a == b else NAMES[b][2])) for slot, (a, b) in SLOTS.items()},
-        sets={2: ["West End", "East End"], 3: ["West End", "Middle", "East End"],
-              4: ["West End", "West March", "East March", "East End"], 5: list(SLOTS)},
+        # The civs start in the four corners, each on the two outermost bands of its coast;
+        # a fifth holds the south coasts of the two middle bands, the Crossroads above them.
+        starts={"NW": ("frostend", "pinewick"), "SW": ("westhaven", "barleyhythe"),
+                "NE": ("iceend", "firwick"), "SE": ("easthaven", "hopshythe"),
+                "Middle": ("southcross", "suncross")},
+        sets={2: ["NW", "SE"], 3: ["NW", "NE", "Middle"], 4: ["NW", "SW", "NE", "SE"],
+              5: ["NW", "SW", "NE", "SE", "Middle"]},
     )
