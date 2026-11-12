@@ -3,219 +3,204 @@ trot animations to godot/assets/adventurers/civsim_horse.glb. Run from the repos
 
     /Applications/Blender.app/Contents/MacOS/Blender -b -P tools/blender/make_horse.py
 
-The shape is the low-poly horse in tools/blender/sources/low_poly_horse.obj, made of named
-parts (torso, neck, head, each leg's upper, knee, lower and hoof, mane, tail) coloured by
-vertex. It is turned to face -y like the pack's characters, scaled to a rider, its body
-smoothed once, and painted from the Adventurers knight's texture (the nearest of its browns
-for each part), so horse and rider share one material; a saddle, a saddle cloth in the
-owner's colour (the texture's team cell) and a steel chamfron are added. Each part is
-rigid on one bone; a rider sits on the "saddle" bone.
+A faceted low-poly horse after the user's reference picture: a deep chest and a dipped back,
+a high arched neck under a black mane, a long head with a white blaze, slim legs with knees,
+hocks and fetlocks, black hooves, and a black tail. Body, neck, head, legs and tail are each
+lofted through cross-sections (eight-sided, flat shaded). It is painted from the Adventurers
+knight's texture, light on top and darker below, so horse and rider share one material; a
+saddle cloth in the owner's colour (the texture's team cell) and a saddle are added. Each part
+is rigid on one bone; it faces -y, like the pack's characters, and a rider sits on "saddle".
 """
 
 import math
 import os
 import sys
 
-import bmesh
 import bpy
-from mathutils import Matrix, Vector
+from mathutils import Vector
 
 sys.path.insert(0, os.path.dirname(__file__))
 from make_models import KNIGHT, Model  # noqa: E402
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-SOURCE = os.path.join(os.path.dirname(__file__), "sources", "low_poly_horse.obj")
 OUT = os.path.join(ROOT, "godot", "assets", "adventurers", "civsim_horse.glb")
 FPS = 30
-SCALE = 0.5  # the source stands 2.9 tall; this brings its back to the saddle height a rider needs
-CELLS = dict(KNIGHT, coat=(5, 0), dark=(2, 0), muzzle=(6, 0), cloth=(0, 1), steel=(3, 0))
-SMOOTHED = {"Torso", "Hindquarters", "Shoulder", "Neck_blend", "Neck_core", "Cheek", "Head"}
-
-# Which bone each of the source's parts hangs on. Its "near" side is the horse's left.
-PART_BONES = {"Torso": "body", "Hindquarters": "body", "Shoulder": "body", "Mane_mid": "body",
-              "Neck_core": "neck", "Neck_blend": "neck", "Mane_main": "neck",
-              "Tail_base": "tail", "Tail_tip": "tail"}
-for name in ("Head", "Cheek", "Muzzle", "Nose", "Near_ear", "Far_ear", "Near_eye", "Far_eye",
-             "Near_nostril", "Far_nostril"):
-    PART_BONES[name] = "head"
-for side, leg in (("near", "l"), ("far", "r")):
-    PART_BONES[f"Front_{side}_upper"] = f"upper_f{leg}"
-    PART_BONES[f"{side.capitalize()}_front_knee"] = f"lower_f{leg}"
-    PART_BONES[f"Front_{side}_lower"] = f"lower_f{leg}"
-    PART_BONES[f"Front_{side}_hoof"] = f"lower_f{leg}"
-    PART_BONES[f"Hind_{side}_thigh"] = f"upper_b{leg}"
-    PART_BONES[f"{side.capitalize()}_hock"] = f"lower_b{leg}"
-    PART_BONES[f"Hind_{side}_cannon"] = f"lower_b{leg}"
-    PART_BONES[f"Hind_{side}_hoof"] = f"lower_b{leg}"
+CELLS = dict(KNIGHT, coat=(5, 0), dark=(2, 0), muzzle=(6, 0), cloth=(0, 1), steel=(3, 0), blaze=(1, 1))
 LEGS = ("fl", "fr", "bl", "br")
+SIDES = 8
+
+# The body, rump to chest: (y, z of the middle, half its width, half its depth).
+BODY = [(0.68, 0.84, 0.08, 0.1), (0.62, 0.82, 0.17, 0.21), (0.5, 0.79, 0.22, 0.26),
+        (0.32, 0.77, 0.22, 0.26), (0.1, 0.75, 0.21, 0.26), (-0.12, 0.75, 0.22, 0.29),
+        (-0.32, 0.77, 0.21, 0.32), (-0.47, 0.81, 0.17, 0.3), (-0.57, 0.87, 0.1, 0.2)]
+# The neck rises forward and up from the withers in an arch: (y, z, half width, half depth).
+NECK = [(-0.38, 0.98, 0.15, 0.25), (-0.52, 1.15, 0.125, 0.19), (-0.63, 1.31, 0.1, 0.14),
+        (-0.71, 1.44, 0.085, 0.115), (-0.76, 1.53, 0.075, 0.1)]
+# The head, from the poll down to the muzzle.
+# The head runs from the poll down to the muzzle along HEAD_AXIS. Its front (the line of the
+# face) is straight; it is deep at the jaw and cheek, narrows along the face, and swells a
+# little at a blunt muzzle. Rings: (share of the length, half width, half depth).
+HEAD_POLL = Vector((0.0, -0.74, 1.58))
+HEAD_AXIS = Vector((0.0, -0.66, -0.75)).normalized()
+HEAD_LENGTH = 0.46
+HEAD_JAW = Vector((0.0, -HEAD_AXIS.z, HEAD_AXIS.y))  # square to the axis, toward the jaw (back and down)
+HEAD_FACE = 0.06  # how far the line of the face stands from the axis
+HEAD = [(0.0, 0.07, 0.065), (0.12, 0.08, 0.125), (0.3, 0.078, 0.12), (0.5, 0.066, 0.085),
+        (0.7, 0.064, 0.07), (0.88, 0.078, 0.074), (1.0, 0.072, 0.06)]
 
 
-def place(x: float, y: float, z: float) -> Vector:
-    """The source's head points to -x with z up: turn it to face -y, at our scale."""
-    return Vector((-y, x, z)) * SCALE
+def on_head(share: float, toward_jaw: float, x: float = 0.0) -> Vector:
+    """A point of the head: `share` of the way from poll to muzzle, `toward_jaw` from the axis."""
+    return HEAD_POLL + HEAD_AXIS * (share * HEAD_LENGTH) + HEAD_JAW * toward_jaw + Vector((x, 0, 0))
+TAIL = [(0.65, 0.9, 0.04, 0.05), (0.72, 0.78, 0.045, 0.055), (0.76, 0.6, 0.04, 0.05), (0.77, 0.45, 0.02, 0.025)]
+# Each leg: where it leaves the body, its joint (knee or hock), fetlock and the ground, with
+# the thickness at each. Front legs are straight; hind legs bend back at the hock.
+FRONT = [((0.0, 0.0, 0.72), 0.075), ((0.0, 0.0, 0.42), 0.05), ((0.0, 0.0, 0.38), 0.048),
+         ((0.0, 0.01, 0.14), 0.034), ((0.0, 0.0, 0.11), 0.04), ((0.0, -0.02, 0.06), 0.034)]
+HIND = [((0.0, 0.0, 0.76), 0.09), ((0.0, 0.05, 0.5), 0.06), ((0.0, 0.07, 0.44), 0.05),
+        ((0.0, 0.05, 0.15), 0.034), ((0.0, 0.04, 0.11), 0.04), ((0.0, 0.02, 0.06), 0.034)]
+LEG_ROOTS = {"fl": (0.11, -0.4), "fr": (-0.11, -0.4), "bl": (0.12, 0.45), "br": (-0.12, 0.45)}
 
 
-def read_source() -> dict:
-    """The OBJ's parts: name -> (vertices as (position, colour), faces as index lists)."""
-    parts, order, current = {}, [], None
-    vertices = []
-    for line in open(SOURCE):
-        if line.startswith("o "):
-            current = line.split(None, 1)[1].strip()
-            parts[current] = []
-            order.append(current)
-        elif line.startswith("v "):
-            values = [float(v) for v in line.split()[1:7]]
-            vertices.append((place(*values[:3]), tuple(values[3:6]) if len(values) >= 6 else (0.6, 0.35, 0.15)))
-        elif line.startswith("f "):
-            parts[current].append([int(token.split("/")[0]) - 1 for token in line.split()[1:]])
-    return {name: (vertices, parts[name]) for name in order}
+COAT_START = 0.38  # the coat is painted from the deeper end of the texture's brown: a chestnut
 
 
-def cell_for(colour: tuple) -> tuple:
-    """The knight texture's cell and the height in it nearest a source colour."""
-    light = sum(colour) / 3
-    if light < 0.16:
-        return "dark", 0.3
-    if light > 0.4:
-        return "coat", 0.2
-    if light > 0.33:
-        return "coat", 0.55
-    return "muzzle", 0.45
+def tube(m: Model, cell: str, rings: list, shade: float = 0.7, x: float = 0.0, close: bool = True,
+         facing: Vector | None = None) -> None:
+    """A loft through rings of (centre, half width, half depth), each eight-sided, square to
+    the line it follows (or, with `facing`, all with their depth along it); the ends are closed."""
+    bm = m.bm
+    centres = [Vector(c) for c, _w, _d in rings]
+    made = []
+    for i, (centre, width, depth) in enumerate(rings):
+        centre = Vector(centre) + Vector((x, 0, 0))
+        ahead = (centres[min(i + 1, len(centres) - 1)] - centres[max(i - 1, 0)]).normalized()
+        side = Vector((1, 0, 0))
+        up = ahead.cross(side).normalized() if facing is None else facing.normalized()
+        if up.z < 0 and facing is None:
+            up = -up
+        ring = []
+        for k in range(SIDES):
+            angle = 2 * math.pi * (k + 0.5) / SIDES
+            ring.append(bm.verts.new(centre + side * (math.cos(angle) * width) + up * (math.sin(angle) * depth)))
+        made.append(ring)
+    faces = []
+    for a, b in zip(made, made[1:]):
+        for k in range(SIDES):
+            faces.append(bm.faces.new((a[k], a[(k + 1) % SIDES], b[(k + 1) % SIDES], b[k])))
+    if close:
+        faces.append(bm.faces.new(made[0]))
+        faces.append(bm.faces.new(made[-1][::-1]))
+    import bmesh
+    bmesh.ops.recalc_face_normals(bm, faces=faces)
+    m._paint(faces, cell, min(shade, 1.0 - COAT_START), COAT_START if cell == "coat" else 0.0)
 
 
-def part_object(name: str, vertices: list, faces: list) -> bpy.types.Object:
-    bm = bmesh.new()
-    uv = bm.loops.layers.uv.new("UVMap")
-    used = sorted({i for face in faces for i in face})
-    made = {i: bm.verts.new(vertices[i][0]) for i in used}
-    for face in faces:
-        try:
-            new = bm.faces.new([made[i] for i in face])
-        except ValueError:
-            continue  # a duplicate face
-        cell, shade = cell_for(vertices[face[0]][1])
-        col, row = CELLS[cell]
-        for loop in new.loops:
-            loop[uv].uv = ((col + 0.5) / 8.0, 1.0 - (row + 0.08 + 0.84 * shade) / 4.0)
-    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-    mesh = bpy.data.meshes.new(name)
-    bm.to_mesh(mesh)
-    bm.free()
-    obj = bpy.data.objects.new(name, mesh)
-    bpy.context.scene.collection.objects.link(obj)
-    if name in SMOOTHED:  # rounded once and shaded smooth: the blocky body softened
-        bpy.ops.object.select_all(action="DESELECT")
-        obj.select_set(True)
-        bpy.context.view_layer.objects.active = obj
-        subdivision = obj.modifiers.new("Smooth", "SUBSURF")
-        subdivision.levels = 1
-        subdivision.render_levels = 1
-        bpy.ops.object.modifier_apply(modifier=subdivision.name)
-        for polygon in obj.data.polygons:
-            polygon.use_smooth = True
-    return obj
+def leg_rings(leg: str, which: str) -> list:
+    """A leg's rings for its upper part (to the knee or hock) or its lower (to the ground)."""
+    x, y = LEG_ROOTS[leg]
+    shape = FRONT if leg.startswith("f") else HIND
+    points = [((x + p[0], y + p[1], p[2]), r, r) for p, r in shape]
+    return points[:3] if which == "upper" else points[2:]
 
 
-def bounds(objects: list) -> tuple[Vector, Vector]:
-    points = [o.matrix_world @ v.co for o in objects for v in o.data.vertices]
-    low = Vector((min(p.x for p in points), min(p.y for p in points), min(p.z for p in points)))
-    high = Vector((max(p.x for p in points), max(p.y for p in points), max(p.z for p in points)))
-    return low, high
+def parts(bone: str, m: Model) -> None:
+    """What hangs on each bone."""
+    if bone == "body":
+        tube(m, "coat", [((0, y, z), w, d) for y, z, w, d in BODY], shade=0.75)
+        m.box("cloth", (0.46, 0.42, 0.035), at=(0, -0.05, 1.03), shade=0.3)  # saddle cloth over the back
+        for side in (-1, 1):  # and down each flank
+            m.box("cloth", (0.02, 0.4, 0.2), at=(side * 0.225, -0.05, 0.84), shade=0.4)
+        m.box("leather", (0.26, 0.3, 0.07), at=(0, -0.05, 1.06))  # the saddle
+        m.box("leather", (0.22, 0.06, 0.09), at=(0, -0.19, 1.09))  # its pommel
+    elif bone == "neck":
+        tube(m, "coat", [((0, y, z), w, d) for y, z, w, d in NECK], shade=0.6)
+        for (y1, z1, _w, d1), (y2, z2, _w2, d2) in zip(NECK, NECK[1:]):  # the mane along its crest
+            mid_y, mid_z = (y1 + y2) / 2, (z1 + d1 + z2 + d2) / 2
+            tilt = math.atan2(z2 - z1, -(y2 - y1))
+            m.box("dark", (0.06, math.hypot(y2 - y1, z2 - z1) * 1.2, 0.12), at=(0, mid_y + 0.04, mid_z - 0.06),
+                  tilt=-tilt + math.pi / 2 - math.pi / 2, shade=0.3)
+    elif bone == "head":
+        # Each ring sits so that its face side stays on one straight line.
+        rings = [(tuple(on_head(s, depth - HEAD_FACE)), w, depth) for s, w, depth in HEAD]
+        tube(m, "coat", rings, shade=0.5, facing=-HEAD_JAW)
+        along = math.atan2(HEAD_AXIS.z, HEAD_AXIS.y)  # the tilt that lays a box along the head
+        m.box("blaze", (0.034, HEAD_LENGTH * 0.72, 0.012), at=tuple(on_head(0.52, -HEAD_FACE - 0.004)), tilt=along,
+              shade=0.2)  # a white blaze down the face
+        m.box("dark", (0.09, 0.08, 0.008), at=tuple(on_head(0.93, 0.045)), tilt=along, shade=0.3)  # the mouth
+        for side in (-1, 1):
+            m.box("dark", (0.008, 0.032, 0.024), at=tuple(on_head(0.2, -0.02, side * 0.072)), tilt=along,
+                  shade=0.2)  # eyes, set into the sides high up
+            m.box("dark", (0.008, 0.026, 0.02), at=tuple(on_head(0.93, -0.025, side * 0.064)), tilt=along,
+                  shade=0.2)  # nostrils
+            m.cylinder("coat", 0.028, 0.13, at=tuple(on_head(0.04, -0.03, side * 0.038)), segments=4,
+                       top=0.0)  # ears, standing from the poll
+    elif bone == "tail":
+        tube(m, "dark", [((0, y, z), w, d) for y, z, w, d in TAIL], shade=0.3)
+    elif bone.startswith("upper_"):
+        tube(m, "coat", leg_rings(bone[6:], "upper"), shade=0.5)
+    elif bone.startswith("lower_"):
+        rings = leg_rings(bone[6:], "lower")
+        tube(m, "coat", rings, shade=0.5)  # down through the fetlock to the pastern
+        (hx, hy, _hz), _r, _ = rings[-1]
+        m.cylinder("dark", 0.05, 0.08, at=(hx, hy - 0.01, 0.0), segments=8, top=0.036, shade=0.3)  # the hoof, under it
 
 
-def tack(low: Vector, high: Vector) -> bpy.types.Object:
-    """The saddle and its cloth in the owner's colour, fitted to the body's bounds."""
-    width = high.x - low.x
-    back = high.z
-    m = Model(CELLS)
-    m.box("cloth", (width + 0.03, 0.42, 0.04), at=(0, 0.02, back - 0.03), shade=0.3)  # over the back
-    for side in (-1, 1):  # hanging down each flank
-        m.box("cloth", (0.02, 0.4, 0.16), at=(side * (width / 2 + 0.005), 0.02, back - 0.18), shade=0.4)
-    m.box("leather", (width * 0.7, 0.3, 0.07), at=(0, 0.02, back))
-    m.box("leather", (width * 0.6, 0.06, 0.09), at=(0, -0.12, back + 0.03))
-    mesh = bpy.data.meshes.new("Tack")
-    m.bm.normal_update()
-    m.bm.to_mesh(mesh)
-    m.bm.free()
-    obj = bpy.data.objects.new("Tack", mesh)
-    bpy.context.scene.collection.objects.link(obj)
-    return obj
-
-
-def chamfron(low: Vector, high: Vector) -> bpy.types.Object:
-    """A steel plate down the front of the face, fitted to the head's bounds."""
-    m = Model(CELLS)
-    length = high.y - low.y
-    m.box("steel", (high.x - low.x + 0.02, length * 0.55, 0.035), at=(0, low.y + length * 0.42, high.z - 0.09), tilt=-0.35)
-    mesh = bpy.data.meshes.new("Chamfron")
-    m.bm.normal_update()
-    m.bm.to_mesh(mesh)
-    m.bm.free()
-    obj = bpy.data.objects.new("Chamfron", mesh)
-    bpy.context.scene.collection.objects.link(obj)
-    return obj
+def bones() -> dict:
+    """name -> (head, tail, parent)."""
+    out = {
+        "root": ((0, 0, 0), (0, 0, 0.3), None),
+        "body": ((0, 0.6, 0.82), (0, -0.5, 0.86), "root"),
+        "neck": ((0, -0.42, 1.0), (0, -0.76, 1.5), "body"),
+        "head": (tuple(HEAD_POLL), tuple(on_head(1.0, 0.0)), "neck"),
+        "tail": ((0, 0.65, 0.92), (0, 0.76, 0.5), "body"),
+        "saddle": ((0, -0.05, 1.07), (0, -0.05, 1.27), "body"),
+    }
+    for leg in LEGS:
+        x, y = LEG_ROOTS[leg]
+        shape = FRONT if leg.startswith("f") else HIND
+        top, joint, ground = shape[0][0], shape[2][0], shape[-1][0]
+        out[f"upper_{leg}"] = ((x, y + top[1], top[2]), (x, y + joint[1], joint[2]), "body")
+        out[f"lower_{leg}"] = ((x, y + joint[1], joint[2]), (x, y + ground[1], 0.0), f"upper_{leg}")
+    return out
 
 
 def build():
     bpy.ops.wm.read_factory_settings(use_empty=True)
     scene = bpy.context.scene
     scene.render.fps = FPS
-    by_bone: dict[str, list] = {}
-    for name, (vertices, faces) in read_source().items():
-        bone = PART_BONES.get(name)
-        if bone is None:
-            print("no bone for part", name)
-            continue
-        by_bone.setdefault(bone, []).append(part_object(name, vertices, faces))
-    trunk = [o for o in by_bone["body"] if o.name in ("Torso", "Hindquarters", "Shoulder")]
-    torso_low, torso_high = bounds([o for o in trunk if o.name == "Torso"])
-    by_bone["body"].append(tack(torso_low, torso_high))
-    face = [o for o in by_bone["head"] if o.name in ("Head", "Cheek", "Muzzle")]
-    by_bone["head"].append(chamfron(*bounds(face)))
-
-    # The skeleton, from where the parts stand.
-    bones = {"root": (Vector((0, 0, 0)), Vector((0, 0, 0.3)), None)}
-    body_low, body_high = bounds([o for o in by_bone["body"] if o.name in ("Torso", "Hindquarters", "Shoulder")])
-    middle = (body_low.z + body_high.z) / 2
-    bones["body"] = (Vector((0, body_high.y, middle)), Vector((0, body_low.y, middle)), "root")
-    neck_low, neck_high = bounds(by_bone["neck"])
-    head_low, head_high = bounds(by_bone["head"])
-    bones["neck"] = (Vector((0, neck_high.y, neck_low.z + 0.1)), Vector((0, head_high.y, head_low.z + 0.1)), "body")
-    bones["head"] = (Vector((0, head_high.y, head_low.z + 0.1)), Vector((0, head_low.y, head_low.z + 0.05)), "neck")
-    tail_low, tail_high = bounds(by_bone["tail"])
-    bones["tail"] = (Vector((0, tail_low.y, tail_high.z)), Vector((0, tail_high.y, tail_low.z)), "body")
-    bones["saddle"] = (Vector((0, 0.02, body_high.z)), Vector((0, 0.02, body_high.z + 0.2)), "body")
-    for leg in LEGS:
-        upper_low, upper_high = bounds(by_bone[f"upper_{leg}"])
-        lower_low, lower_high = bounds(by_bone[f"lower_{leg}"])
-        x, y = (upper_low.x + upper_high.x) / 2, (upper_low.y + upper_high.y) / 2
-        knee = Vector(((lower_low.x + lower_high.x) / 2, (lower_low.y + lower_high.y) / 2, lower_high.z))
-        bones[f"upper_{leg}"] = (Vector((x, y, upper_high.z)), knee, "body")
-        bones[f"lower_{leg}"] = (knee, Vector((knee.x, knee.y, lower_low.z)), f"upper_{leg}")
-
+    layout = bones()
     data = bpy.data.armatures.new("Horse")
     rig = bpy.data.objects.new("Horse", data)
     scene.collection.objects.link(rig)
-    bpy.ops.object.select_all(action="DESELECT")
     bpy.context.view_layer.objects.active = rig
     rig.select_set(True)
     bpy.ops.object.mode_set(mode="EDIT")
-    for name, (head, tail, _parent) in bones.items():
+    for name, (head, tail, _parent) in layout.items():
         bone = data.edit_bones.new(name)
-        bone.head, bone.tail = head, tail
+        bone.head, bone.tail = Vector(head), Vector(tail)
         bone.roll = 0.0
-    for name, (_head, _tail, parent) in bones.items():
+    for name, (_head, _tail, parent) in layout.items():
         if parent:
             data.edit_bones[name].parent = data.edit_bones[parent]
     bpy.ops.object.mode_set(mode="OBJECT")
 
     pieces = []
-    for bone, objects in by_bone.items():
-        for obj in objects:
-            group = obj.vertex_groups.new(name=bone)
-            group.add(range(len(obj.data.vertices)), 1.0, "REPLACE")
-            pieces.append(obj)
+    for name in layout:
+        m = Model(CELLS)
+        parts(name, m)
+        if not m.bm.verts:
+            m.bm.free()
+            continue
+        mesh = bpy.data.meshes.new(name)
+        m.bm.normal_update()
+        m.bm.to_mesh(mesh)
+        m.bm.free()
+        obj = bpy.data.objects.new(name, mesh)
+        scene.collection.objects.link(obj)
+        group = obj.vertex_groups.new(name=name)
+        group.add(range(len(mesh.vertices)), 1.0, "REPLACE")
+        pieces.append(obj)
     bpy.ops.object.select_all(action="DESELECT")
     for obj in pieces:
         obj.select_set(True)

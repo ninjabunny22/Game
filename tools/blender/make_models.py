@@ -47,7 +47,7 @@ class Model:
         self.bm = bmesh.new()
         self.uv = self.bm.loops.layers.uv.new("UVMap")
 
-    def _paint(self, faces, cell: str, shade: float) -> None:
+    def _paint(self, faces, cell: str, shade: float, start: float = 0.0) -> None:
         col, row = self.cells[cell]
         verts = {v for f in faces for v in f.verts}
         low = min(v.co.z for v in verts)
@@ -58,7 +58,7 @@ class Model:
             face.smooth = False
             for loop in face.loops:
                 # Light at the top of the part, darker at its foot, as the pack paints them.
-                t = (high - loop.vert.co.z) / span * shade
+                t = start + (high - loop.vert.co.z) / span * shade
                 v_image = (row + 0.08 + 0.84 * t) / 4.0
                 loop[self.uv].uv = (u, 1.0 - v_image)
 
