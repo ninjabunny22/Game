@@ -1,6 +1,6 @@
 # CivSim
 
-Two to five civilizations compete on a generated map. A Python simulation core runs the
+Two to five civilizations compete on one of nine hand-drawn maps. A Python simulation core runs the
 world; a Godot 4 project renders it in 3D over a local WebSocket.
 
 Project documentation: **CLAUDE.md** (guide and principles), **CIVSIM_STATUS.md** (where
@@ -41,10 +41,10 @@ and the situation, and says why. `--brain rules` uses the simpler policy the tes
 
 **Main menu.** Started with nothing said about the game (`./CivSim.command`), the
 viewer opens on its main menu over a game playing itself. The menu chooses whether to
-watch or to rule a civ, one of three maps (small 64x64, medium 96x96, large 128x128,
-recommended for 2, 4 and 5 civs) and how many civs, up to five. A game to be ruled starts
-paused on a screen for choosing a civ. `--size` and `--civs` choose the same from the
-command line, and any of `--seed`, `--rule`, `--size` or `--civs` skips the menu. The
+watch or to rule a civ, a map (any of the nine by name, a random one of a size, or a random
+one of any size) and how many civs, within what that map takes. A game to be ruled starts
+paused on a screen for choosing a civ. `--size`, `--map` and `--civs` choose the same from
+the command line, and any of `--seed`, `--rule`, `--size`, `--map` or `--civs` skips the menu. The
 Menu button in a game goes back.
 
 **Playing a civ.** Any civ can be taken in hand from the viewer's panel ("Rule a civ
@@ -82,10 +82,23 @@ The overlay is built for watching:
   that has no other friends.
 - **Proposals.** When you rule a civ, the others put alliances, trades and peace to you;
   accept or refuse them at the top of the ruler's panel.
-- **Chosen maps.** A game is played on one of nine maps, three of each size (`MAPS` in
-  `config.py`), picked from a few hundred candidates with `python -m civsim.maps` for fair
-  regions, water and deposits everywhere and a single landmass. The menu offers any map of
-  the size or one by name; the seed now only decides who the civs are and where they start.
+- **Drawn maps.** A game is played on one of nine hand-drawn maps, three of each size, each
+  built around one strategic idea (`MAPS` in `config.py`):
+
+  | Map | Size | Civs | What it is about |
+  |---|---|---|---|
+  | The Gilded Isle | 72x72 | 2-4 | a ring of coast round a lagoon; the only gold is on the stronghold isle in the middle |
+  | Confluence | 72x72 | 2-3 | three rivers cut the land into wedges round a rich heartland; one old bridge each |
+  | Highgate | 72x72 | 2-4 | a plateau of iron and gold walled in by peaks; one pass beside each start |
+  | Tidewalk Isles | 96x96 | 2-5 | five isles joined by causeways armies can walk; iron isles and stone isles |
+  | Emberwaste | 96x96 | 2-5 | fertile valleys round a desert that holds the gold; the Oasis of Kesh at the centre |
+  | The Divide | 96x96 | 2-5 | a ridge of peaks splits the land; three passes, the Kingsgate fortress in the middle |
+  | The Five Gates | 160x160 | 2-5 | five home lands round a walled heartland, each with its own gate |
+  | The Long March | 224x112 | 2-5 | a long continent of eleven bands; the Crossroads in the middle |
+  | The Narrow Sea | 176x144 | 2-5 | two continents joined by the Wyrm's Neck; gold on the Drowned Crown in mid-sea |
+
+  Each map has fixed start slots for each number of civs; the seed only decides which civ
+  takes which slot, and who the civs are.
 - **Sickness.** A civ at war for 250 days or more may be struck by sickness: it loses people
   at once and for 150 days fights worse and grows slower. Neighbours see it; enemies press
   harder and a warlike ally may turn on it.
@@ -259,8 +272,7 @@ model the viewer uses and checks the animations, weapons and colours
   When you rule a civ, another civ's garrison shows only as "about N" (within 30 of the
   truth, steady from day to day) unless one of your armies has besieged or fought at that
   castle in the last 30 days. An army waiting in its own capital stands outside the gate.
-- **Gold mines** are fixed sites, one at the heart of every gold vein (3 on a small map, 6 on a
-  medium, 11 on a large). Each pays 1 gold a day to whoever holds its region, once that civ knows
+- **Gold mines** are fixed sites drawn on each map, mostly in the regions worth fighting for. Each pays 1 gold a day to whoever holds its region, once that civ knows
   Mining. Nothing can be built on a mine's tile. While an enemy holds a capital, rubble
   and scaffolding lie against its walls.
 - **Our own figures.** Archers, cavalry knights, villagers, mounted villagers, the stables, the
@@ -322,7 +334,16 @@ a run is fully deterministic for a given seed.
 
 ## How the pieces work
 
-**Map.** 96x96 square grid. Simplex-noise elevation (pulled down at the edges so
+**Map.** A square grid, drawn by hand: each map is a blueprint in `civsim/map/designs`
+(coastline, regions, ridges and passes, rivers, old bridges, capitals, mines, start slots)
+built by `civsim/map/blueprint.py` and saved in `civsim/data/maps`, so a map never changes by
+accident. Inside what is drawn, the blueprint's own seed adds the detail: the coast's wobble,
+patches of forest and plain, heights, small deposits. A checker proves the built map keeps to
+the drawing: every region touches exactly the regions drawn as touching it.
+`.venv/bin/python -m civsim.mapmaker check|bake|preview` builds, checks, saves and draws the
+maps; `.venv/bin/python -m civsim.fairness` compares the start slots by geography.
+
+The tests also use generated maps: simplex-noise elevation (pulled down at the edges so
 land forms continents), moisture and a north-south temperature gradient pick one
 of eight biomes. Deposits (fertile soil, fish, game, stone, iron, gold) are
 seeded on suitable biomes and grown into contiguous clusters. Each tile offers
@@ -335,17 +356,17 @@ desert more fertile. Each river tile records the tile its water flows into,
 so a river is one unbroken course that never doubles back on itself; the
 viewer draws rivers along those links only.
 
-**Regions.** The land is divided into 16 regions of similar size (none under
-60% or over 150% of the average), each with a capital on a random tile inside
-it. Region and capital names come from a fixed list in `data/regions.json`,
-shuffled by the seed. Whoever holds a region's capital holds the region.
+**Regions.** A drawn map has 12 or 13 regions (small), 16 to 17 (medium) or 33 to 36
+(large), each drawn with its name, capital and borders. Whoever holds a region's capital
+holds the region. Each region is worth 1 to 3 **points**, from its land and its riches (shown
+in the castle panel; victory still counts regions).
 
-Each civ starts with two whole regions: a home region, whose capital is its
-own, and one beside it. Home regions are picked at random but far apart. The
-other eight regions belong to **the Hinterfolk**, a native faction with no
+Each civ starts with two whole regions, its slot's home region (its capital) and second
+region. Every other region belongs to **the Hinterfolk**, a native faction with no
 strategist and no diplomacy. Each neutral capital has a garrison (6
 soldier-equivalents at the start, growing to 60) that only fights armies sent
-against it. A civ takes a neutral region in two ways:
+against it. A **stronghold** (marked on the map) keeps 1.5 to 3 times that garrison and
+never opens its gates peacefully; once taken it is an ordinary region. A civ takes a neutral region in two ways:
 
 - **Settling it.** Border expansion claims native land tile by tile, but never
   a capital. Every 25 ticks, once a civ holds over 30% of a neutral region,
@@ -353,8 +374,17 @@ against it. A civ takes a neutral region in two ways:
   0.5 x (share - 0.3); over 60%, the capital itself joins with probability
   (share - 0.6), bringing the rest of the region with it.
 - **Taking the capital.** A civ at peace, able to field about twice the
-  garrison's defence, raises an expedition and storms a neighbouring neutral
-  capital. This is rule-based: no declaration and no diplomacy points.
+  garrison's defence, raises an expedition and storms the neutral capital worth most to
+  it among those it can get at: touching or partly settled by it, or across water once it
+  has ships and a harbour. This is rule-based: no declaration and no diplomacy points.
+
+**What land is worth.** One valuation (`strategy/geography.py`) prices every region for every
+civ: what it would yield, priced by what the civ lacks, plus mines and strategic weight
+(passes, necks, crossroads, prizes, routes through it), discounted by distance and by water
+it cannot yet cross, less the cost of taking it and of holding it against its neighbours.
+Expansion, campaigns against the natives, which enemy capital an army makes for, the
+strategist's wars ("which we want for its two gold mines") and where a harbour is built all
+use it.
 
 **Economy.** Each person is a worker. A worker in a slot produces 0.2 of that
 resource per tick; a civ can only employ as many workers on a resource as its
@@ -407,7 +437,9 @@ first two rules (`strategy/checkin.py`).
 **Crossing water.** One rule (`WorldMap.crossing_cost`) governs border
 expansion and war reach, and is meant for unit movement later. Lakes and deep
 sea can never be claimed. Without Bridge Building a river tile costs three
-times as much to claim or to capture; with it, rivers cost nothing extra.
+times as much to claim or to capture; with it, rivers cost nothing extra. An **old bridge**
+drawn on a map is crossed at the plain cost by anyone. **High peaks** cannot be crossed,
+claimed or built on at all: a ridge of them is a wall, and its passes the only way through.
 Without Boatbuilding, lakes and deep sea block expansion and attack entirely;
 with it a civ can claim land across up to 6 tiles of open water. Armies, and so
 war, need more than boats: see **Ships** below. Boats are transport only.

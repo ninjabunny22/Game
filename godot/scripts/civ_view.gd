@@ -60,6 +60,7 @@ const BUILDING_MODELS := {
 ## tavern and a market, towers along the walls, and catapults on the corners. A civ's own
 ## capital is a step ahead of its others; a capital the natives hold stays as it began.
 const NATIVE_CASTLE := 1
+const NATIVE_STRONGHOLD := 4
 const KEEP := "building_castle_green"
 ## A building going up: the pack's three stages, from footings to roof, by how far it has got.
 const SITE_STAGES := ["building_stage_A", "building_stage_B", "building_stage_C"]
@@ -259,8 +260,11 @@ func update(civs: Array, regions: Array) -> void:
 		var key := "n:%d" % int(region["id"])
 		seen[key] = true
 		if not _nodes.has(key):
-			var caption := "%s\n%s" % [info["capital"], info["name"]]
-			_nodes[key] = _make_capital(_native_color, caption, int(info["x"]), int(info["y"]), false, NATIVE_CASTLE)
+			var stronghold: bool = info.get("stronghold", false)
+			var caption := "%s\n%s%s" % [info["capital"], info["name"], " · stronghold" if stronghold else ""]
+			# A stronghold's walls stand as high as a great capital's.
+			_nodes[key] = _make_capital(_native_color, caption, int(info["x"]), int(info["y"]), stronghold,
+					NATIVE_STRONGHOLD if stronghold else NATIVE_CASTLE)
 			_terrain.set_clearing(key, _nodes[key].position, TOWN_FOOTPRINT * 0.5 + 0.15)
 	for civ: Dictionary in civs:
 		var civ_id := int(civ["id"])

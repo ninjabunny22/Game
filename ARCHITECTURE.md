@@ -23,8 +23,9 @@ about structure and data flow.
   - broadcasts a full `tick` message every day;
   - applies commands: pause, speed, new game, back to the menu, and ruler orders;
   - in the lobby, plays a game behind the main menu.
-- **The protocol** (`bridge/protocol.py`, version 18):
-  - `init` once per game: map, regions, mines, definitions;
+- **The protocol** (`bridge/protocol.py`, version 19):
+  - `init` once per game: map (with old bridges), regions (with points and strongholds),
+    mines, definitions; in the lobby, every map with its size, civ range and premise;
   - `tick` every day, with no deltas: civs (including each castle's garrison, exact or
     "about"), armies, villagers, relations, deals, rallies, territory, events, and the
     ruler's state.
@@ -55,17 +56,18 @@ about structure and data flow.
 
 | Package | Responsibility | Uses |
 |---|---|---|
-| `map/` | generation (noise, biomes, rivers, lakes, deposits, gold mines), regions, pathfinding | none |
+| `map/` | drawn maps: shapes, blueprints and their builder and checker (`blueprint.py`), the nine designs (`designs/`), saved maps (`saved.py`, files in `data/maps`), PNG previews; generated maps for tests (noise, biomes, rivers, lakes, deposits); regions; pathfinding | none |
 | `economy/` | production, population, buildings and placement (one rule), modifiers, villagers, horses, harbours | map |
 | `tech/` | tech tree (`data/techs.json`), research progress | none |
 | `civ/` | civ state, personalities, the rule-based AI | economy, tech |
-| `military/` | units and tiers, armies, commanders, warfare (march, battle, siege, capital hold, rally, reinforcing allies, holding own castles, scouting, hospitals) | map, economy, diplomacy |
+| `military/` | units and tiers, armies, commanders, warfare (march, battle, siege, capital hold, rally, reinforcing allies, holding own castles, scouting, hospitals) | map, economy, diplomacy, strategy.geography |
 | `diplomacy/` | relations, war and peace, alliances, tribute, sickness, friction, the natives, region capture | military, economy |
-| `strategy/` | the context shown to a strategist (`context.py`), validating replies (`checkin.py`), brains (`utility.py`, `brain.py`) | reads everything; writes only through replies |
+| `strategy/` | what each region is worth to each civ (`geography.py`), the context shown to a strategist (`context.py`), validating replies (`checkin.py`), brains (`utility.py`, `brain.py`) | reads everything; writes only through replies |
 | `ruler.py` | a human ruler's orders and proposals; overrides the strategist for that civ | simulation |
 | `bridge/` | server and wire format | simulation |
-| `config.py`, `maps.py` | game setup, the fixed maps, difficulty | none |
+| `config.py` | game setup, the list of maps, difficulty | none |
 | `survey.py`, `league.py` | measurement tools: full games, strategist comparison | simulation |
+| `mapmaker.py`, `fairness.py` | build, check, save and draw the drawn maps; compare their start slots by geography | map, strategy.geography |
 
 Data files in `src/civsim/data/` (buildings, techs, units, personalities, regions) define the
 content; code reads it through `economy/buildings.py`, `tech/tree.py` and `military/units.py`.
@@ -91,6 +93,11 @@ content; code reads it through `economy/buildings.py`, `tech/tree.py` and `milit
 - **Economy and military:** the economy recruits and pays soldiers, and `Military._sync`
   keeps the armies' head count equal to it. Battle losses go back into the economy as
   wounded (hospital), dead or escaped (garrison).
+- **One valuation of land:** `strategy/geography.Geography` (made by the simulation) prices
+  each region for each civ, refreshed every 25 days. It is read by expansion (`ai._expand`),
+  campaigns against the natives (`_campaign_target`), war targets (`_plan`), harbour sites
+  (`civ.harbour_goal` → `find_site`) and the strategist's context (`prize`, `prizes`), so all
+  of them want the same places for the same reasons.
 - **Research** changes the modifiers, such as troop tier, soldier cost and hospital beds,
   which every system reads.
 
@@ -116,8 +123,8 @@ content; code reads it through `economy/buildings.py`, `tech/tree.py` and `milit
   vars.
 - `terrain.gd`:
   - the heightmap mesh, levelled under capitals;
-  - still water, rivers and territory tint;
-  - trees, peaks and rocks, scattered with MultiMesh.
+  - still water, rivers, old bridges and territory tint;
+  - trees, peaks (a solid wall of them on high peaks) and rocks, scattered with MultiMesh.
 - `civ_view.gd`:
   - buildings (batched in `batches.gd`), sites, props, villages;
   - castles assembled from Hexagon pieces by era, with hospital tents;
@@ -140,8 +147,10 @@ content; code reads it through `economy/buildings.py`, `tech/tree.py` and `milit
 - **Determinism:** a run is deterministic for a seed only with `--brain rules`.
 - **The protocol version must match** on both sides (`PROTOCOL_VERSION` in Python and
   GDScript).
-- **Fixed maps:** changing map generation or its random calls changes them. Gold mines were
-  added without consuming any random numbers.
+- **Saved maps:** games load the nine maps from `data/maps`; changing a design or the
+  builder changes nothing until the map is baked again (`civsim.mapmaker bake`), and the
+  tests fail while a saved map is out of date with its design. A drawn map's start slots are
+  fixed; a game's seed only assigns civs to them.
 - **Art:** pack textures are the only materials. A new model must be painted from a pack
   texture's cells to recolour per civ. The Blender sources are scripts in `tools/blender/`;
   the raw packs live in `art/` (ignored by git).

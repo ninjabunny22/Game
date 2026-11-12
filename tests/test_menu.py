@@ -7,34 +7,46 @@ import pytest
 from websockets.asyncio.client import connect
 
 from civsim.bridge import SimServer, protocol
-from civsim.config import MAP_SIZES, MAX_CIVS, game_config
+from civsim.config import MAP_SIZES, MAPS, MAX_CIVS, civ_range, game_config
 from civsim.simulation import Simulation
 from civsim.strategy import make_brain
 
 
 def test_three_maps_each_with_a_recommended_number_of_civs():
     assert list(MAP_SIZES) == ["small", "medium", "large"]
-    sides = [spec["side"] for spec in MAP_SIZES.values()]
-    assert sides == sorted(sides) == [64, 96, 128]
     for size, spec in MAP_SIZES.items():
         assert 2 <= spec["min_civs"] <= spec["civs"] <= spec["max_civs"] <= MAX_CIVS == 5
-        config = game_config(size)
-        assert (config.width, config.height, config.num_civs) == (spec["side"], spec["side"], spec["civs"])
+        for entry in MAPS[size]:
+            fewest, most = civ_range(size, entry)
+            assert spec["min_civs"] <= fewest <= most <= spec["max_civs"]
+            config = game_config(size, map=entry["id"])
+            assert fewest <= config.num_civs <= most
+            if entry.get("file"):
+                assert (config.width, config.height) == (entry["width"], entry["height"])
+            else:
+                assert (config.width, config.height) == (spec["side"], spec["side"])
 
 
 @pytest.mark.parametrize("size", list(MAP_SIZES))
 def test_every_map_plays_with_its_fewest_and_its_most_civs(size):
-    spec = MAP_SIZES[size]
-    for civs in (spec["min_civs"], spec["max_civs"]):
-        sim = Simulation(game_config(size, civs, seed=11))
-        brain = make_brain("utility")
-        for _ in range(60):
-            sim.step_with(brain)
-        assert len(sim.civs) == civs and all(civ.alive for civ in sim.civs)
-        assert len(sim.world.regions) > 2 * civs, "room left unclaimed at the start"
+    for entry in MAPS[size]:
+        for civs in civ_range(size, entry):
+            sim = Simulation(game_config(size, civs, seed=11, map=entry["id"]))
+            brain = make_brain("utility")
+            for _ in range(60):
+                sim.step_with(brain)
+            assert len(sim.civs) == civs and all(civ.alive for civ in sim.civs)
+            assert len(sim.world.regions) > 2 * civs, "room left unclaimed at the start"
 
 
-@pytest.mark.parametrize("size, civs", [("huge", 4), ("small", 4), ("medium", 6), ("large", 1), ("medium", True)])
+def test_a_random_map_takes_the_civs_asked_for():
+    for seed in range(6):
+        config = game_config("random", 5, seed=seed)
+        assert config.num_civs == 5 and config.map_name
+        assert game_config("small", 4, seed=seed, map="random").num_civs == 4
+
+
+@pytest.mark.parametrize("size, civs", [("huge", 4), ("small", 5), ("medium", 6), ("large", 1), ("medium", True)])
 def test_a_map_or_a_number_of_civs_that_does_not_exist_is_refused(size, civs):
     with pytest.raises(ValueError):
         game_config(size, civs)
@@ -64,7 +76,8 @@ def test_the_menu_starts_a_game_and_leaving_it_returns_to_the_menu():
             await ws.send(command("new_game", {"size": "large", "civs": 5, "seed": 7, "mode": "rule"}))
             game = await next_init(ws)
             assert game["lobby"] is None and game["seed"] == 7
-            assert (game["map"]["width"], len(game["civs"])) == (128, 5)
+            chosen = next(m for m in MAPS["large"] if m["name"] == game["map_name"])
+            assert (game["map"]["width"], len(game["civs"])) == (chosen["width"], 5)
             assert server.paused, "a game to be ruled waits for the player to choose a civ"
             await ws.send(command("take_control", {"civ": 2}))
             await ws.send(command("resume"))

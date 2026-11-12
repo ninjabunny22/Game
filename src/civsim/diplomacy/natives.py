@@ -21,11 +21,13 @@ class Natives:
         self.rng = rng
         for region in world.regions:
             if region.neutral:
-                region.garrison = self.garrison_size(0)
+                region.garrison = self.garrison_size(0, region)
 
-    def garrison_size(self, tick: int) -> float:
-        """Full strength of a neutral capital's garrison at this point in the game."""
-        return min(rules.NATIVE_GARRISON_MAX, rules.NATIVE_GARRISON + rules.NATIVE_GROWTH * tick)
+    def garrison_size(self, tick: int, region=None) -> float:
+        """Full strength of a neutral capital's garrison at this point in the game. A stronghold
+        (a drawn map's region with strength above 1) keeps that many times an ordinary one."""
+        full = min(rules.NATIVE_GARRISON_MAX, rules.NATIVE_GARRISON + rules.NATIVE_GROWTH * tick)
+        return full * (region.strength if region is not None else 1.0)
 
     def defence(self, region) -> float:
         """Strength an attacker must overcome: the garrison, fighting on its own ground."""
@@ -42,8 +44,8 @@ class Natives:
         return {civ_id: count / total for civ_id, count in counts.items()}
 
     def update(self, tick: int, events: list) -> None:
-        full = self.garrison_size(tick)
         for region in self.world.regions:
+            full = self.garrison_size(tick, region)
             if region.neutral and region.under_attack < tick - 1 and region.garrison < full:
                 region.garrison = min(full, region.garrison + rules.NATIVE_RECOVERY * full)
         if tick % rules.DEFECTION_INTERVAL == 0:
@@ -75,6 +77,6 @@ class Natives:
         if joined:
             recompute_capacity(leader, world)
 
-        # And once most of the region is its, the capital itself may join.
-        if share >= rules.CAPITAL_DEFECTION_SHARE and self.rng.random() < share - rules.CAPITAL_DEFECTION_SHARE:
+        # And once most of the region is its, the capital itself may join: never a stronghold's.
+        if region.defects and share >= rules.CAPITAL_DEFECTION_SHARE and self.rng.random() < share - rules.CAPITAL_DEFECTION_SHARE:
             self.diplomacy.capture_region(leader, region, tick, events, peaceful=True)

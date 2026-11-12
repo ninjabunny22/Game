@@ -22,7 +22,7 @@ civsim = "civsim.__main__:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-civsim = ["data/*.json"]
+civsim = ["data/*.json", "data/maps/*.map.json.gz"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

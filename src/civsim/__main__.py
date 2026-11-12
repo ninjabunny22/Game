@@ -4,7 +4,7 @@ import logging
 import random
 
 from .bridge import SimServer
-from .config import MAP_SIZES, MAX_CIVS, SimConfig, game_config
+from .config import MAP_SIZES, MAPS, MAX_CIVS, SimConfig, game_config
 from .economy.rules import RESOURCES
 from .simulation import Simulation
 from .strategy import make_brain
@@ -22,8 +22,8 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--brain", default="utility", choices=("utility", "rules"),
                         help='who plays the civs: "utility" (default), the built-in strategist, or "rules", '
                              'the simple policy the tests use')
-    parser.add_argument("--size", choices=list(MAP_SIZES), help="map size (default: medium); "
-                        "small is 64x64, medium 96x96, large 128x128")
+    parser.add_argument("--size", choices=list(MAP_SIZES), help="map size (default: medium)")
+    parser.add_argument("--map", help="one of the size's maps by id (default: one picked by the seed)")
     parser.add_argument("--civs", type=int, help=f"number of civs, 2 to {MAX_CIVS} depending on the map "
                         "(default: what suits the map)")
     parser.add_argument("--rule", type=int, metavar="CIV", help="start with this civ (0, 1, ...) in the player's "
@@ -32,13 +32,14 @@ def main(argv: list[str] | None = None) -> None:
 
     seed = args.seed if args.seed is not None else random.SystemRandom().randrange(2**31)
     try:
-        config = game_config(args.size or "medium", args.civs, seed,
+        size = args.size or next((k for k, pool in MAPS.items() if any(m["id"] == args.map for m in pool)), "medium")
+        config = game_config(size, args.civs, seed, args.map,
                              host=args.host, port=args.port, tick_rate=args.tick_rate)
     except ValueError as exc:
         parser.error(str(exc))
     # With nothing said about the game, the viewer opens on its main menu and the game is
     # chosen there; a game playing itself is shown behind it meanwhile.
-    lobby = not args.headless and all(option is None for option in (args.seed, args.rule, args.size, args.civs))
+    lobby = not args.headless and all(option is None for option in (args.seed, args.rule, args.size, args.civs, args.map))
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
 
     brain = make_brain(args.brain)

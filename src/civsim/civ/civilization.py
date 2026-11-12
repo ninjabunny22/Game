@@ -87,6 +87,9 @@ class Civilization:
     soldier_target: float = 0.0
     military_need: float = 0.0  # 0 = at peace and unthreatened, 1 = at war
     march_target: int | None = None  # civ to expand toward, to bring it within reach
+    # The capital its next harbour should face: the most valuable place it can only reach by
+    # water (set by the AI before it picks a harbour's site; None: the nearest foreign capital).
+    harbour_goal: int | None = None
     campaign_muster: float = 0.0  # share of the population wanted under arms for a campaign against natives
     campaign_cooldown: int = 0  # tick before which no new campaign is launched
 

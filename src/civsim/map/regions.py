@@ -31,6 +31,14 @@ class Region:
     under_attack: int = -1  # last tick an army fought the garrison
     held_by: int | None = None  # the civ whose army has broken into the capital and is holding it
     hold: int = 0  # ticks it has held it unchallenged; the region falls at rules.CAPITAL_HOLD
+    # Drawn maps only. strength: the native garrison's size as a multiple of an ordinary one
+    # (a stronghold is 1.5 to 3). defects: False for a stronghold, whose capital never goes
+    # over peacefully. tags: what the map's designer marked it as (prize, gate, neck, ...).
+    # points: what holding it is worth, 1 to 3, from its land and its riches.
+    strength: float = 1.0
+    defects: bool = True
+    tags: tuple[str, ...] = ()
+    points: int = 1
 
     @property
     def neutral(self) -> bool:

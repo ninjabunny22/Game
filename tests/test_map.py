@@ -18,7 +18,7 @@ def test_different_seeds_differ():
 
 def test_map_has_every_biome_and_matching_heights():
     world = generate_map(5)
-    assert set(world.biomes) == set(Biome)
+    assert set(world.biomes) == set(Biome) - {Biome.PEAKS}, "high peaks are only ever drawn"
     for i, biome in enumerate(world.biomes):
         if biome == Biome.LAKE:
             assert 0 < world.heights[i] <= 1, "lakes sit up on the land"

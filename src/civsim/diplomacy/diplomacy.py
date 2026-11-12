@@ -789,7 +789,7 @@ class Diplomacy:
             for tile in frontier:
                 embark = world.is_open_water(tile) or tile in harbours
                 for n in world.neighbors(tile):
-                    if n in seen or (world.is_open_water(n) and not embark):
+                    if n in seen or world.is_peak(n) or (world.is_open_water(n) and not embark):
                         continue
                     seen.add(n)
                     if world.owner[n] == defender.id:

@@ -26,10 +26,10 @@ from ..map import BIOME_INFO, DEPOSIT_TYPES, Biome, load_faction
 from ..military import UNIT_TYPES
 from ..military.warfare import ROSTER_CAP
 from ..simulation import Simulation
-from ..config import HEADCOUNT, MAP_SIZES, MAPS
+from ..config import HEADCOUNT, MAP_SIZES, MAPS, civ_range
 from ..diplomacy import rules
 
-PROTOCOL_VERSION = 18
+PROTOCOL_VERSION = 19
 RULER_COMMANDS = ("take_control", "release_control", "set_stance", "set_focus", "set_research", "set_build",
                   "answer_proposal", "start_rally", "cancel_rally", "reinforce_ally", "recall_reinforcement")
 GAME_COMMANDS = ("new_game", "end_game")  # start a game from the menu; go back to the menu
@@ -69,13 +69,22 @@ def parse_command(raw: str | bytes) -> tuple[str, float | dict | None]:
     return action, None
 
 
+def _lobby_map(size: str, entry: dict) -> dict:
+    """What the menu shows of a map: its name and size, the civs it takes, and what it is about."""
+    spec = MAP_SIZES[size]
+    fewest, most = civ_range(size, entry)
+    return {"id": entry["id"], "name": entry["name"], "width": entry.get("width", spec["side"]),
+            "height": entry.get("height", spec["side"]), "min_civs": fewest, "max_civs": most,
+            "best": entry.get("best", ""), "premise": entry.get("premise", "")}
+
+
 def init_message(sim: Simulation, lobby: bool = False) -> str:
     world = sim.world
     data = {
         # Set while no game has been started: the map behind the main menu is only a backdrop,
         # and this is what a game can be started with.
         # Each size lists the maps it can be played on; a game takes the one asked for, or any.
-        "lobby": {"sizes": [{"id": size, **spec, "maps": [{"id": m["id"], "name": m["name"]} for m in MAPS[size]]}
+        "lobby": {"sizes": [{"id": size, **spec, "maps": [_lobby_map(size, m) for m in MAPS[size]]}
                             for size, spec in MAP_SIZES.items()]} if lobby else None,
         "seed": sim.config.seed,
         "map_name": sim.config.map_name,  # "" for a map made from the game's own seed
@@ -99,6 +108,8 @@ def init_message(sim: Simulation, lobby: bool = False) -> str:
                 {"x": tile % world.width, "y": tile // world.width, "type": type_id}
                 for tile, type_id in sorted(world.deposits.items())
             ],
+            # Old bridges: river tiles anyone crosses as if bridged.
+            "bridges": [{"x": tile % world.width, "y": tile // world.width} for tile in sorted(world.bridges)],
         },
         "biomes": [
             {"id": int(biome), "name": BIOME_INFO[biome].name, "color": BIOME_INFO[biome].color,
@@ -117,7 +128,9 @@ def init_message(sim: Simulation, lobby: bool = False) -> str:
         # Regions never change shape; who holds each one is in every tick message.
         "regions": [
             {"id": region.id, "name": region.name, "capital": region.capital_name,
-             "x": region.capital % world.width, "y": region.capital // world.width}
+             "x": region.capital % world.width, "y": region.capital // world.width,
+             # What holding it is worth (1 to 3), and whether its natives hold a stronghold.
+             "points": region.points, "stronghold": region.strength > 1, "tags": list(region.tags)}
             for region in world.regions
         ],
         # Gold mines: fixed sites, each paying the owner of its region (see "regions" in each tick).

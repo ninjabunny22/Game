@@ -114,6 +114,7 @@ func build(map: Dictionary, biomes: Array, native_color: Color, models: RefCount
 	var lakes: Array[int] = []
 	var forests: Array[int] = []
 	var mountains: Array[int] = []
+	var high_peaks: Array[int] = []  # impassable: drawn as a solid wall of peaks
 	var hills: Array[int] = []
 
 	var size := map_width * map_height
@@ -144,6 +145,8 @@ func build(map: Dictionary, biomes: Array, native_color: Color, models: RefCount
 			forests.append(i)
 		elif biome_id == ids.get("Mountain", -1):
 			mountains.append(i)
+		elif biome_id == ids.get("Peaks", -1):
+			high_peaks.append(i)
 		elif biome_id == ids.get("Hills", -1):
 			hills.append(i)
 
@@ -182,9 +185,11 @@ func build(map: Dictionary, biomes: Array, native_color: Color, models: RefCount
 	_add_sea()
 	_add_lakes(lakes)
 	_add_rivers(map, biomes)
+	_add_bridges(map, models)
 	_add_region_borders()
 	_add_forests(forests, models)
 	_add_mountains(mountains, models)
+	_add_high_peaks(high_peaks, models)
 	_add_hills(hills, models)
 	_add_shallows(lakes, models)
 
@@ -620,7 +625,33 @@ func _add_scatter(tiles: Array[int], kinds: Array, share: float, size: float, si
 		_scatter(mesh, places, models.base_material())
 
 
-func _add_peaks(mountains: Array[int], kinds: Array, models: RefCounted) -> void:
+## The old bridges of a drawn map: a stone bridge across the river, square to its flow.
+func _add_bridges(map: Dictionary, models: RefCounted) -> void:
+	var mesh: Mesh = models.mesh("building_bridge_A")
+	if mesh == null or not map.has("bridges"):
+		return
+	var flow := {}
+	for river: Dictionary in map["rivers"]:
+		flow[Vector2i(int(river["x"]), int(river["y"]))] = Vector2i(int(river["to"][0]), int(river["to"][1]))
+	var places: Array[Transform3D] = []
+	for bridge: Dictionary in map["bridges"]:
+		var at := Vector2i(int(bridge["x"]), int(bridge["y"]))
+		var along: Vector2i = flow.get(at, at + Vector2i(1, 0)) - at
+		# The model spans its own x axis; turn that across the water's way.
+		var angle := 0.0 if along.y != 0 else PI / 2.0
+		var basis := Basis(Vector3.UP, angle).scaled(Vector3.ONE * 0.9)
+		places.append(Transform3D(basis, Vector3(at.x, height_at(at.x, at.y) + 0.02, at.y)))
+	_scatter(mesh, places, models.base_material())
+
+
+## High peaks no army can cross: a peak on every tile, taller than on ordinary mountains, so the
+## range reads as a wall with its passes the only way through.
+func _add_high_peaks(peaks: Array[int], models: RefCounted) -> void:
+	_add_peaks(peaks, ["mountain_A", "mountain_B", "mountain_C"], models, 1.0, 1.15, 0.5)
+
+
+func _add_peaks(mountains: Array[int], kinds: Array, models: RefCounted, share: float = 0.36,
+		least: float = 0.7, spread: float = 0.6) -> void:
 	for kind in kinds.size():
 		var peak_mesh: Mesh = models.mesh(kinds[kind])
 		if peak_mesh == null:
@@ -630,11 +661,11 @@ func _add_peaks(mountains: Array[int], kinds: Array, models: RefCounted) -> void
 			var x := tile % map_width
 			var z := tile / map_width
 			# About one tile in three, picked irregularly and nudged off-centre so no pattern shows.
-			if _hash(tile * 23 + 7) > 0.36 or int(_hash(tile * 11) * 1000.0) % kinds.size() != kind or _castle_ground.has(tile):
+			if _hash(tile * 23 + 7) > share or int(_hash(tile * 11) * 1000.0) % kinds.size() != kind or _castle_ground.has(tile):
 				continue
 			var px := float(x) + (_hash(tile * 41) - 0.5) * 0.7
 			var pz := float(z) + (_hash(tile * 43) - 0.5) * 0.7
-			var basis := Basis(Vector3.UP, _hash(tile * 5) * TAU).scaled(Vector3.ONE * (0.7 + 0.6 * _hash(tile * 19)))
+			var basis := Basis(Vector3.UP, _hash(tile * 5) * TAU).scaled(Vector3.ONE * (least + spread * _hash(tile * 19)))
 			places.append(Transform3D(basis, Vector3(px, height_at(px, pz) - 0.15, pz)))
 		_scatter(peak_mesh, places, models.base_material())
 

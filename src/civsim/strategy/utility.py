@@ -74,6 +74,11 @@ class Params:
     PAY_MILITARY: float = 1.2  # ... unless it is this warlike
     # What it has learned, and who it is playing against.
     CAUTION_WEIGHT: float = 0.5  # how much a lesson learned in war counts against trying again
+    # Land worth fighting for: a rival's region valued (strategy/geography.py) above PRIZE_FREE
+    # makes a war against it look better, by PRIZE_WEIGHT a unit of value, at most PRIZE_MAX.
+    PRIZE_FREE: float = 2.0
+    PRIZE_WEIGHT: float = 0.1
+    PRIZE_MAX: float = 0.4
     EASY: float = -0.3  # added to the worth of attacking a human ruler on the easy setting ...
     HARD: float = 0.2  # ... and on the hard one
 
@@ -365,6 +370,10 @@ class UtilityBrain:
             why = (f"{n['name']}'s army is away" if n.get("army_abroad") else f"{n['name']} has just lost a battle")
         if n["distrusted_ticks_left"]:
             score += 0.2  # nobody will come to its aid
+        prize = n.get("prize")
+        if prize and prize["value"] > p.PRIZE_FREE:
+            score += min(p.PRIZE_MAX, p.PRIZE_WEIGHT * (prize["value"] - p.PRIZE_FREE))
+            why = f"{n['name']} holds {prize['region']}, which we want for {prize['why']}"
         # The long view: the civ it has set out to conquer is attacked sooner, and a civ set on
         # something else is slower to fight at all.
         if strategy["kind"] == "conquest":

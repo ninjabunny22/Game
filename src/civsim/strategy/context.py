@@ -83,6 +83,7 @@ def stance_context(sim, civ) -> dict:
         offer = None
         if theirs.give:
             offer = {"gives": theirs.give, "wants": theirs.want}
+        prize = _prize(sim, civ, other_id)
         neighbors.append({
             "id": other_id,
             "name": other.name,
@@ -137,6 +138,8 @@ def stance_context(sim, civ) -> dict:
             "their_stance_toward_you": theirs.stance.value,
             "their_trade_offer": offer,
             "your_current_stance": diplomacy.intent(civ.id, other_id).stance.value,
+            # Their region worth most to you (strategy/geography.py), and why.
+            "prize": prize,
         })
 
     surplus, lacking = _surplus_and_lacking(civ, mods)
@@ -190,12 +193,30 @@ def stance_context(sim, civ) -> dict:
         "player": sim.civs[sim.ruler.civ_id].name if sim.ruler.civ_id is not None else None,
         "difficulty": sim.config.difficulty,
         "neutral_regions": sum(1 for region in sim.world.regions if region.neutral),
+        # The regions it does not hold that are worth most to it, and why (strategy/geography.py).
+        "prizes": [{"region": sim.world.regions[r].name, "held_by": _holder(sim, r), "value": round(v.total, 1),
+                    "why": v.reason} for r, v in sim.geography.prizes(civ, sim.tick)],
         "recent_events": [f"tick {e['tick']}: {e['text']}" for e in diplomacy.recent_history(civ.id, HISTORY_LENGTH)],
         "diplomacy_costs": {"open_trade": DEAL_FEE, "form_alliance": ALLIANCE_COST, "declare_war": WAR_COST},
     }
 
 
 WATER_RICH_RATIO = 1.5  # supply at least this multiple of use counts as water to spare
+
+
+def _prize(sim, civ, other_id: int) -> dict | None:
+    """The region of `other_id`'s worth most to `civ`, if any is worth anything."""
+    values = sim.geography.values(civ, sim.tick)
+    theirs = [r for r in values if sim.world.regions[r].owner == other_id and values[r].access > 0]
+    if not theirs:
+        return None
+    best = max(theirs, key=lambda r: (values[r].total, -r))
+    return {"region": sim.world.regions[best].name, "value": round(values[best].total, 1), "why": values[best].reason}
+
+
+def _holder(sim, region_id: int) -> str:
+    owner = sim.world.regions[region_id].owner
+    return sim.civs[owner].name if owner is not None else "natives"
 
 
 def _water_rich(civ, mods) -> bool:

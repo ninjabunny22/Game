@@ -128,6 +128,10 @@ XP_FOUGHT = 5.0
 XP_WON = 25.0
 SWATH = 2  # undefended enemy tiles beside a captured one that fall with it
 SWATH_MAX_PRICE = 1.5
+MIN_ROUTE_SEARCH = 6000  # tiles a route search may look at, at least ...
+ROUTE_SEARCH = 0.8  # ... or this share of the map's tiles, whichever is more
+VALUE_PULL = 4.0  # tiles of march a unit of a region's value (strategy/geography.py) is worth
+ACCESS_BY_SHIP = 0.8  # a native region across water is campaigned for once ships and a harbour can reach it
 CAMPAIGN_ADVANTAGE = 2.0  # army strength, relative to a native garrison's defence, needed to attack it
 CAMPAIGN_REST = 150  # ticks between campaigns
 CAMPAIGN_RETRY = 200  # ... or after a failed one
@@ -159,6 +163,7 @@ class Military:
         self.probed: dict[tuple[int, int], int] = {}  # (civ, capital tile) -> last tick its armies attacked that castle
         self._named = 0
         self._names = random.Random(sum(civ.capital.tile for civ in civs))  # naming never disturbs the game's dice
+        self.geography = None  # strategy.geography.Geography, set by the simulation
         self._tick = 0
         self._touching = region_neighbours(world)
         for civ in civs:
@@ -592,9 +597,11 @@ class Military:
                 # Make for the nearest capital the enemy holds: taking it takes its region.
                 # Make for the capital that is cheapest to take: near, and not too strongly held.
                 joint = self._allied_targets(civ, enemy)  # where an ally is already attacking: join it there
+                worth = self.geography.values(civ, tick) if self.geography is not None else {}
                 others = sorted((s.tile for s in enemy.settlements),
                                 key=lambda t: (self._gap(army.tile, t) + WALL_DETOUR * self.tile_price(civ, t)
-                                               - (JOINT_PULL if t in joint else 0), t))
+                                               - (JOINT_PULL if t in joint else 0)
+                                               - VALUE_PULL * self._worth(worth, t), t))
                 # Each column takes the next capital along, so the enemy has several to save.
                 goal = others[army.wing % len(others)]
                 others = [goal] + [t for t in others if t != goal]
@@ -1070,10 +1077,14 @@ class Military:
                     against += self.army_strength(other)
         return against > OUTMATCHED * self.army_strength(army)
 
-    def _route(self, civ, start: int, goal: int, max_nodes: int = 6000) -> list[int] | None:
+    def _route(self, civ, start: int, goal: int, max_nodes: int | None = None) -> list[int] | None:
         """The way an army of this civ would go. Open water needs boats, and can only be put out
-        onto from land near one of the civ's working harbours."""
+        onto from land near one of the civ's working harbours. The search may look at up to
+        ROUTE_SEARCH times the map's tiles (at least MIN_ROUTE_SEARCH): on the large maps the
+        way round can be long, like the Narrow Sea's from one continent's east to the other's."""
         mods = self.mods[civ.id]
+        if max_nodes is None:
+            max_nodes = max(MIN_ROUTE_SEARCH, int(ROUTE_SEARCH * self.world.width * self.world.height))
         return find_path(self.world, start, goal, bool(mods.bridges), bool(mods.boats), max_nodes,
                          ports(civ, self.world))
 
@@ -1241,7 +1252,9 @@ class Military:
         self._casualties(civ, fallen, loser.tier, WOUNDED_SHARE)
         civ.population += ESCAPE_SHARE * amount
         civ.soldiers += ESCAPE_SHARE * amount
-        civ.garrison.add({unit: count * ESCAPE_SHARE for unit, count in fallen.items()}, loser.tier)
+        # Their horses are lost in the rout: riders who got away ride again only on horses the
+        # stables can spare (which keeps the herd within what the stables can keep).
+        civ.garrison.add(self._mount(civ, {unit: count * ESCAPE_SHARE for unit, count in fallen.items()}), loser.tier)
         war = self.diplomacy.relation(loser.civ, winner.civ).war
         if war:
             war.casualties[civ.id] = max(0.0, war.casualties[civ.id] - ESCAPE_SHARE * amount)
@@ -1478,20 +1491,38 @@ class Military:
         army.add(civ.garrison.take(min((1 - GARRISON_KEEP) * civ.soldiers, self.capacity(army))), civ.garrison.tier)
         civ.armies.append(army)
 
+    def _worth(self, values: dict, tile: int) -> float:
+        """What the region whose capital stands on `tile` is worth to the civ, 0 without a valuation."""
+        region = self.world.region_of[tile]
+        return values[region].total if region in values else 0.0
+
     def _campaign_target(self, civ):
-        """The neutral region the civ has settled most of; failing that, the nearest one touching its land."""
+        """The native region worth most to the civ (strategy/geography.py) among those it can get
+        at: touching its land, partly settled by it, or across water it has ships and a harbour
+        for. Without a valuation: the one it has settled most of, else the nearest touching it."""
         natives = self.diplomacy.natives
         held = {region.id for region in self.world.regions if region.owner == civ.id}
+        values = self.geography.values(civ, self._tick) if self.geography is not None else None
         best, best_key = None, None
         for region in self.world.regions:
             if not region.neutral:
                 continue
-            share = natives.shares(region).get(civ.id, 0.0)
-            if share <= 0 and not (self._touching[region.id] & held):
-                continue
             if self._tick < self._no_way.get((civ.id, region.id), 0):
                 continue  # no army could get there when last tried
-            key = (-share, self._gap(civ.capital.tile, region.capital), region.id)
+            share = natives.shares(region).get(civ.id, 0.0)
+            near = share > 0 or bool(self._touching[region.id] & held)
+            if values is None:
+                if not near:
+                    continue
+                key = (-share, self._gap(civ.capital.tile, region.capital), region.id)
+            elif region.id in values:
+                worth = values[region.id]
+                overseas = worth.by_sea and worth.access >= ACCESS_BY_SHIP
+                if not (near or overseas):
+                    continue
+                key = (-worth.total, region.id)
+            else:
+                continue
             if best_key is None or key < best_key:
                 best, best_key = region, key
         return best

@@ -64,6 +64,7 @@ UPKEEP_CAUTION = 0.2  # don't add upkeep in a resource that is below this share 
 TILES_PER_EXPANSION = 4  # claiming budget per expansion; a river tile without bridges uses more of it
 RULER_ORDER = 1e6  # the score of a building a human ruler has ordered
 HARBOUR_NEED = 0.6  # ... and a harbour, once it can build one
+REGION_PULL = 0.4  # how much a native region's value (strategy/geography.py) draws settlers to its tiles
 BEDS_MEMORY = 400  # ticks a civ remembers soldiers dying for want of a hospital bed
 BARRACKS_NEED = 0.35  # how much a civ at peace wants barracks to train its soldiers in
 STABLES_NEED = 0.5  # how much a civ at peace wants stables, on the scale of the other needs
@@ -88,8 +89,11 @@ class CivAI:
         self.rng = rng
         # civ id -> resources whose cap was too low for something the civ wanted last tick
         self._cap_blocked: dict[int, set[str]] = {}
+        self.geography = None  # strategy.geography.Geography, set by the simulation
+        self._tick = 0
 
     def plan(self, civ: Civilization, mods: Modifiers, tick: int, events: list) -> None:
+        self._tick = tick
         needs = self.assess_needs(civ, mods, tick)
         self._choose_research(civ, mods, needs, tick)
         self._abandon_unaffordable(civ, mods, tick, events)
@@ -303,6 +307,8 @@ class CivAI:
                 break
             if kind == "build":
                 ground = ground or survey_ground(civ, self.world)
+                if target == "harbour" and self.geography is not None:
+                    civ.harbour_goal = self.geography.harbour_goal(civ, tick)
                 site = find_site(civ, self.world, self.building_defs[target], ground)
                 if site is None and civ.can_afford(cost):
                     site = self._make_room(civ, mods, self.building_defs[target], score, needs, tick, events)
@@ -464,7 +470,7 @@ class CivAI:
                     if n not in seen:
                         seen.add(n)
                         water.append(n)
-                elif world.owner[n] < 0 and n not in world.capital_tiles:
+                elif world.owner[n] < 0 and n not in world.capital_tiles and world.claimable(n):
                     border.add(n)  # native land can be settled; a capital has to defect or be taken
         if mods.boats:
             # Boats: sail up to BOAT_RANGE tiles of open water and land on whatever lies beyond.
@@ -477,7 +483,7 @@ class CivAI:
                         seen.add(n)
                         if world.is_open_water(n):
                             further.append(n)
-                        elif world.owner[n] < 0 and n not in world.capital_tiles:
+                        elif world.owner[n] < 0 and n not in world.capital_tiles and world.claimable(n):
                             border.add(n)
                 water = further
         return sorted(border)
@@ -495,6 +501,8 @@ class CivAI:
         world = self.world
         cx, cy = world.xy(civ.capital.tile)
         thirst = 2 + 6 * needs["scarcity"]["water"] + (6 if "water" in needs["wanted"] else 0)
+        # Settling a native region it values wins the natives over to it, region and all.
+        worth = self.geography.values(civ, self._tick) if self.geography is not None else {}
 
         def appeal(tile: int) -> float:
             x, y = world.xy(tile)
@@ -503,6 +511,9 @@ class CivAI:
                 for res, amount in world.yields[tile].items()
             )
             value += thirst * self._water_value(tile, mods)
+            region = world.region_of[tile]
+            if region >= 0 and region in worth and world.regions[region].neutral:
+                value += REGION_PULL * max(0.0, worth[region].total)
             return value - 0.08 * math.hypot(x - cx, y - cy) + 0.3 * self.rng.random()
 
         def provides(res: str):
@@ -564,7 +575,7 @@ class CivAI:
                     step = parent[step]
                 return path[::-1]
             for n in world.neighbors(tile):
-                if n in parent or world.owner[n] >= 0 or n in world.capital_tiles:
+                if n in parent or world.owner[n] >= 0 or n in world.capital_tiles or world.is_peak(n):
                     continue
                 if world.is_open_water(n) and not mods.boats:
                     continue

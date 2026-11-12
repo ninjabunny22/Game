@@ -12,6 +12,7 @@ class Biome(IntEnum):
     HILLS = 6
     MOUNTAIN = 7
     LAKE = 8
+    PEAKS = 9  # high mountains: no army, settler or builder can cross them
 
 
 @dataclass(frozen=True)
@@ -34,4 +35,5 @@ BIOME_INFO: dict[Biome, BiomeInfo] = {
     Biome.HILLS: BiomeInfo("Hills", "#9a8f62", {"stone": 2}),
     Biome.MOUNTAIN: BiomeInfo("Mountain", "#8a8a8f", {"stone": 1, "ore": 1}, buildable=False),
     Biome.LAKE: BiomeInfo("Lake", "#4aa3df", {}, water=True, buildable=False),
+    Biome.PEAKS: BiomeInfo("Peaks", "#6e6a70", {}, buildable=False),
 }

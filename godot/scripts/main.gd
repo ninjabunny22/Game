@@ -249,17 +249,32 @@ func _on_tick(tick: int, data: Dictionary) -> void:
 		if ruled >= 0 and not data["civs"][ruled]["settlements"].is_empty():
 			var home: Dictionary = data["civs"][ruled]["settlements"][0]
 			_camera.focus(_terrain.tile_position(int(home["x"]), int(home["y"])), 46.0)
+	var timing := OS.get_environment("CIVSIM_PERF") == "1"
+	var clock := Time.get_ticks_usec()
+	var parts := {}
 	var rev := int(data["territory_rev"])
 	if rev != _territory_rev:
 		_territory_rev = rev
 		_terrain.apply_territory(data["territory"], _civ_colors)
+	parts["territory"] = Time.get_ticks_usec() - clock
 	_civs = data["civs"]
+	clock = Time.get_ticks_usec()
 	_civ_view.update(data["civs"], data["regions"])
 	_civ_view.show_rallies(data.get("rallies", []))
 	_civ_view.update_links(data["civs"], data["relations"], data["deals"])
+	parts["civs"] = Time.get_ticks_usec() - clock
+	clock = Time.get_ticks_usec()
 	_unit_view.update(data["armies"], data["villagers"])
 	_unit_view.update_posted(data["civs"])
+	parts["units"] = Time.get_ticks_usec() - clock
+	clock = Time.get_ticks_usec()
 	_hud.update(tick, data)
+	parts["hud"] = Time.get_ticks_usec() - clock
+	# CIVSIM_PERF=1 also names any part of a tick that took over 30 ms.
+	if timing:
+		for part: String in parts:
+			if int(parts[part]) > 30000:
+				print("slow tick %d: %s %d ms" % [tick, part, int(parts[part]) / 1000])
 	# CIVSIM_FOLLOW="distance" keeps the camera on the largest army led by a general, for scripted runs.
 	var follow := OS.get_environment("CIVSIM_FOLLOW")
 	if follow != "":

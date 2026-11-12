@@ -1,7 +1,7 @@
 # CivSim status
 
-Last updated: 2026-11-12, branch `menu-and-civ-logic`. The code is as of `08997b2`; these
-documents were added in the commit after it. Read this first when resuming work.
+Last updated: 2026-11-12, branch `menu-and-civ-logic`, with the nine drawn maps. Read this
+first when resuming work.
 
 ## Stage
 
@@ -11,8 +11,19 @@ style). Balance and timing have not had their dedicated pass yet.
 
 ## Implemented and working (committed)
 
-- **Map:** three fixed seeds per size (small 64², medium 96², large 128²), biomes, rivers,
-  lakes, deposits, regions with native-held capitals; 2–5 civs at random starts.
+- **Maps:** nine hand-drawn maps, three per size (README table), built from blueprints in
+  `map/designs`, checked against their drawing and saved in `data/maps`:
+  - small 72² (12–13 regions), medium 96² (16–17), large about 25,000 tiles (33–36 regions,
+    160², 224×112, 176×144);
+  - fixed start slots for each number of civs (2–5, Confluence 2–3, small 2–4), civs given
+    slots at random;
+  - impassable high peaks with passes, old bridges, native strongholds (1.5–3× garrison,
+    never defect), gold mines drawn where they matter, region points 1–3 (shown only);
+  - tools: `civsim.mapmaker` (check, bake, preview), `civsim.fairness` (slots by geography),
+    `civsim.balance` (slots by played games; not yet run at scale).
+- **Region valuation** (`strategy/geography.py`): one value per region per civ, used by
+  expansion, native campaigns (including across water), war targets, harbour siting and the
+  strategist's war reasons.
 - **Economy:** workers, six resources (food, wood, stone, ore, gold, water), buildings with
   upkeep and placement rules, storage, villagers, horses, harbours, trade deals, early
   growth bonus, gold mines on every gold vein (1 gold a day to the region's holder, once it
@@ -30,7 +41,7 @@ style). Balance and timing have not had their dedicated pass yet.
 - **Strategist:** daily decisions by `UtilityBrain` with forecasts, war plans, lessons,
   personality tactics and difficulty (easy/normal/hard for a ruled game); a league tool
   for comparing tweaks (`civsim.league`, at most 6 games).
-- **Player:** watch or rule from the main menu; ruler orders, proposals and rally pop-ups;
+- **Player:** watch or rule from the main menu, on any of the nine maps or a random one; ruler orders, proposals and rally pop-ups;
   clicking a castle shows its garrison (an estimate within ±30 for other civs unless one of
   the player's armies attacked it in the last 30 days).
 - **Victory:** conquest, domination (70% of regions) or score at the last day (6,000 /
@@ -46,15 +57,11 @@ style). Balance and timing have not had their dedicated pass yet.
 
 ## In progress
 
-Nothing half-done in the working tree. The newest work is committed:
-- **The art pass's last step** (`c35c41a`, `b285534`):
-  - every Adventurers figure animated from the KayKit Character Animations pack, each kind
-    as its weapon suits;
-  - archers are the hooded Rogue with a bow;
-  - cavalry are Knights on a rigged horse modelled after the user's reference picture;
-  - generals of mostly-cavalry armies ride.
-- **Holding castles**: a general near a threatened castle of his own, too weakly held, leaves
-  part of his army there to hold it.
+The nine drawn maps are built, playable and committed; judging their balance is not done:
+- the balance batch (`civsim.balance`, about 70 games per map) waits for approval to run
+  more than 3 games at a time;
+- victory still counts regions; victory by points awaits approval;
+- the uneven setups flagged by `civsim.fairness` are kept for now (see ROADMAP).
 
 `KayKit_ResourceBits_1.0_FREE` (added by the user, at the repository root) is still unused.
 
@@ -68,14 +75,16 @@ Nothing half-done in the working tree. The newest work is committed:
 - **Trees** in forests can still partly hide figures at close zoom.
 - **Rallies are rare** (0–3 called a game).
 - **Timing:** not yet tuned as a whole (see ROADMAP).
-- **Maps:** the map names were given without looking at the maps, and the large map
-  Wyrmcoast is slow to simulate.
+- **Water crossings are mid-game:** armies need a harbour, and harbours need Navigation
+  (era 4), so island prizes fall late or not at all (in the first Gilded Isle check game the
+  isle was never taken). Settlers cross with Boatbuilding.
+- **Grid corners:** where three drawn regions meet, the grid sometimes lets two of them
+  touch at a corner; these are drawn in as links (`may_touch`, or listed by hand), which
+  leaves some rotations a tile or a link apart.
 - **Older models:** Villager and Rider are older custom models in a different style
   (neither pack has a worker character; the animation pack's tool animations could serve one).
 - **Horse:** modelled in Blender after the user's reference (`tools/blender/make_horse.py`):
   a faceted chestnut, smooth-shaded. It is more realistic than the chunky riders.
-- **README:** a few lines in the opening are out of date: it says four civs, Godot 4.3+,
-  and 60% for domination; the code has 2–5 civs, Godot 4.7 and 70%.
 - **Head counts** are only a display scale; the economy itself isn't denser.
 
 ## Tests

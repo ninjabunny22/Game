@@ -23,6 +23,7 @@ var _log: RichTextLabel
 var _cards_box: VBoxContainer
 var _diplomacy_panel: PanelContainer
 var _castle_panel: PanelContainer
+var _regions_at := {}  # capital tile -> the region it rules, from init
 var _castle_text: RichTextLabel
 var _castle_at := Vector2i(-1, -1)  # the castle being looked at, by tile; (-1, -1) for none
 var _diplomacy: RichTextLabel
@@ -431,6 +432,9 @@ func set_connected(connected: bool) -> void:
 
 
 func setup(init: Dictionary) -> void:
+	_regions_at.clear()
+	for region: Dictionary in init.get("regions", []):
+		_regions_at[Vector2i(int(region["x"]), int(region["y"]))] = region
 	_seed = int(init["seed"])
 	_map_name = str(init.get("map_name", ""))
 	_resources = init["resources"]
@@ -560,6 +564,13 @@ func _refresh_castle() -> void:
 			var main: bool = civ["settlements"][0] == settlement
 			lines.append("[font_size=16][b]%s[/b][/font_size]  %s" % [str(settlement["name"]), _civ_name(int(civ["id"]))])
 			lines.append("[color=#8a93a0]%s[/color]" % ("The capital of the realm" if main else "A regional capital"))
+			var region: Dictionary = _regions_at.get(_castle_at, {})
+			if not region.is_empty():
+				var worth := "[color=#8a93a0]%s · worth %d point%s[/color]" % [str(region["name"]), int(region.get("points", 1)),
+					"" if int(region.get("points", 1)) == 1 else "s"]
+				if region.get("stronghold", false):
+					worth += "  [color=#d9a441](a former native stronghold)[/color]"
+				lines.append(worth)
 			if settlement.has("garrison"):
 				lines.append("[color=#8a93a0]Garrison:[/color] %d soldiers" % int(settlement["garrison"]))
 			else:

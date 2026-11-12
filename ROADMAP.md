@@ -11,6 +11,14 @@ state is in CIVSIM_STATUS.md.
 
 ## Immediate priorities (agreed)
 
+0. **The nine drawn maps: finish judging them.** They are built and playable (see
+   CIVSIM_STATUS.md). Still to do:
+   - **balance batch** (`civsim.balance`), about 70 games per map, once you approve running
+     more than 3 games at a time; then adjust the maps whose slots it flags;
+   - **victory by region points**, if approved: 70% of the map's points and at least half the
+     regions (points are already worked out and shown; victory still counts regions);
+   - decide whether to keep the uneven setups the fairness report flags (Highgate with 3,
+     the rings of five with 3 or 4, The Divide with 3 or 5, the Narrow Sea's Neck slot).
 1. **Timing pass.** Put every duration in one table and tune them to fit together:
    - war length (50-day minimum, 100-day capital hold, peace terms from day 150, exhaustion at 400);
    - sickness (from day 250);
@@ -43,7 +51,8 @@ state is in CIVSIM_STATUS.md.
 - **Playing a civ:** click the map to give army orders, fog of war, save and load.
 - **Watching:** a minimap, a "story so far" timeline, an end-of-game summary with graphs, a
   camera that follows the action.
-- **Variety:** hand-designed maps, random events beyond sickness, more ways to win.
+- **Variety:** random events beyond sickness, more ways to win, more drawn maps (alternates
+  already designed: Wildwood, Caldera, The Broken Crown).
 - **Sound:** ambience, battle sounds, a sting when war is declared.
 - **Strategist:** finer information than the rough strength bands, breaking truces, bluffing,
   attacks agreed with an ally for a chosen day, stockpiling for a planned war.
@@ -66,7 +75,10 @@ state is in CIVSIM_STATUS.md.
 
 ## Loose ends
 
-- The map names were given without looking at the maps.
-- Wyrmcoast (large) is slow to simulate.
 - Labels crowd from afar.
+- Harbours need Navigation (era 4), so no army can cross water before the mid-game: the
+  Gilded Isle, Pearl Reef and the Drowned Crown are mid-game prizes. Settlers can cross with
+  Boatbuilding. Decide whether that is the timing wanted.
+- The old bridges are drawn with the pack's bridge model laid across the river; check how it
+  sits at close zoom.
 - Trees can hide figures at close zoom.

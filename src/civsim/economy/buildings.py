@@ -172,6 +172,31 @@ def survey_ground(civ, world: WorldMap) -> tuple[set[int], set[int]]:
     return free, {tile + step for tile in taken for step in around}
 
 
+WRONG_WATER = 1000.0  # a harbour on water that does not lead to its goal is a last resort
+
+
+def water_bodies(world: WorldMap, tiles) -> set[int]:
+    """Which bodies of water (seas, lagoons, lakes: each joined stretch of water) the tiles touch."""
+    bodies = getattr(world, "_water_bodies", None)
+    if bodies is None:
+        bodies = [-1] * len(world.biomes)
+        label = 0
+        for start in range(len(world.biomes)):
+            if bodies[start] >= 0 or not world.is_water(start):
+                continue
+            bodies[start] = label
+            stack = [start]
+            while stack:
+                tile = stack.pop()
+                for n in world.neighbors(tile):
+                    if bodies[n] < 0 and world.is_water(n):
+                        bodies[n] = label
+                        stack.append(n)
+            label += 1
+        world._water_bodies = bodies
+    return {bodies[n] for t in tiles for n in world.neighbors(t) if bodies[n] >= 0}
+
+
 def find_site(civ, world: WorldMap, bdef: BuildingDef, ground: tuple | None = None) -> int | None:
     """Best tile in the civ's territory where placement_problem allows this building, or None.
 
@@ -187,6 +212,8 @@ def find_site(civ, world: WorldMap, bdef: BuildingDef, ground: tuple | None = No
     own = {s.tile for s in civ.settlements}
     abroad = [world.xy(tile) for tile in world.capital_tiles if tile not in own]
     harbours = [world.xy(b.tile) for b in civ.buildings if b.type == bdef.id]
+    goal = getattr(civ, "harbour_goal", None) if bdef.placement == "coast" else None
+    goal_water = water_bodies(world, world.regions[world.region_of[goal]].tiles) if goal is not None else set()
     best, best_score = None, -math.inf
     for tile in sorted(free):
         ground = footprint(world, bdef.id, tile) if bdef.size > 1 else (tile,)
@@ -202,6 +229,13 @@ def find_site(civ, world: WorldMap, bdef: BuildingDef, ground: tuple | None = No
             if tile_yield <= 0:
                 continue
             score = 2 * tile_yield - 0.15 * distance + (FILL_FIRST_YIELD if beside else 0.0)
+        elif bdef.placement == "coast" and goal is not None:
+            # Facing the place it wants to reach: on water that leads there, as near as can be.
+            gx, gy = world.xy(goal)
+            score = -math.hypot(x - gx, y - gy)
+            if not water_bodies(world, ground) & goal_water:
+                score -= WRONG_WATER
+            score -= sum(HARBOUR_SPREAD for hx, hy in harbours if math.hypot(x - hx, y - hy) < HARBOUR_SPREAD)
         elif bdef.placement == "coast" and abroad:
             score = -min(math.hypot(x - ax, y - ay) for ax, ay in abroad)
             score -= sum(HARBOUR_SPREAD for hx, hy in harbours if math.hypot(x - hx, y - hy) < HARBOUR_SPREAD)

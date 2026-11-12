@@ -29,6 +29,9 @@ var _difficulty_buttons := {}
 var _map := ""  # the map asked for by id, or "" for any of the size's
 var _map_row: HBoxContainer
 var _map_buttons := {}
+var _premise: Label  # what the chosen map is about
+## "Any size": a map of any size, picked at random.
+const ANY_SIZE := {"id": "random", "name": "Random", "civs": 4, "min_civs": 2, "max_civs": 5, "maps": []}
 var _size_cards := {}
 var _civ_count: Label
 var _civ_hint: Label
@@ -95,15 +98,24 @@ func show_menu(lobby: Dictionary) -> void:
 	sizes.add_theme_constant_override("separation", 12)
 	column.add_child(sizes)
 	_size_cards.clear()
-	for size: Dictionary in _sizes:
-		var detail := "%d × %d tiles\nBest with %d civs" % [int(size["side"]), int(size["side"]), int(size["civs"])]
+	for size: Dictionary in _sizes + [ANY_SIZE]:
+		var detail := "%d maps · %d to %d civs" % [size["maps"].size(), int(size["min_civs"]), int(size["max_civs"])]
+		if size["id"] == "random":
+			detail = "Any of the %d maps" % _all_maps().size()
 		var id: String = size["id"]
-		_size_cards[id] = _card(sizes, str(size["name"]), detail, Vector2(196, 92), func() -> void: _set_size(id))
-	# Which of the size's maps to play on: any of them, or one by name.
+		_size_cards[id] = _card(sizes, str(size["name"]), detail, Vector2(150, 92), func() -> void: _set_size(id))
+	# Which of the size's maps to play on: one picked at random, or one by name.
 	_map_row = HBoxContainer.new()
 	_map_row.add_theme_constant_override("separation", 8)
 	_map_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	column.add_child(_map_row)
+	_premise = Label.new()
+	_premise.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_premise.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_premise.custom_minimum_size = Vector2(620, 0)
+	_premise.add_theme_font_size_override("font_size", 13)
+	_premise.modulate = Color(1, 1, 1, 0.75)
+	column.add_child(_premise)
 
 	_heading(column, "Civilizations")
 	var count := HBoxContainer.new()
@@ -239,19 +251,23 @@ func _set_size(size: String) -> void:
 	for child in _map_row.get_children():
 		child.queue_free()
 	_map_buttons.clear()
-	var choices: Array = [{"id": "", "name": "Any map"}]
+	var choices: Array = [{"id": "", "name": "Random"}]
 	choices.append_array(_spec().get("maps", []))
 	for choice: Dictionary in choices:
 		var id := str(choice["id"])
 		var button := Button.new()
 		button.text = str(choice["name"])
+		if choice.has("width"):
+			button.text += "\n%d × %d · %d–%d civs" % [int(choice["width"]), int(choice["height"]),
+				int(choice["min_civs"]), int(choice["max_civs"])]
 		button.focus_mode = Control.FOCUS_NONE
-		button.custom_minimum_size = Vector2(120, 34)
+		button.custom_minimum_size = Vector2(130, 48)
 		button.pressed.connect(func() -> void: _set_map(id))
 		_map_row.add_child(button)
 		_map_buttons[id] = button
+	_map_row.visible = size != "random"
 	_set_map("")
-	_set_civs(int(_spec()["civs"]))  # each map starts on the number that suits it
+	_set_civs(int(_spec()["civs"]))  # each size starts on the number that suits it
 
 
 func _set_map(id: String) -> void:
@@ -260,24 +276,53 @@ func _set_map(id: String) -> void:
 		var chosen: bool = key == id
 		_style_button(_map_buttons[key], ACCENT.darkened(0.25) if chosen else Color(1, 1, 1, 0.07),
 				ACCENT.darkened(0.1) if chosen else Color(1, 1, 1, 0.14), 10)
+	var entry := _map_entry()
+	if entry.is_empty():
+		_premise.text = "A map picked at random from the %s." % (
+			"nine" if _size == "random" else str(_spec()["name"]).to_lower() + " maps")
+	else:
+		var best := str(entry.get("best", ""))
+		_premise.text = str(entry.get("premise", "")) + ("  Best with %s civs." % best if best != "" else "")
+	if _civ_count != null:
+		_set_civs(_civs)
 
 
 func _set_civs(civs: int) -> void:
-	var spec := _spec()
-	_civs = clampi(civs, int(spec["min_civs"]), int(spec["max_civs"]))
+	var limits := _limits()
+	_civs = clampi(civs, int(limits["min_civs"]), int(limits["max_civs"]))
 	_civ_count.text = str(_civs)
-	_fewer.disabled = _civs <= int(spec["min_civs"])
-	_more.disabled = _civs >= int(spec["max_civs"])
-	var suits := "recommended for this map" if _civs == int(spec["civs"]) else "recommended: %d" % int(spec["civs"])
-	_civ_hint.text = "%d to %d on a %s map  ·  %s" % [int(spec["min_civs"]), int(spec["max_civs"]),
-		str(spec["name"]).to_lower(), suits]
+	_fewer.disabled = _civs <= int(limits["min_civs"])
+	_more.disabled = _civs >= int(limits["max_civs"])
+	var where := str(limits["name"]) if limits.has("width") else "a %s map" % str(limits["name"]).to_lower()
+	_civ_hint.text = "%d to %d on %s" % [int(limits["min_civs"]), int(limits["max_civs"]), where]
+
+
+## The chosen map's entry, or {} when one is to be picked at random.
+func _map_entry() -> Dictionary:
+	for entry: Dictionary in _spec().get("maps", []):
+		if str(entry["id"]) == _map:
+			return entry
+	return {}
+
+
+## How many civs can play: the chosen map's range, or its size's.
+func _limits() -> Dictionary:
+	var entry := _map_entry()
+	return entry if not entry.is_empty() else _spec()
+
+
+func _all_maps() -> Array:
+	var maps := []
+	for size: Dictionary in _sizes:
+		maps.append_array(size["maps"])
+	return maps
 
 
 func _spec() -> Dictionary:
 	for size: Dictionary in _sizes:
 		if size["id"] == _size:
 			return size
-	return _sizes[0]
+	return ANY_SIZE if _size == "random" else _sizes[0]
 
 
 # -- pieces --------------------------------------------------------------------

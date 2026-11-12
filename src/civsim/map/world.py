@@ -31,6 +31,15 @@ class WorldMap:
         # Where each river tile's water goes next: the next river tile downstream, or the
         # sea or lake tile it empties into. Rivers are these links, not just neighbouring tiles.
         self.river_flow: dict[int, int] = {}
+        # Old bridges: river tiles anyone crosses at the plain cost, before the Bridges research.
+        self.bridges: set[int] = set()
+        # Start slots of a drawn map: slot -> (home region id, second region id), and which
+        # slots a game of each number of civs uses. Empty on a generated map.
+        self.starts: dict[str, tuple[int, int]] = {}
+        # A number of civs may have more than one set of slots; a game takes one by its seed.
+        self.start_sets: dict[int, list[list[str]]] = {}
+        self.links: list[tuple[int, int, str]] = []  # drawn maps: how regions touch (see blueprint.py)
+        self.map_id = ""
         self.yields: list[dict[str, int]] = [{} for _ in range(size)]
         self.owner: list[int] = [-1] * size
         # Regions (see regions.py): region id per tile (-1 for open sea), the regions
@@ -64,6 +73,14 @@ class WorldMap:
         """Deep sea or lake: nothing can be claimed or built there, and it takes boats to cross."""
         return self.biomes[i] in (Biome.OCEAN, Biome.LAKE)
 
+    def is_peak(self, i: int) -> bool:
+        """High peaks: impassable, and never settled or claimed tile by tile."""
+        return self.biomes[i] == Biome.PEAKS
+
+    def claimable(self, i: int) -> bool:
+        """Can be settled or taken tile by tile: anything but open water and high peaks."""
+        return not self.is_open_water(i) and not self.is_peak(i)
+
     def crossing_cost(self, i: int, bridges: bool, boats: bool) -> float | None:
         """Cost of moving onto a tile, or None if it cannot be entered.
 
@@ -72,7 +89,9 @@ class WorldMap:
         """
         if self.is_open_water(i):
             return 1.0 if boats else None
-        if i in self.rivers and not bridges:
+        if self.is_peak(i):
+            return None
+        if i in self.rivers and not bridges and i not in self.bridges:
             return RIVER_CROSSING_COST
         return 1.0
 

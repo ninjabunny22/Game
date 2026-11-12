@@ -67,7 +67,9 @@ def test_everything_full_means_idle_workers(sim):
     assert sum(civ.workers[res] for res in RESOURCES if res != "food") == 0
 
 
-def test_a_full_store_makes_the_civ_build_room_for_that_resource(sim):
+def test_a_full_store_makes_the_civ_build_room_for_that_resource(sim, monkeypatch):
+    # About the economy alone: no campaigns against the natives to spend the stores on.
+    monkeypatch.setattr(sim.military, "_campaign", lambda civ, tick: None)
     civ = sim.civs[0]
     civ.known_techs = ["pottery"]
     for _ in range(300):

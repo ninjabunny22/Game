@@ -25,8 +25,10 @@ from .economy import (
 )
 from .economy.rules import MINE_GOLD, START_POPULATION, START_RESOURCES
 from .map import generate_map, region_neighbours
+from .map.saved import load_map
 from .military.warfare import Military
 from .ruler import Ruler
+from .strategy.geography import Geography
 from .strategy import CHECKIN_INTERVAL, Brain, CheckinRequest, parse_stances, stance_context
 from .tech import TechTree, advance_research
 
@@ -46,7 +48,11 @@ class Simulation:
         self.rng = random.Random(config.seed)
         self.building_defs = load_building_defs()
         self.tech_tree = TechTree.load()
-        self.world = generate_map(config.seed if config.map_seed is None else config.map_seed, config.width, config.height)
+        if config.map_file:
+            self.world = load_map(config.map_file)
+        else:
+            self.world = generate_map(config.seed if config.map_seed is None else config.map_seed,
+                                      config.width, config.height)
         self.civs = self._create_civs()
         self.world.civs = self.civs  # placement rules look across borders
         self.ai = CivAI(self.world, self.building_defs, self.tech_tree, self.rng)
@@ -65,6 +71,10 @@ class Simulation:
         self.villages = Villages(self.world, self.civs, lambda: next(self._ids), self.config.seed)
         self.villages.update(0, [])  # the towns around the starting capitals
         self.diplomacy.natives = self.natives
+        # What each region is worth to each civ: one valuation for expansion, campaigns, war
+        # targets, harbours and the strategist.
+        self.geography = Geography(self.world, self.civs, self.diplomacy, self.military)
+        self.ai.geography = self.military.geography = self.geography
         for civ in self.civs:
             manage_villagers(civ, self.world, self.modifiers[civ.id], lambda: next(self._ids))
         self.events: list[dict] = []  # what happened during the latest tick
@@ -243,7 +253,18 @@ class Simulation:
             raise ValueError("map has too few regions for the requested number of civilizations")
         names = self.rng.sample(CIV_NAMES, count)
         personalities = assign_personalities(count, self.rng)
-        homes = self._pick_home_regions(count)
+        if world.start_sets:
+            # A drawn map: the slots it sets out for this many civs, each civ given one at random.
+            if count not in world.start_sets:
+                raise ValueError(f"this map takes {min(world.start_sets)} to {max(world.start_sets)} civilizations")
+            options = world.start_sets[count]
+            slots = list(options[self.rng.randrange(len(options))] if len(options) > 1 else options[0])
+            self.rng.shuffle(slots)
+            homes = [world.regions[world.starts[slot][0]] for slot in slots]
+            seconds = [world.regions[world.starts[slot][1]] for slot in slots]
+        else:
+            homes = self._pick_home_regions(count)
+            seconds = None
         touching = region_neighbours(world)
         taken = {region.id for region in homes}
 
@@ -260,10 +281,13 @@ class Simulation:
             )
             civs.append(civ)
 
-        for civ, home in zip(civs, homes):
-            # The second region: one that touches home if any is free, else the nearest free one.
+        for k, (civ, home) in enumerate(zip(civs, homes)):
+            # The second region: the slot's own on a drawn map; else one that touches home if
+            # any is free, else the nearest free one.
             free = sorted(r for r in touching[home.id] if r not in taken)
-            if free:
+            if seconds is not None:
+                second = seconds[k]
+            elif free:
                 second = world.regions[self.rng.choice(free)]
             else:
                 second = min((r for r in world.regions if r.id not in taken),
