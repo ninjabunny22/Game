@@ -22,7 +22,8 @@ style). Balance and timing have not had their dedicated pass yet.
 - **Military:** trained and paid soldiers, up to 5 field armies per civ under commanders with
   limited capacity, garrisons, unit counters, battles, routs, pursuit, captured commanders,
   sieges with a 100-day capital hold, rallies between allies, reinforcing an ally's
-  capital, refitting only at home, hospitals (10-day healing), scouting.
+  capital, generals leaving part of their army to hold a threatened castle of their own,
+  refitting only at home, hospitals (10-day healing), scouting.
 - **Diplomacy:** stances, alliances (wear out after 100 days of peace), betrayal, peace terms
   and tribute, coalitions, friction at borders, rivalry between the top two, sickness in long
   wars, natives.
@@ -35,30 +36,27 @@ style). Balance and timing have not had their dedicated pass yet.
 - **Victory:** conquest, domination (70% of regions) or score at the last day (6,000 /
   8,000 / 10,000 by size), only once a war has been fought.
 - **Viewer art:**
-  - six Adventurers generals and the Knight foot soldier;
+  - six Adventurers generals; Knight foot soldiers, hooded-Rogue archers, Knight cavalry on a
+    rigged horse (mounted generals for cavalry armies), all animated from the KayKit
+    Character Animations pack by weapon;
   - castles built from Hexagon pieces that grow by era;
   - Blender-made gold mine, ship (shown alone when an army is at sea), harbour, stable,
     catapult and ram (beside armies besieging a capital), and spear;
   - still water and levelled ground under castles.
 
-## In progress (uncommitted in the working tree)
+## In progress
 
-Step 5 of the art pass: `tools/blender/make_horse.py` (a rigged horse with idle, walk and
-trot), `tools/blender/make_animations.py` (Melee_1H, Melee_2H, Bow_Shoot and Ride for the
-Adventurers rig), and the changes to `adventurers.gd` and `unit_view.gd` that use them:
-- cavalry are Knights riding the horse;
-- archers are the hooded Rogue with a bow;
-- generals of cavalry armies ride;
-- every kind has an attack that fits its weapon.
+Nothing half-done in the working tree. The newest work is committed:
+- **The art pass's last step** (`c35c41a`, `b285534`):
+  - every Adventurers figure animated from the KayKit Character Animations pack, each kind
+    as its weapon suits;
+  - archers are the hooded Rogue with a bow;
+  - cavalry are Knights on a rigged horse modelled after the user's reference picture;
+  - generals of mostly-cavalry armies ride.
+- **Holding castles**: a general near a threatened castle of his own, too weakly held, leaves
+  part of his army there to hold it.
 
-Verified so far, in the units scene (`godot/tests/units_view.gd`): riders sit their horses
-and archers hold their bows. **Not yet verified:** that the bow shot and the swings read
-well, the asset check, and a run in the real game. Once that's done, the four older
-custom models (`godot/assets/characters/`) can go, except the Villager and Rider.
-
-Two new KayKit packs were added at the repository root by the user and are not yet looked at
-or used: `KayKit_Character_Animations_1.1` (may hold better melee and bow animations than
-the scripted ones) and `KayKit_ResourceBits_1.0_FREE`.
+`KayKit_ResourceBits_1.0_FREE` (added by the user, at the repository root) is still unused.
 
 ## Known bugs, limits and technical debt
 
@@ -73,21 +71,21 @@ the scripted ones) and `KayKit_ResourceBits_1.0_FREE`.
 - **Maps:** the map names were given without looking at the maps, and the large map
   Wyrmcoast is slow to simulate.
 - **Older models:** Villager and Rider are older custom models in a different style
-  (neither pack has workers).
+  (neither pack has a worker character; the animation pack's tool animations could serve one).
+- **Horse:** modelled in Blender after the user's reference (`tools/blender/make_horse.py`):
+  a faceted chestnut, smooth-shaded. It is more realistic than the chunky riders.
 - **README:** a few lines in the opening are out of date: it says four civs, Godot 4.3+,
   and 60% for domination; the code has 2–5 civs, Godot 4.7 and 70%.
 - **Head counts** are only a display scale; the economy itself isn't denser.
 
 ## Tests
 
-- Python: **437 passed** in the last full run (commit `c441d5b`, about 9 minutes). Python
-  code hasn't changed since. No known failures.
-- Viewer asset check: `assets ok` at `08997b2`; not yet re-run on the uncommitted step-5
-  work.
-- Last balance check (3 games at `c441d5b`):
-  - gold income at day 500 was +1.0 to +1.2 a day;
-  - first wars came on days 503–648;
-  - armies went unpaid on 3–7% of days.
+- Python: **440 passed** with the castle-holding change (about 9 minutes). No known failures.
+- Viewer asset check: `assets ok` with the latest horse.
+- Last balance check (3 games, with castle holding):
+  - generals left a force to hold a castle 4, 31 and 48 times (small, medium, large);
+  - first wars came on days 503–648, and armies went unpaid on 2–7% of days;
+  - every game ended by domination (days 1,395, 3,982 and 4,943).
 
 ## Latest important changes (newest first)
 

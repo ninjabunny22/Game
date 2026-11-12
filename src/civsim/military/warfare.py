@@ -32,6 +32,7 @@ from collections.abc import Callable
 
 from ..diplomacy import rules
 from ..economy.harbours import ports
+from ..config import HEADCOUNT
 from ..economy.production import soldier_cost
 from ..economy.rules import HEAL_TICKS, INFIRMARY_BEDS, MIN_POPULATION
 from ..map import WorldMap, find_path, region_neighbours, step_cost
@@ -66,6 +67,11 @@ REINFORCE_REACH = 40  # tiles from our capital beyond which no help is sent
 REINFORCE_STAY = 30  # ticks the army stays on after the threat has gone
 REINFORCE_RETRY = 150  # ticks before trying again for a capital there was no way to
 SCOUT_RANGE = 6  # tiles within which a civ's armies and capitals can count an army exactly
+# Holding a castle: a general near one of his civ's own capitals that is threatened, and too
+# weakly held for the threat, leaves part of his army behind to hold it.
+DETACH_REACH = 6  # tiles: how near the castle the army must be
+DETACH_MAX = 0.5  # the most of his army he will leave
+HOLD_STAY = 30  # days the holding force stays once the danger has passed, before joining the garrison
 # A castle's garrison is known only roughly, to within this many soldiers either way (in the
 # head count shown), unless one of the civ's armies has attacked the castle lately.
 GARRISON_GUESS = 30
@@ -182,6 +188,7 @@ class Military:
             self._upgrade(civ)
             self._organise(civ, tick)
             self._support(civ, tick, events)
+            self._hold_castles(civ, tick, events)
             self._campaign(civ, tick)
             self._station(civ)
             self._hold_captives(civ, tick, events)
@@ -399,7 +406,7 @@ class Military:
             if army.role != "field":
                 continue
             if (army.target_region is None and army.target_civ not in enemies and army.state != "returning"
-                    and army.rally is None and army.duty != "reinforce"):
+                    and army.rally is None and army.duty not in ("reinforce", "hold")):
                 army.state, army.path, army.siege_progress = "returning", [], 0.0  # the war is over: go home
             if army.commander is None and self._at_home(civ, army.tile) and tick >= army.leaderless_until:
                 army.commander = self._appoint(civ)
@@ -409,7 +416,7 @@ class Military:
                 civ.commanders.append(recruit)
 
         active = sorted((a for a in civ.armies if a.role == "field" and a.state != "returning"
-                         and a.target_region is None and a.rally is None),
+                         and a.target_region is None and a.rally is None and a.duty != "hold"),
                         key=lambda a: (a.duty != "defend", a.wing, a.id))  # the home force first
         for army in active:
             room = self.capacity(army) - army.size
@@ -553,7 +560,7 @@ class Military:
             goal = self.world.regions[army.target_region].capital
             if army.state == "idle":
                 army.state = "marching"
-        elif army.duty == "reinforce":
+        elif army.duty in ("reinforce", "hold"):
             # Stand in the ally's capital; a beaten one rests at home first.
             fit = tick >= self._rally.get(army.id, 0) and army.size >= MIN_FIELD_ARMY
             goal = army.post if fit else self._refuge(civ, army.tile)
@@ -873,7 +880,7 @@ class Military:
     def _guests(self, tile: int) -> list[Army]:
         """Allied armies standing in the capital on this tile to help hold it."""
         return [army for civ in self.civs.values() if civ.alive for army in civ.armies
-                if army.duty == "reinforce" and army.post == tile and army.size >= 0.5
+                if army.duty in ("reinforce", "hold") and army.post == tile and army.size >= 0.5
                 and army.state not in ("retreating", "returning") and self._reach(army.tile, tile) <= 1]
 
     def reinforcing(self, civ) -> Army | None:
@@ -955,6 +962,69 @@ class Military:
         dice = random.Random(f"{self.world.seed}:{viewer.id}:{tile}:{self._tick // GUESS_FRESH}")
         off = dice.uniform(-(GARRISON_GUESS - 5), GARRISON_GUESS - 5)
         return max(0, int(round((actual + off) / 10.0)) * 10)
+
+    # -- holding castles ---------------------------------------------------------
+
+    def _threat(self, civ, tile: int) -> float:
+        """Strength of the enemy armies at or near one of the civ's capitals."""
+        return sum(self.army_strength(other) for enemy_id in self.diplomacy.enemies(civ.id)
+                   for other in self.civs[enemy_id].armies
+                   if other.role == "field" and other.size >= 0.5 and other.state not in ("retreating", "returning")
+                   and self._reach(other.tile, tile) <= REINFORCE_ALERT)
+
+    def _held_by(self, civ, tile: int) -> float:
+        """Strength holding one of the civ's castles: its share of the garrison and any armies
+        standing in it to hold it."""
+        share = unit_strength(civ.garrison.units) * tier_strength(civ.garrison.tier) * self.diplomacy.quality(civ)
+        return share / max(1, len(civ.settlements)) + sum(self.army_strength(a) for a in self._guests(tile))
+
+    def _hold_castles(self, civ, tick: int, events: list) -> None:
+        """A general near a threatened castle of his own that is too weakly held for the threat
+        leaves part of his army there to hold it; once the danger has passed for a while, those
+        soldiers join the garrison."""
+        for army in [a for a in civ.armies if a.duty == "hold"]:
+            if army.post not in {s.tile for s in civ.settlements}:
+                army.duty, army.post, army.state, army.path = "attack", None, "returning", []  # the castle fell
+                continue
+            if self._threatened(civ, army.post):
+                self._stay[army.id] = tick + HOLD_STAY
+            elif tick >= self._stay.get(army.id, 0) and self._reach(army.tile, army.post) <= 1:
+                self._disband(civ, army)  # the danger is past: into the garrison
+        if sum(1 for a in civ.armies if a.role == "field" and a.state != "returning") >= MAX_ARMIES:
+            return
+        for settlement in civ.settlements:
+            tile = settlement.tile
+            if not self._threatened(civ, tile):
+                continue
+            threat, held = self._threat(civ, tile), self._held_by(civ, tile)
+            if threat <= held:
+                continue
+            near = [a for a in civ.armies if a.role == "field" and a.commander is not None
+                    and a.duty in ("attack", "defend") and a.rally is None and not a.refit
+                    and a.target_region is None and a.state not in ("fighting", "retreating", "returning", "pursuing")
+                    and a.size >= 2 * MIN_FIELD_ARMY and self._reach(a.tile, tile) <= DETACH_REACH
+                    and not self._holding(a)]
+            if not near:
+                continue
+            army = min(near, key=lambda a: (self._reach(a.tile, tile), a.id))
+            per_soldier = self.army_strength(army) / max(army.size, 1e-9)
+            wanted = (threat - held) / max(per_soldier, 1e-9)
+            count = min(DETACH_MAX * army.size, max(MIN_FIELD_ARMY, wanted))
+            if army.size - count < MIN_FIELD_ARMY:
+                continue
+            force = Army(self.next_id(), civ.id, army.tile, "field", target_civ=army.target_civ,
+                         state="marching", duty="hold", post=tile)
+            force.add(army.take(count), army.tier)
+            civ.armies.append(force)
+            self._stay[force.id] = tick + HOLD_STAY
+            self.diplomacy._log(tick, events, "war", [civ],
+                                f"{army.commander.name} of {civ.name} leaves {round(count * HEADCOUNT)} "
+                                f"soldiers to hold {settlement.name}")
+            return  # one at a time
+
+    def castle_defenders(self, civ, tile: int) -> float:
+        """Soldiers holding a castle: its share of the garrison and any armies standing in it."""
+        return self.castle_garrison(civ) + sum(a.size for a in self._guests(tile) if a.civ == civ.id)
 
     # -- scouting ----------------------------------------------------------------
 

@@ -139,6 +139,13 @@ The overlay is built for watching:
   holds or has an army within 4 tiles of. It adds to the city's defence, fights whoever the
   civ is itself at war with, and goes home 30 days after the danger has passed. A ruler
   sends his with the "Reinforce" button and calls it back himself.
+- **Holding a castle.** When one of a civ's own capitals is threatened (an enemy holds it or has
+  an army within 4 tiles) and its share of the garrison, with any force already holding it,
+  is weaker than the threat, the nearest general within 6 tiles leaves part of his army there:
+  enough to match the threat, at most half his army, never fewer than 3. The force stands in
+  the castle, counts in its defence and in its garrison as shown, fights intruders, and joins
+  the garrison 30 days after the danger has passed. Every civ's generals do this, a ruled
+  civ's too.
 - **Scouting.** An army's exact size is known only to its own civ, its allies, and a civ with
   an army or capital within 6 tiles. A strategist with most of a neighbour's soldiers in
   sight knows its power exactly; otherwise it has only the rough comparison. When you rule
@@ -187,10 +194,11 @@ copies in `godot/assets/`.
 | Folder | Pack | What it is | Loaded by |
 |---|---|---|---|
 | `godot/assets/kaykit/` | Medieval Hexagon | buildings, building sites, props, trees, mountains, rocks, water plants | `scripts/models.gd` |
-| `godot/assets/adventurers/` | Adventurers | the six generals, the foot soldier, their weapons and animations | `scripts/adventurers.gd` |
+| `godot/assets/adventurers/` | Adventurers, and Character Animations | the six generals, the foot soldier, the archer, their weapons; the animation sets | `scripts/adventurers.gd` |
+| `godot/assets/adventurers/civsim_horse.glb` | made in Blender (`tools/blender/make_horse.py`), after a reference picture | the horse the cavalry and mounted generals ride | `scripts/adventurers.gd` |
 | `godot/assets/kaykit/civsim_*` | made in Blender, painted from the Hexagon texture | gold mine, ship, harbour, stable, catapult, ram | `scripts/models.gd` |
 | `godot/assets/adventurers/civsim_spear` | made in Blender, painted from the knight's texture | the spearman's spear | `scripts/adventurers.gd` |
-| `godot/assets/characters/` | our own, older | archer, cavalry knight, villager, rider | `scripts/characters.gd` |
+| `godot/assets/characters/` | our own, older | villager, rider (a villager on horseback) | `scripts/characters.gd` |
 
 The Blender models are built by a script, `tools/blender/make_models.py`
 (`/Applications/Blender.app/Contents/MacOS/Blender -b -P tools/blender/make_models.py`): each
@@ -211,9 +219,15 @@ model the viewer uses and checks the animations, weapons and colours
   lead from the front. Generals in reserve stand at the gate of the capital they hold.
   From afar the army's marker carries the general's name; at middle zoom the general and
   three of the ranks show; up close, every rank and the full caption.
-- **Foot soldiers** (swordsmen and spearmen) are the Adventurers knight with visor down,
-  shield, and sword or a spear. The pack's animations are shared from two files on the same
-  rig: idle, walk, run, and for fighting an overarm throw, as the free pack has no sword swing.
+- **Soldiers:** swordsmen and spearmen are the Adventurers knight with visor down, shield, and
+  sword or spear; archers the hooded rogue with a bow; cavalry the knight on horseback, with a
+  saddle cloth in his colour. The general of an army that is mostly cavalry rides too.
+- **Animations** come from the KayKit Character Animations pack, a file per kind on the same
+  rig, each kind as its weapon suits: two-handed chops and a two-handed guard for the knight
+  general and the barbarian, slices with a dagger in each hand for the rogues, a bow drawn and
+  loosed for the ranger and the archers, a spell for the mage, a diagonal stroke for swordsmen,
+  a thrust for spearmen, and seated for riders. The horse walks and trots
+  (`tools/blender/make_horse.py`).
 - **Colour.** Each Adventurers character is painted from one texture of flat colour cells;
   the cells of its cape and trim are repainted in the owner's colour, keeping their
   shading, and the same texture paints its weapons and shield. Skin, steel and leather are

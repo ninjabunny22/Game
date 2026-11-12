@@ -150,7 +150,7 @@ def _settlement(sim: Simulation, civ, settlement, watcher) -> dict:
     """A capital as the viewer may see it: where it is, and who holds its castle."""
     world, military = sim.world, sim.military
     entry = {"name": settlement.name, "x": settlement.tile % world.width, "y": settlement.tile // world.width}
-    actual = heads(military.castle_garrison(civ))
+    actual = heads(military.castle_defenders(civ, settlement.tile))  # its garrison, and any force holding it
     if watcher is None or military.garrison_known(watcher, settlement.tile):
         entry["garrison"] = actual
     else:

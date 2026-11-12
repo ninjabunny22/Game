@@ -11,9 +11,7 @@ state is in CIVSIM_STATUS.md.
 
 ## Immediate priorities (agreed)
 
-1. **Finish the art pass, step 5:** the horse, cavalry, archers, mounted generals and the
-   new attack animations (in progress). Then retire the custom Archer and cavalry Knight.
-2. **Timing pass.** Put every duration in one table and tune them to fit together:
+1. **Timing pass.** Put every duration in one table and tune them to fit together:
    - war length (50-day minimum, 100-day capital hold, peace terms from day 150, exhaustion at 400);
    - sickness (from day 250);
    - truces (50 / 150 days);
@@ -23,7 +21,7 @@ state is in CIVSIM_STATUS.md.
 
    Known oddities: games often end well before the last day, and rallies are rare. The first
    war used to come late; in the latest 3-game check it came on days 503–648.
-3. **Tune by league.** Run `python -m civsim.league --evolve` on the settled timings, ideally
+2. **Tune by league.** Run `python -m civsim.league --evolve` on the settled timings, ideally
    to one set of numbers per personality. First decide whether the aim is the strongest civs
    or the most entertaining games.
 
@@ -54,7 +52,9 @@ state is in CIVSIM_STATUS.md.
   of only displaying four heads per unit.
 - **Castle contents:** a forge that shows troop tier, and treasure piles that show gold.
   Suggested, not chosen.
-- **Villager:** remade in the Adventurers style. Offered; the user hasn't answered.
+- **Villager:** remade in the Adventurers style. Offered; the user hasn't answered. The
+  animation pack's tool animations (hammering, digging, pickaxing, working) would fit it.
+- **Deaths and hits:** use the animation pack's hit and death animations in battle.
 
 ## Long-term vision (direction, no commitments)
 

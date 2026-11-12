@@ -20,7 +20,7 @@ A civilisation simulation on a generated map, with two ways to use it:
 - **Link:** JSON over a local WebSocket (`ws://127.0.0.1:8765`), full state every tick, with a
   protocol version shared by both ends (`bridge/protocol.py`, `godot/scripts/sim_client.gd`).
 - **Art:** KayKit Medieval Hexagon and Adventurers packs (CC0), our own models made by
-  Blender scripts in `tools/blender/`, and four older custom models.
+  Blender scripts in `tools/blender/`, and two older custom models (villager, rider).
 - **Launcher:** `CivSim.command` starts the sim, then the viewer.
 
 ## Principles (do not reverse casually)

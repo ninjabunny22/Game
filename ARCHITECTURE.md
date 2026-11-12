@@ -59,7 +59,7 @@ about structure and data flow.
 | `economy/` | production, population, buildings and placement (one rule), modifiers, villagers, horses, harbours | map |
 | `tech/` | tech tree (`data/techs.json`), research progress | none |
 | `civ/` | civ state, personalities, the rule-based AI | economy, tech |
-| `military/` | units and tiers, armies, commanders, warfare (march, battle, siege, hold, rally, reinforce, scouting, hospitals) | map, economy, diplomacy |
+| `military/` | units and tiers, armies, commanders, warfare (march, battle, siege, capital hold, rally, reinforcing allies, holding own castles, scouting, hospitals) | map, economy, diplomacy |
 | `diplomacy/` | relations, war and peace, alliances, tribute, sickness, friction, the natives, region capture | military, economy |
 | `strategy/` | the context shown to a strategist (`context.py`), validating replies (`checkin.py`), brains (`utility.py`, `brain.py`) | reads everything; writes only through replies |
 | `ruler.py` | a human ruler's orders and proposals; overrides the strategist for that civ | simulation |
@@ -84,6 +84,10 @@ content; code reads it through `economy/buildings.py`, `tech/tree.py` and `milit
     target and march target, which the economy and the AI then work toward.
   - The military turns war into armies, marches, battles and sieges. A capital falls only
     after being held for 100 days.
+  - Army duties (`Army.duty`): `attack` (makes for the enemy's capitals), `defend` (a home
+    force), `reinforce` (stands in an ally's threatened capital), `hold` (a force a general
+    left in one of his own threatened castles). These are decided by rules in `warfare.py`,
+    not by the strategist.
 - **Economy and military:** the economy recruits and pays soldiers, and `Military._sync`
   keeps the armies' head count equal to it. Battle losses go back into the economy as
   wounded (hospital), dead or escaped (garrison).
@@ -126,9 +130,9 @@ content; code reads it through `economy/buildings.py`, `tech/tree.py` and `milit
 - **Model loaders:**
   - `models.gd`: Hexagon and Blender-made glTF, recoloured by repainting the texture's
     faction rectangle;
-  - `adventurers.gd`: rigged characters, the shared and our own animations, weapons, the
-    horse;
-  - `characters.gd`: the older custom models.
+  - `adventurers.gd`: rigged characters, the KayKit animation sets (a library per kind, by
+    weapon), weapons, and the rigged horse with its rider on the saddle bone;
+  - `characters.gd`: the older custom villager and rider.
 
 ## Constraints
 

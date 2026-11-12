@@ -277,6 +277,8 @@ func _army_caption(army: Dictionary) -> String:
 		what += "\nGoing home to fill its ranks"
 	elif str(army.get("duty", "")) == "reinforce":
 		what += "\nStanding with an ally"
+	elif str(army.get("duty", "")) == "hold":
+		what += "\nHolding the castle"
 	if army["commander"] == null:
 		return what
 	var commander: Dictionary = army["commander"]
