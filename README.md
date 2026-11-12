@@ -53,8 +53,10 @@ concentrates on, what to research and build next, and how to stand toward each o
 civ; whatever is left on Auto is still decided by the civ itself, and the civ can be
 handed back at any time (`ruler.py`).
 
-**Winning.** The last civ standing wins by conquest, a civ holding 70% of the regions
-wins by domination, and otherwise the highest score (regions, people, techs) wins on the
+**Winning.** The last civ standing wins by conquest. A civ holding 80% of the map's region
+**points** (each region is worth 1 to 3, by its land and riches) and at least half of its
+regions wins by domination; each civ's card shows its points against the target. Otherwise
+the highest score (region points, people, techs) wins on the
 last day (6,000 / 8,000 / 10,000 by map size, `SimConfig.end_tick`), but only once a war has
 been fought. The game pauses when it is decided and can be played on.
 
@@ -332,6 +334,32 @@ driver (`bridge/server.py`, the headless runner, a test) decides when to call
 `step()` and answers the strategic check-ins the sim raises. With `--brain rules`
 a run is fully deterministic for a given seed.
 
+## Timing
+
+Every length of time the game runs on, in days, and where it is set. (Strategist numbers live
+in `Params` in `strategy/utility.py`; rules in `diplomacy/rules.py`, `military/warfare.py`,
+`economy/rules.py`; game length in `config.py`.)
+
+| What | Days | Where |
+|---|---|---|
+| Last day (game decided on score) | 6,000 / 8,000 / 10,000 by size | `MAP_SIZES` |
+| Early growth bonus | first 750 | `EARLY_GROWTH_UNTIL` |
+| Campaigns against the natives: rest between / after a failure | 150 / 200 | `CAMPAIGN_REST`, `CAMPAIGN_RETRY` |
+| Peace lasts before any civ grows restless | 350 ÷ its taste for war | `LONG_PEACE` |
+| Mustering before a war; preparing one at most | 25+ / 150 | `PREP_MIN`, `PLAN_MAX` |
+| A war is fought at least | 50 | `MIN_WAR`, `WAR_MIN` |
+| Peace terms (tribute) listened to after | 150 | `TERMS_AFTER` |
+| A war is kept up only from strength after | 300 | `WAR_WEARY_TICKS` |
+| Both sides exhausted after | 400 | `MAX_WAR` |
+| A broken-into capital falls if held | 100 | `CAPITAL_HOLD` |
+| Truce after peace / after a surrender or tribute | 50 / 150 | `TRUCE`, `SURRENDER_TRUCE`, `DEMAND_TRUCE` |
+| Sickness possible after this long at war; lasts; rest after | 250 / 150 / 400 | `SICKNESS_*` |
+| An alliance is kept at least; lapses after this long at peace; re-allying waits | 100 / 100 / 300 | `ALLIANCE_MIN`, `ALLIANCE_WEARS`, `ALLIANCE_REST` |
+| A long-term strategy is held at least | 200 | `STRATEGY_MIN` |
+| Allies have to reach a rally; before calling another | 40 / 200 | `RALLY_GATHER`, `RALLY_REST` |
+| Healing in hospital | 10 | `HEAL_TICKS` |
+| Memory of a deed halves | about 460 | `MEMORY_FADE` |
+
 ## How the pieces work
 
 **Map.** A square grid, drawn by hand: each map is a blueprint in `civsim/map/designs`
@@ -359,7 +387,7 @@ viewer draws rivers along those links only.
 **Regions.** A drawn map has 12 or 13 regions (small), 16 to 17 (medium) or 33 to 36
 (large), each drawn with its name, capital and borders. Whoever holds a region's capital
 holds the region. Each region is worth 1 to 3 **points**, from its land and its riches (shown
-in the castle panel; victory still counts regions).
+in the castle panel); domination is counted in points.
 
 Each civ starts with two whole regions, its slot's home region (its capital) and second
 region. Every other region belongs to **the Hinterfolk**, a native faction with no

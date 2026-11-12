@@ -1,10 +1,11 @@
 """How a game is won: last civ standing, most of the map, or the highest score on the last day."""
 
 import json
+import math
 
 from civsim.bridge import protocol
-from civsim.config import SimConfig
-from civsim.simulation import DOMINATION_SHARE, Simulation
+from civsim.config import SimConfig, game_config
+from civsim.simulation import Simulation
 
 
 def test_nothing_is_decided_at_the_start_and_every_civ_has_a_score():
@@ -29,9 +30,10 @@ def test_the_last_civ_standing_wins_by_conquest():
 
 
 def test_holding_most_of_the_map_wins_by_domination():
-    sim = Simulation(SimConfig(seed=3))
+    sim = Simulation(SimConfig(seed=3))  # a generated map: every region worth one point
     regions = sim.world.regions
-    need = next(n for n in range(len(regions) + 1) if n >= DOMINATION_SHARE * len(regions))
+    need, _ = sim.domination_target()
+    assert need == math.ceil(0.8 * len(regions))
     others = [region for region in regions if region.owner != 2]  # civ 2 keeps the ones it starts with
     short = need - 1 - (len(regions) - len(others))
     for i, region in enumerate(others):
@@ -41,6 +43,30 @@ def test_holding_most_of_the_map_wins_by_domination():
     others[short].owner = 2
     sim.step()
     assert sim.victory["civ"] == 2 and sim.victory["kind"] == "domination"
+
+
+def test_domination_counts_region_points_and_needs_half_the_regions():
+    sim = Simulation(game_config("small", 2, seed=3, map="gilded_isle"))
+    world = sim.world
+    total = sum(r.points for r in world.regions)
+    need_points, need_regions = sim.domination_target()
+    assert need_points == math.ceil(0.8 * total) and need_regions == math.ceil(0.5 * len(world.regions))
+    # Points alone are not enough: give civ 0 the richest regions up to the points but too few regions.
+    rich = sorted(world.regions, key=lambda r: -r.points)
+    for r in world.regions:
+        r.owner = None
+    got = 0
+    for r in rich:
+        if got >= need_points:
+            break
+        r.owner, got = 0, got + r.points
+    held = sum(1 for r in world.regions if r.owner == 0)
+    sim.step()
+    if held < need_regions:
+        assert sim.victory is None, "too few regions, however rich"
+    else:
+        assert sim.victory["kind"] == "domination"
+    assert sim.points_held(sim.civs[0]) == got
 
 
 def test_the_highest_score_wins_on_the_last_day():

@@ -9,6 +9,7 @@ deterministic.
 """
 
 import itertools
+import math
 import random
 
 from .civ import FOCUSES, CivAI, Civilization, Settlement, Villages, assign_personalities, with_focus
@@ -33,8 +34,11 @@ from .strategy import CHECKIN_INTERVAL, Brain, CheckinRequest, parse_stances, st
 from .tech import TechTree, advance_research
 
 EASY_INTERVAL = 10  # days between the other civs' decisions on the easy setting
-DOMINATION_SHARE = 0.7  # holding this share of all regions wins the game
-SCORE_PER_REGION = 100
+# Domination: holding this share of the map's region points (1 to 3 a region: what it is
+# worth) and at least DOMINATION_REGIONS of its regions wins the game.
+DOMINATION_SHARE = 0.8
+DOMINATION_REGIONS = 0.5
+SCORE_PER_POINT = 60
 SCORE_PER_TECH = 20
 
 CIV_NAMES = ["Aurelia", "Kheshet", "Norvald", "Zhanlu", "Tamari", "Ossyria", "Valmere", "Iskandar"]
@@ -120,12 +124,20 @@ class Simulation:
 
     # -- winning ---------------------------------------------------------------
 
+    def points_held(self, civ) -> int:
+        """The region points of the regions the civ holds."""
+        return sum(region.points for region in self.world.regions if region.owner == civ.id)
+
+    def domination_target(self) -> tuple[int, int]:
+        """What domination takes: (points, regions)."""
+        total = sum(region.points for region in self.world.regions)
+        return math.ceil(DOMINATION_SHARE * total - 1e-9), math.ceil(DOMINATION_REGIONS * len(self.world.regions) - 1e-9)
+
     def score(self, civ) -> int:
-        """How a civ stands: its regions first, then its people and what it has learned."""
+        """How a civ stands: the points of its regions first, then its people and what it has learned."""
         if not civ.alive:
             return 0
-        regions = sum(1 for region in self.world.regions if region.owner == civ.id)
-        return round(SCORE_PER_REGION * regions + civ.population + SCORE_PER_TECH * len(civ.known_techs))
+        return round(SCORE_PER_POINT * self.points_held(civ) + civ.population + SCORE_PER_TECH * len(civ.known_techs))
 
     def _check_victory(self, events: list[dict]) -> None:
         """The game is won by the last civ standing, by whoever holds most of the map, or on the
@@ -136,11 +148,13 @@ class Simulation:
         if not living:
             return
         winner, kind = None, ""
-        held = {civ.id: sum(1 for region in self.world.regions if region.owner == civ.id) for civ in living}
-        leader = max(living, key=lambda civ: (held[civ.id], civ.id))
+        points = {civ.id: self.points_held(civ) for civ in living}
+        regions = {civ.id: sum(1 for r in self.world.regions if r.owner == civ.id) for civ in living}
+        leader = max(living, key=lambda civ: (points[civ.id], regions[civ.id], civ.id))
+        need_points, need_regions = self.domination_target()
         if len(living) == 1 and len(self.civs) > 1:
             winner, kind = living[0], "conquest"
-        elif held[leader.id] >= DOMINATION_SHARE * len(self.world.regions):
+        elif points[leader.id] >= need_points and regions[leader.id] >= need_regions:
             winner, kind = leader, "domination"
         elif self.config.end_tick and self.tick >= self.config.end_tick and self.diplomacy.wars_started:
             # A game in which nobody has yet fought is not over: the age runs on until someone does.

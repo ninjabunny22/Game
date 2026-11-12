@@ -999,7 +999,9 @@ class Military:
                 self._disband(civ, army)  # the danger is past: into the garrison
         if sum(1 for a in civ.armies if a.role == "field" and a.state != "returning") >= MAX_ARMIES:
             return
-        for settlement in civ.settlements:
+        # The castles worth most first (strategy/geography.py): a prize is held before a backwater.
+        worth = self.geography.values(civ, tick) if self.geography is not None else {}
+        for settlement in sorted(civ.settlements, key=lambda s: (-self._worth(worth, s.tile), s.tile)):
             tile = settlement.tile
             if not self._threatened(civ, tile):
                 continue

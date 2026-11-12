@@ -23,6 +23,7 @@ var _log: RichTextLabel
 var _cards_box: VBoxContainer
 var _diplomacy_panel: PanelContainer
 var _castle_panel: PanelContainer
+var _points_needed := 0  # region points that win by domination
 var _regions_at := {}  # capital tile -> the region it rules, from init
 var _castle_text: RichTextLabel
 var _castle_at := Vector2i(-1, -1)  # the castle being looked at, by tile; (-1, -1) for none
@@ -487,6 +488,7 @@ func set_status(status: Dictionary) -> void:
 
 func update(tick: int, data: Dictionary) -> void:
 	_tick = tick
+	_points_needed = int(data.get("domination", {}).get("points", 0))
 	set_status(data["status"])
 	_relations.clear()
 	for relation: Dictionary in data["relations"]:
@@ -707,9 +709,9 @@ func _compact_text(info: Dictionary, civ: Dictionary) -> String:
 		info["color"], info["name"], info["personality"]]
 	if not civ["alive"]:
 		return title + "\n[color=#e07a6a]Destroyed[/color]"
-	var facts := "%s   %d region%s   Pop %d   Army %d   [color=#d9c36a]Score %d[/color]" % [
+	var facts := "%s   %d region%s (%d of %d pts)   Pop %d   Army %d   [color=#d9c36a]Score %d[/color]" % [
 		civ["era_name"], civ["regions"].size(), "" if civ["regions"].size() == 1 else "s",
-		int(civ["population"]), int(civ["soldiers"]), int(civ.get("score", 0))]
+		int(civ.get("points", 0)), _points_needed, int(civ["population"]), int(civ["soldiers"]), int(civ.get("score", 0))]
 	var goal := ""
 	if str(civ.get("strategy", "")) != "":
 		goal = "\n[color=#8a93a0]Goal: %s[/color]" % civ["strategy"]

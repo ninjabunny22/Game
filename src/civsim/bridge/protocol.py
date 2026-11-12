@@ -210,6 +210,7 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
             # The sickness a long war has brought on the civ, and how many days it has left; null when well.
             "sickness": {"name": civ.sickness, "days": max(0, civ.sick_until - sim.tick)} if civ.sickness else None,
             "regions": [region.id for region in world.regions if region.owner == civ.id],
+            "points": sim.points_held(civ),  # region points held: domination is counted in these
             "mines": sim.mines_held(civ),  # gold mines in its regions, each paying it gold every day
             "population": heads(civ.population),
             "housing": heads(mods.housing),
@@ -355,6 +356,8 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
         "civs": civs,
         # Who has won, how ("conquest", "domination" or "score") and when; null while undecided.
         "victory": sim.victory,
+        # What domination takes: region points and regions.
+        "domination": dict(zip(("points", "regions"), sim.domination_target())),
         # The civ a human rules and the orders in force, or null when every civ plays itself.
         "ruler": sim.ruler.state(),
         "armies": armies,

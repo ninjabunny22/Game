@@ -185,3 +185,27 @@ def test_the_sim_remembers_deeds_and_takes_up_the_strategy():
     for civ in sim.civs:
         assert civ.strategy and civ.strategy_kind and civ.focus in ("military", "science", "economy", "expansion")
         assert civ.born is not None and civ.personality.name == civ.born.name
+
+
+def test_a_war_on_a_civ_close_to_ruling_the_map_is_not_given_up(context):
+    enemy = context["neighbors"][0]
+    enemy.update(relation="war", war_ticks=400, army_vs_yours="comparable")
+    assert decide(context)[enemy["name"]]["stance"] == "ignore", "an ordinary long war is ended"
+    enemy["victory_share"] = 0.9
+    reply = UtilityBrain().decide(CheckinRequest(context["you"]["id"], context["tick"], context))
+    assert {e["civ"]: e for e in reply["stances"]}[enemy["name"]]["stance"] == "aggression"
+    assert "close to ruling the map" in reply["reason"]
+
+
+def test_a_civ_close_to_winning_pushes_for_the_prizes_that_would_finish_it(context):
+    target = context["neighbors"][0]
+    target["prize"] = {"region": "Goldcrown", "value": 2.5, "why": "2 gold mines"}
+    brain = UtilityBrain()
+    args = lambda: (context["you"], target, 2.0, 2.0, 1.3, 0.0, False, True, False, None,  # noqa: E731
+                    {"kind": "conquest", "target": None}, {})
+    context["you"]["points"] = {"held": 5, "needed": 20, "regions_needed": 8, "share": 0.25}
+    before, _ = brain._attack(*args())
+    context["you"]["points"]["share"] = 0.85
+    after, why = brain._attack(*args())
+    assert after == pytest.approx(before + brain.p.LAST_PUSH)
+    assert "Goldcrown" in why

@@ -79,6 +79,12 @@ class Params:
     PRIZE_FREE: float = 2.0
     PRIZE_WEIGHT: float = 0.1
     PRIZE_MAX: float = 0.4
+    # The race to domination (80% of the map's region points): a civ this close to the target
+    # is everyone's runaway, a war against it is not given up while it can be fought, and a
+    # civ this close itself pushes for the prizes that would finish it.
+    NEAR_VICTORY: float = 0.75
+    LAST_PUSH: float = 0.4
+    HOLD_THE_LEADER: float = 0.6  # the edge at which a war on a near-winner is still fought on
     EASY: float = -0.3  # added to the worth of attacking a human ruler on the easy setting ...
     HARD: float = 0.2  # ... and on the hard one
 
@@ -125,6 +131,10 @@ class UtilityBrain:
         size = you["population"] + you["territory"]
         leader = max(neighbors, key=lambda n: (n["population"] + n["territory"], n["name"]), default=None)
         runaway = leader["name"] if leader and leader["population"] + leader["territory"] >= p.RUNAWAY * size else None
+        # Whoever is close to winning outright is the runaway, whatever its size.
+        closing = max(neighbors, key=lambda n: (n.get("victory_share", 0.0), n["name"]), default=None)
+        if closing and closing.get("victory_share", 0.0) >= p.NEAR_VICTORY:
+            runaway = closing["name"]
         supplier = any(n["water_rich"] and n["their_stance_toward_you"] in ("trade", "ally") for n in neighbors)
         strategy = self._strategy(context, edges, threats)
         # Allies count: what they bring to a fight, and the wars they are already in.
@@ -200,6 +210,10 @@ class UtilityBrain:
             edge = max(edge, 1.0) * p.SICK_EDGE  # they are laid low: now is the time
         disaster = n.get("holds_your_capital") or you.get("routed_ticks_ago") is not None
         committed = age < p.WAR_MIN and not disaster
+        if n.get("victory_share", 0.0) >= p.NEAR_VICTORY and edge >= p.HOLD_THE_LEADER and not disaster:
+            entry.update(stance="aggression", troop_commitment=self._commitment(edge, wars, zeal))
+            notes.append((3, f"{n['name']} is close to ruling the map: the war goes on"))
+            return
         if n.get("you_hold_their_capital") or committed or edge >= 1.3 or (edge >= 0.85 and not weary):
             entry.update(stance="aggression", troop_commitment=self._commitment(edge, wars, zeal))
             notes.append((2, f"pressing the war on {n['name']}"))
@@ -374,6 +388,9 @@ class UtilityBrain:
         if prize and prize["value"] > p.PRIZE_FREE:
             score += min(p.PRIZE_MAX, p.PRIZE_WEIGHT * (prize["value"] - p.PRIZE_FREE))
             why = f"{n['name']} holds {prize['region']}, which we want for {prize['why']}"
+        if prize and you.get("points", {}).get("share", 0.0) >= p.NEAR_VICTORY:
+            score += p.LAST_PUSH
+            why = f"{prize['region']} would bring the map within our grasp"
         # The long view: the civ it has set out to conquer is attacked sooner, and a civ set on
         # something else is slower to fight at all.
         if strategy["kind"] == "conquest":

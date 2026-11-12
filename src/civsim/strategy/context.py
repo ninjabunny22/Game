@@ -63,6 +63,7 @@ def _march(sim, civ, other) -> tuple[int | None, float]:
 
 def stance_context(sim, civ) -> dict:
     diplomacy = sim.diplomacy
+    need_points, need_regions = sim.domination_target()
     tree = sim.tech_tree
     mods = sim.modifiers[civ.id]
 
@@ -140,6 +141,8 @@ def stance_context(sim, civ) -> dict:
             "your_current_stance": diplomacy.intent(civ.id, other_id).stance.value,
             # Their region worth most to you (strategy/geography.py), and why.
             "prize": prize,
+            # Region points they hold, as a share of what wins by domination (1.0: they have won).
+            "victory_share": round(sim.points_held(other) / max(1, need_points), 2),
         })
 
     surplus, lacking = _surplus_and_lacking(civ, mods)
@@ -193,6 +196,9 @@ def stance_context(sim, civ) -> dict:
         "player": sim.civs[sim.ruler.civ_id].name if sim.ruler.civ_id is not None else None,
         "difficulty": sim.config.difficulty,
         "neutral_regions": sum(1 for region in sim.world.regions if region.neutral),
+        # Domination: region points held, and what wins (that many points and regions).
+        "points": {"held": sim.points_held(civ), "needed": need_points, "regions_needed": need_regions,
+                   "share": round(sim.points_held(civ) / max(1, need_points), 2)},
         # The regions it does not hold that are worth most to it, and why (strategy/geography.py).
         "prizes": [{"region": sim.world.regions[r].name, "held_by": _holder(sim, r), "value": round(v.total, 1),
                     "why": v.reason} for r, v in sim.geography.prizes(civ, sim.tick)],
