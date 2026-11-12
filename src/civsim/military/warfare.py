@@ -563,7 +563,12 @@ class Military:
         start = civ.capital.tile
         target = min((s.tile for s in enemy.settlements),
                      key=lambda t: (self._gap(start, t) + WALL_DETOUR * self.tile_price(civ, t), t))
-        city = min((s.tile for s in civ.settlements), key=lambda t: (self._gap(t, target), t))
+        # It gathers in the city nearest the target that one of its own armies can reach in time.
+        cities = [s.tile for s in civ.settlements]
+        within = [t for t in cities if any(self._gap(a.tile, t) <= RALLY_REACH for a in mine)]
+        largest = max(mine, key=lambda a: (a.size, -a.id))
+        city = (min(within, key=lambda t: (self._gap(t, target), t)) if within
+                else min(cities, key=lambda t: (self._gap(t, largest.tile), t)))
         rally = Rally(self.next_id(), civ.id, enemy_id, city, target, tick, tick + RALLY_GATHER)
         self.rallies.append(rally)
         for army in mine:
