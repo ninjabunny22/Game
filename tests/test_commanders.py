@@ -121,7 +121,7 @@ def test_a_beaten_army_falls_back_on_the_nearest_capital_it_holds(sim):
     assert len(civ.settlements) >= 2
     far = max((s.tile for s in civ.settlements), key=lambda t: sim.military._gap(civ.capital.tile, t))
     assert far != civ.capital.tile
-    loser.tile, loser.state, loser.path = next(sim.world.neighbors(far)), "retreating", []
+    loser.tile, loser.state, loser.path = sim.world.neighbors(far)[0], "retreating", []
     sim.military._plan(civ, loser, sim.tick)
     assert loser.path and loser.path[-1] == far
     loser.tile = far

@@ -215,7 +215,7 @@ def test_a_better_commander_wins_an_otherwise_even_fight(sim):
     a, b = sim.civs[0], sim.civs[1]
     army = go_to_war(sim, a, b, soldiers=(100, 100))
     other = field(b, a)
-    other.tile, other.path = sim.world.neighbors(army.tile).__next__(), []
+    other.tile, other.path = sim.world.neighbors(army.tile)[0], []
     for civ in (a, b):  # same population, so the same militia: only leadership differs
         civ.population = 300
     # Neutral ground for both: fight outside either territory.
@@ -241,7 +241,7 @@ def face_off(sim, a, b, soldiers=(100, 100)):
     """Two field armies side by side on ground neither civ owns."""
     army = go_to_war(sim, a, b, soldiers=soldiers)
     other = field(b, a)
-    other.tile, other.path = next(sim.world.neighbors(army.tile)), []
+    other.tile, other.path = sim.world.neighbors(army.tile)[0], []
     for civ in (a, b):
         civ.population = 300
     for tile in (army.tile, other.tile):

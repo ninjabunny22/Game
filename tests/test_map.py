@@ -50,3 +50,15 @@ def test_territory_encoding_is_one_byte_per_tile_for_any_civ_id():
     assert list(owners[:4]) == [3, 12, 254, 255]
     with pytest.raises(ValueError):
         world.claim(3, 255)
+
+
+def test_neighbours_are_the_tiles_beside_in_bounds_in_a_fixed_order():
+    world = generate_map(4, 7, 5)
+    for i in range(world.width * world.height):
+        x, y = world.xy(i)
+        four = [world.idx(x + dx, y + dy) for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1))
+                if world.in_bounds(x + dx, y + dy)]
+        eight = four + [world.idx(x + dx, y + dy) for dx, dy in ((1, 1), (1, -1), (-1, 1), (-1, -1))
+                        if world.in_bounds(x + dx, y + dy)]
+        assert list(world.neighbors(i)) == four
+        assert list(world.neighbors(i, diagonal=True)) == eight

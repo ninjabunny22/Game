@@ -783,7 +783,8 @@ class Diplomacy:
         harbours = ports(attacker, world) if self.mods[attacker.id].boats else set()
         boats = bool(harbours)
         seen = set(attacker.territory)
-        frontier = sorted(t for t in seen if world.walkable(t))  # setting out from land, not from its waters
+        # Setting out from the land along its edge (inner tiles lead nowhere new), not from its waters.
+        frontier = sorted(t for t in seen if world.walkable(t) and any(n not in seen for n in world.neighbors(t)))
         for _ in range(rules.REACH + BOAT_RANGE + self.mods[attacker.id].boat_range if boats else rules.REACH):
             found, reached = [], []
             for tile in frontier:
