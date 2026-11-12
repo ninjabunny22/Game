@@ -13,8 +13,8 @@ style). Balance and timing have not had their dedicated pass yet.
 
 - **Maps:** nine hand-drawn maps, three per size (README table), built from blueprints in
   `map/designs`, checked against their drawing and saved in `data/maps`:
-  - small 72² (12–13 regions), medium 96² (16–17), large about 25,000 tiles (33–36 regions,
-    160², 224×112, 176×144);
+  - small 72² (12–13 regions), medium 96² (16–17), large about 25,000 tiles (34–36 regions,
+    160², 256×112, 176×144);
   - fixed start slots for each number of civs (2–5, Confluence 2–3, small 2–4), civs given
     slots at random;
   - impassable high peaks with passes, old bridges, native strongholds (1.5–3× garrison,

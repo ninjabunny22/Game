@@ -1,25 +1,28 @@
-"""The Long March: one long continent, eleven bands from west to east, each a north coast (cold:
-tundra, pine, iron, fish), a spine of hills and a south coast (warm grain). In the middle, the
-Crossroads: a great lake, the best farmland and a stronghold. The west is the east in a mirror,
-so each start has its twin; the far ends are quiet, timber-rich backwaters."""
+"""The Long March: one long continent, twelve bands from west to east, each a north coast (cold:
+tundra, pine, iron, fish), a spine of hills and a south coast (warm grain). In the middle the
+two central bands share the Crossroads: a great lake, the best farmland and a stronghold. The
+west is the east in a mirror, so each start has its twin; the far ends are quiet, timber-rich
+backwaters."""
 
 from ..biomes import Biome
 from ..blueprint import Blueprint, Ridge, RegionSpec
 from ..shapes import Circle, Polygon, Rect
 
-W, H = 224, 112
-BANDS = 11
-X0, X1 = 6, 218
+W, H = 256, 112
+BANDS = 12
+X0, X1 = 6, 250
 ROWS = {"north": (-5, 40), "spine": (40, 72), "south": (72, 120)}
+MIDDLE = (5, 6)  # the two central bands, whose spines are the Crossroads
 NAMES = [  # per band west to east: north, spine, south
     ("Frostend", "Greyspine", "Westhaven"), ("Pinewick", "Larkfell", "Barleyhythe"),
     ("Sealmoor", "Rookfell", "Corncombe"), ("Ironwold", "Hawkfell", "Wheatley"),
-    ("Snowmere", "Kitefell", "Oatfield"), ("Northcross", "The Crossroads", "Southcross"),
-    ("Coldmere", "Merlinfell", "Ryefield"), ("Steelwold", "Falconfell", "Hayley"),
-    ("Walrusmoor", "Ravenfell", "Millcombe"), ("Firwick", "Owlfell", "Hopshythe"),
-    ("Iceend", "Duskspine", "Easthaven"),
+    ("Snowmere", "Kitefell", "Oatfield"), ("Northcross", None, "Southcross"),
+    ("Coldcross", None, "Suncross"), ("Coldmere", "Merlinfell", "Ryefield"),
+    ("Steelwold", "Falconfell", "Hayley"), ("Walrusmoor", "Ravenfell", "Millcombe"),
+    ("Firwick", "Owlfell", "Hopshythe"), ("Iceend", "Duskspine", "Easthaven"),
 ]
-SLOTS = {"West End": 0, "West March": 3, "Middle": 5, "East March": 7, "East End": 10}
+SLOTS = {"West End": (0, 0), "West March": (3, 3), "Middle": (5, 6), "East March": (8, 8), "East End": (11, 11)}
+PEAKS = (2, 10)  # the spine is impassable where these bands begin
 
 
 def _k(name: str) -> str:
@@ -35,55 +38,61 @@ def _mirror(x: float) -> float:
     return W - x
 
 
+def _spine(b: int) -> str:
+    return "crossroads" if b in MIDDLE else _k(NAMES[b][1])
+
+
 def blueprint() -> Blueprint:
-    land = Polygon(((X0, 30), (14, 12), (40, 9), (112, 12), (184, 9), (210, 12), (X1, 30),
-                    (X1, 82), (210, 100), (184, 103), (112, 100), (40, 103), (14, 100), (X0, 82)))
+    land = Polygon(((X0, 30), (14, 12), (40, 9), (128, 12), (216, 9), (242, 12), (X1, 30),
+                    (X1, 82), (242, 100), (216, 103), (128, 100), (40, 103), (14, 100), (X0, 82)))
     regions, links, zones, patches, deposits, mines = [], [], [], [], [], []
     for b, names in enumerate(NAMES):
         x0, x1 = _band(b)
         mx = int((x0 + x1) / 2)
-        if b > BANDS // 2:  # the east is the west's mirror image, down to the capitals' tiles
-            mx = W - 1 - int(_band(BANDS - 1 - b)[0] + (x1 - x0) / 2)
+        if b >= BANDS // 2:  # the east is the west's mirror image, down to the capitals' tiles
+            mx = W - 1 - int(sum(_band(BANDS - 1 - b)) / 2)
         left, right = (-5 if b == 0 else x0), (W + 5 if b == BANDS - 1 else x1)
         for row, name in zip(("north", "spine", "south"), names):
+            if name is None:
+                continue
             y0, y1 = ROWS[row]
             cy = {"north": 26, "spine": 56, "south": 86}[row]
-            cx = mx
-            if row == "spine" and b == 5:
-                cy = 66  # below the Crossroads lake
-            tags = ("prize", "crossroads") if b == 5 and row == "spine" else ()
-            regions.append(RegionSpec(_k(name), name, f"{name.split()[-1]}ton" if row != "spine" else f"{name.split()[-1]} Hold",
-                                      (cx, cy), Rect(left, y0, right, y1), strength=2.0 if tags else 1.0,
-                                      defects=not tags, tags=tags))
-        n, s, c = (_k(x) for x in names)
-        links += [(n, s, "land"), (s, c, "land")]
+            capital = f"{name.split()[-1]}ton" if row != "spine" else f"{name.split()[-1]} Hold"
+            regions.append(RegionSpec(_k(name), name, capital, (mx, cy), Rect(left, y0, right, y1)))
+        n, c = _k(names[0]), _k(names[2])
+        links += [(n, _spine(b), "land"), (_spine(b), c, "land")]
         if b < BANDS - 1:
-            n2, s2, c2 = (_k(x) for x in NAMES[b + 1])
-            links += [(n, n2, "land"), (c, c2, "land")]
-            if b not in (1, 8):  # two stretches of the spine are high peaks
-                links.append((s, s2, "land"))
+            links += [(n, _k(NAMES[b + 1][0]), "land"), (c, _k(NAMES[b + 1][2]), "land")]
+            if b + 1 not in PEAKS and not (b in MIDDLE and b + 1 in MIDDLE):
+                links.append((_spine(b), _spine(b + 1), "land"))
+    # The Crossroads: one region across the two central spines.
+    cross = (_band(MIDDLE[0])[0], _band(MIDDLE[1])[1])
+    regions.append(RegionSpec("crossroads", "The Crossroads", "Crossroads Hold", (127, 66),
+                              Rect(cross[0], 40, cross[1], 72), strength=2.0, defects=False,
+                              tags=("prize", "crossroads")))
+    links = list(dict.fromkeys(links))  # each spine joins the Crossroads once from each side
     # The spine: hills all along, and two impassable stretches near the ends.
     zones.append((Rect(0, 46, W, 66), Biome.HILLS))
-    ridges = [Ridge(((_band(2)[0], 40), (_band(2)[0], 72)), width=3.0, flank=1.0),
-              Ridge(((_band(9)[0], 40), (_band(9)[0], 72)), width=3.0, flank=1.0)]
+    ridges = [Ridge(((_band(b)[0], 40), (_band(b)[0], 72)), width=3.0, flank=1.0) for b in PEAKS]
     # North: tundra on the coldest coast, pine woods, iron. South: grain.
     zones.append((Rect(0, 0, W, 17), Biome.TUNDRA))
     patches += [(Rect(0, 17, W, 46), Biome.FOREST, 0.45), (Rect(0, 66, W, H), Biome.FOREST, 0.12)]
     for b in range(BANDS):
         x0, x1 = _band(b)
         mx = (x0 + x1) / 2
-        deposits.append(("iron", (int(mx) - 3, 50), 5 if 2 <= b <= 8 else 3))
-        deposits.append(("fertile_soil", (int(mx) + 2, 80), 6 if 2 <= b <= 8 else 4))
+        inner = 2 <= b <= BANDS - 3
+        deposits.append(("iron", (int(mx) - 3, 50), 5 if inner else 3))
+        deposits.append(("fertile_soil", (int(mx) + 2, 80), 6 if inner else 4))
         deposits.append(("game", (int(mx) - 4, 30), 4))
-        if b in (0, 10):  # the backwaters' timber
+        if b in (0, BANDS - 1):  # the backwaters' timber
             patches.append((Rect(x0, 0, x1, H), Biome.FOREST, 0.5))
     # The Crossroads: a great lake and the best farmland, and gold in the spine either side.
-    cx = (W / 2)
+    cx = W / 2
     lakes = [Circle(cx, 55, 5.0)]
-    zones.append((Rect(_band(5)[0], 40, _band(5)[1], 72), Biome.PLAINS))
-    deposits += [("fertile_soil", (int(cx) - 8, 50), 9), ("fertile_soil", (W - 1 - (int(cx) - 8), 50), 9)]
-    spine4 = int((_band(4)[0] + _band(4)[1]) / 2)
-    mines += [(int(cx), 45), (spine4, 60), (W - 1 - spine4, 60)]
+    zones.append((Rect(cross[0], 40, cross[1], 72), Biome.PLAINS))
+    deposits += [("fertile_soil", (int(cx) - 10, 50), 9), ("fertile_soil", (W - 1 - (int(cx) - 10), 50), 9)]
+    spine = int(sum(_band(MIDDLE[0] - 1)) / 2)
+    mines += [(int(cx) - 1, 45), (spine, 60), (W - 1 - spine, 60)]
     rivers = [[(_band(2)[0] + 6, 66), (_band(2)[0] + 5, 85), (_band(2)[0] + 6, 104)],
               [(_mirror(_band(2)[0] + 6), 66), (_mirror(_band(2)[0] + 5), 85), (_mirror(_band(2)[0] + 6), 104)],
               [(_band(4)[0] + 3, 46), (_band(4)[0] + 4, 25), (_band(4)[0] + 3, 6)],
@@ -93,8 +102,10 @@ def blueprint() -> Blueprint:
         premise="A long continent: neighbours fight, the far ends are safe, and the Crossroads lies in the middle.",
         best="2 to 5",
         land=[land], coast_noise=1.3, zones=zones, patches=patches, ridges=ridges, lakes=lakes, rivers=rivers,
-        deposits=deposits, scatter=[("fish", 36, None)], mines=mines, regions=regions, links=links,
-        starts={slot: (_k(NAMES[b][2]), _k(NAMES[b][0])) for slot, b in SLOTS.items()},
+        deposits=deposits, scatter=[("fish", 40, None)], mines=mines, regions=regions, links=links,
+        # Each slot holds its band's south coast and north coast, the spine between them; the
+        # Middle holds the south coasts of the two central bands, the Crossroads above them.
+        starts={slot: (_k(NAMES[a][2]), _k(NAMES[b][0] if a == b else NAMES[b][2])) for slot, (a, b) in SLOTS.items()},
         sets={2: ["West End", "East End"], 3: ["West End", "Middle", "East End"],
               4: ["West End", "West March", "East March", "East End"], 5: list(SLOTS)},
     )

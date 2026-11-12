@@ -59,7 +59,7 @@ MAPS = {
     "large": [{"id": "five_gates", "name": "The Five Gates", "file": True, "width": 160, "height": 160,
                "civs": (2, 5), "best": "5",
                "premise": "Five home lands round a walled heartland; each has its own gate into the Old Crown."},
-              {"id": "long_march", "name": "The Long March", "file": True, "width": 224, "height": 112,
+              {"id": "long_march", "name": "The Long March", "file": True, "width": 256, "height": 112,
                "civs": (2, 5), "best": "2 to 5",
                "premise": "A long continent: neighbours fight, the far ends are safe, and the Crossroads lies in the middle."},
               {"id": "narrow_sea", "name": "The Narrow Sea", "file": True, "width": 176, "height": 144,
