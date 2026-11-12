@@ -37,6 +37,9 @@ const MAX_RANKS := 8  # ... up to this many behind whoever leads it
 const RANK_SPACING := 0.34
 const STRIKES := ["attack", "shoot"]  # what a model's fighting animation may be called
 const BOAT_LENGTH := 0.95
+## Siege engines an army brings up to an enemy capital's walls: [model, size, where (behind the leader)].
+const SIEGE_ENGINES := [["civsim_ram", 0.55, Vector3(0.0, 0, 0.45)], ["civsim_catapult", 0.5, Vector3(0.55, 0, -0.65)]]
+const SIEGE_REACH := 3  # tiles from an enemy capital within which a besieging army has its engines up
 const GARRISON_SPOT := Vector3(0.8, 0, 1.15)  # the garrison is drawn up in the castle's front court
 const AT_THE_GATE := Vector3(0, 0, 2.9)  # a field army in one of its own capitals waits outside the gate
 const AT_ARMS := ["fighting", "besieging"]  # army states shown as striking
@@ -55,14 +58,16 @@ var _detail := 0  # 0 whole-map view, 1 closer, 2 full detail
 var _swell := 0.0
 var _characters: RefCounted  # characters.gd
 var _adventurers: RefCounted  # adventurers.gd
+var _models: RefCounted  # models.gd: the ship and the siege engines
 var _posted := {}  # "civ:name" -> {"node", "look", "target"}: generals in reserve, at their capitals
 var _capitals := {}  # "x,y" -> civ id, of every capital a civ holds (from the last tick)
 
 
 func setup(terrain: Node3D, init: Dictionary, civ_colors: Array, characters: RefCounted,
-		adventurers: RefCounted) -> void:
+		adventurers: RefCounted, models: RefCounted) -> void:
 	_characters = characters
 	_adventurers = adventurers
+	_models = models
 	for child in get_children():
 		child.queue_free()
 	_armies.clear()
@@ -95,10 +100,11 @@ func update(armies: Array, villagers: Array) -> void:
 		entry["state"] = str(army["state"])
 		entry["afloat"] = bool(army.get("boat", false))
 		if entry["afloat"] and not entry.has("boat"):
-			var boat: Node3D = _characters.instance("Boat", _civ_colors[civ], 0.0, BOAT_LENGTH)
+			var boat: Node3D = _models.instance("civsim_ship", _models.tinted_material(_civ_colors[civ]), BOAT_LENGTH)
 			if boat != null:
 				entry["node"].add_child(boat)
 				entry["boat"] = boat
+		_show_siege_engines(entry, civ, army)
 		entry["size"] = int(army["size"])
 		entry["general"] = str(commander["name"]) if commander != null else ""
 		# An army too far from the player's own armies and cities to count is shown roughly.
@@ -179,6 +185,8 @@ func _show_army(entry: Dictionary) -> void:
 	(entry["dust"] as CPUParticles3D).emitting = figure.visible and entry.get("state", "") in AT_ARMS
 	if entry.has("boat"):
 		entry["boat"].visible = _detail >= 1 and afloat
+	if entry.has("engines"):  # up only at an enemy capital's walls, and seen from closer in
+		(entry["engines"] as Node3D).visible = entry.get("at_walls", false) and _detail >= 1 and not afloat
 	marker.visible = _detail == 0 and is_field
 	if _detail == 0:
 		label.visible = is_field
@@ -364,6 +372,30 @@ func _ranks(army: Dictionary) -> Array:
 	return ranks
 
 
+## An army at the walls of another civ's capital brings up a catapult and a ram.
+func _show_siege_engines(entry: Dictionary, civ: int, army: Dictionary) -> void:
+	var at_walls := false
+	if str(army["state"]) == "besieging":
+		var x := int(army["x"])
+		var y := int(army["y"])
+		for dy in range(-SIEGE_REACH, SIEGE_REACH + 1):
+			for dx in range(-SIEGE_REACH, SIEGE_REACH + 1):
+				var holder := int(_capitals.get("%d,%d" % [x + dx, y + dy], -1))
+				if holder >= 0 and holder != civ:
+					at_walls = true
+	if at_walls and not entry.has("engines"):
+		var engines := Node3D.new()
+		var material: Material = _models.tinted_material(_civ_colors[civ])
+		for engine: Array in SIEGE_ENGINES:
+			var model: Node3D = _models.instance(engine[0], material, float(engine[1]))
+			if model != null:
+				model.position = engine[2]
+				engines.add_child(model)
+		entry["node"].add_child(engines)
+		entry["engines"] = engines
+	entry["at_walls"] = at_walls
+
+
 ## One soldier of a unit type: its model if there is one, the plain figure otherwise.
 func _soldier(unit_id: String, color: Color) -> Node3D:
 	var soldier: Node3D = null
@@ -373,9 +405,6 @@ func _soldier(unit_id: String, color: Color) -> Node3D:
 		soldier = _characters.instance(SOLDIER_MODELS[unit_id][0], color, SOLDIER_MODELS[unit_id][1])
 	if soldier == null:
 		return _soldier_figure(unit_id, color)
-	if unit_id == "spearman":  # the same man-at-arms, with a spear grounded beside him
-		_part(soldier, _cylinder(0.012, 0.78), WOOD, Vector3(0.16, 0.39, 0.06))
-		_part(soldier, _box(0.035, 0.09, 0.035), STEEL, Vector3(0.16, 0.81, 0.06))
 	return soldier
 
 

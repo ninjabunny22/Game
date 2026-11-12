@@ -32,7 +32,7 @@ const CELL := Vector2i(128, 256)
 const KITS := {
 	"Knight": {"handslot.r": "sword_2handed", "handslot.l": ""},
 	"Knight:swordsman": {"handslot.r": "sword_1handed", "handslot.l": "shield_round_color"},
-	"Knight:spearman": {"handslot.l": "shield_badge_color"},  # the spear is added by unit_view
+	"Knight:spearman": {"handslot.r": "civsim_spear", "handslot.l": "shield_badge_color"},  # the spear is made in Blender
 	"Barbarian": {"handslot.r": "axe_2handed"},
 	"Ranger": {"handslot.l": "bow_withString"},
 	"Rogue": {"handslot.r": "dagger", "handslot.l": "dagger"},

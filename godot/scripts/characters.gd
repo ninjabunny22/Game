@@ -1,9 +1,10 @@
 extends RefCounted
 ## Loads our own models in res://assets/characters straight from their .glb files at run
-## time: the rigged, animated Archer, Villager, Rider and Knight (cavalry), and the static
-## Stable, Harbour and Boat: what neither KayKit pack has. (Castles are put together from the
-## Hexagon pack's pieces in civ_view.gd.) Generals and
-## foot soldiers are the Adventurers pack's (adventurers.gd). Each file is read once; every figure on the map is a copy of that.
+## time: the rigged, animated Archer, Villager, Rider and Knight (cavalry), which neither
+## KayKit pack has. (Castles are put together from the Hexagon pack's pieces in civ_view.gd;
+## the ship, harbour, stable, gold mine and siege engines are made in Blender, see
+## tools/blender/make_models.py.) Generals and foot soldiers are the Adventurers pack's
+## (adventurers.gd). Each file is read once; every figure on the map is a copy of that.
 ##
 ## The models carry plain named materials rather than a texture, so a figure is put in
 ## its civ's colour by swapping the material of that name (the commander's cloth, the
@@ -14,17 +15,15 @@ const DIR := "res://assets/characters/"
 ## The material on each model that takes the owner's colour.
 const TEAM_MATERIALS := {
 	"Villager": ["tunic_moss"], "Rider": ["tunic_moss", "saddle_blanket"],
-	"Stable": ["cloth_team"], "Boat": ["cloth_team"], "Harbour": ["cloth_team"],
 	"Knight": ["cloth_team", "cloth_deep"], "Archer": ["cloth_team"],
 }
 
-## Parts of a model that are left out: the stable comes on a wide plate of grass, which would
-## either bury the neighbouring tiles or force the building itself to be drawn tiny.
-const LEFT_OUT := {"Stable": ["grass"], "Harbour": ["grass", "dirt"]}
-## Models made of thousands of small parts that never move: each is welded into one mesh
-## with a surface per material when it is loaded, or every castle on the map would cost
-## thousands of draw calls.
-const WELDED := ["Stable", "Harbour", "Boat"]
+## Parts of a model that are left out, by material: none at present (the old stable and
+## harbour came on plates of grass).
+const LEFT_OUT := {}
+## Models made of thousands of small parts that never move, welded into one mesh with a
+## surface per material when loaded: none at present (the old castles, ship and harbour were).
+const WELDED := []
 ## Models that stand on their own origin rather than the middle of their bounding box: the
 ## knight's lance reaches far out in front, and centring the box would push the horse back.
 const ON_ORIGIN := ["Knight"]

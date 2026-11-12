@@ -183,7 +183,15 @@ copies in `godot/assets/`.
 |---|---|---|---|
 | `godot/assets/kaykit/` | Medieval Hexagon | buildings, building sites, props, trees, mountains, rocks, water plants | `scripts/models.gd` |
 | `godot/assets/adventurers/` | Adventurers | the six generals, the foot soldier, their weapons and animations | `scripts/adventurers.gd` |
-| `godot/assets/characters/` | our own | archer, cavalry knight, villager, rider, ship, stable, harbour | `scripts/characters.gd` |
+| `godot/assets/kaykit/civsim_*` | made in Blender, painted from the Hexagon texture | gold mine, ship, harbour, stable, catapult, ram | `scripts/models.gd` |
+| `godot/assets/adventurers/civsim_spear` | made in Blender, painted from the knight's texture | the spearman's spear | `scripts/adventurers.gd` |
+| `godot/assets/characters/` | our own, older | archer, cavalry knight, villager, rider | `scripts/characters.gd` |
+
+The Blender models are built by a script, `tools/blender/make_models.py`
+(`/Applications/Blender.app/Contents/MacOS/Blender -b -P tools/blender/make_models.py`): each
+part is a low-poly primitive painted from one cell of a pack texture, light at its top and
+darker at its foot like the pack's own, so the parts painted from the faction cell take each
+civ's colour. `godot/tests/models_view.gd`, `castle_view.gd` and `units_view.gd` photograph them.
 
 The pack's hex ground tiles and its terraced hills and grassy peaks are not used: they are
 shaped for a hex grid, and CivSim's map is square. `godot/tests/check_assets.gd` loads every
@@ -212,6 +220,9 @@ model the viewer uses and checks the animations, weapons and colours
 - Each building type maps to a model in `BUILDING_MODELS` (`civ_view.gd`).
   Types that share a model carry a small pennant in the type's colour; models
   with nothing to repaint (fields, walls, stockpiles) fly their owner's flag.
+- **Ships.** An army that puts out from a harbour is drawn as its ship alone, a three-masted cog
+  with sails striped in its civ's colour: its general and soldiers are not seen again until it
+  lands. **Siege engines:** an army besieging another civ's capital brings up a ram and a catapult.
 - **Buildings.** A building going up shows the pack's three construction stages in turn.
   Barracks have a weapon
   rack and an archery butt, the academy a butt and a tent, the market crates. The fortress is

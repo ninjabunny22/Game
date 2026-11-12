@@ -198,7 +198,7 @@ func _on_init(data: Dictionary) -> void:
 		_civ_colors.append(Color.html(civ["color"]))
 	_terrain.build(data["map"], data["biomes"], Color.html(data["native_faction"]["color"]), _models, data["regions"])
 	_civ_view.setup(_terrain, data, _civ_colors, _models, _characters)
-	_unit_view.setup(_terrain, data, _civ_colors, _characters, _adventurers)
+	_unit_view.setup(_terrain, data, _civ_colors, _characters, _adventurers, _models)
 	_hud.setup(data)
 	_camera.focus(_terrain.center(), maxf(_terrain.map_width, _terrain.map_height) * 1.15)
 	# CIVSIM_VIEW="x,y,distance" starts the camera on a tile instead of the whole map.

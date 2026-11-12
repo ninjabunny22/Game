@@ -41,8 +41,8 @@ const BUILDING_MODELS := {
 	"factory": {"model": "building_blacksmith_green", "size": 0.98, "tinted": true, "marker": true},
 	"aqueduct": {"model": "building_bridge_A", "size": 0.95, "lift": 0.45},
 	# A quay with a warehouse and a ship alongside; it is turned so the quay is on the water.
-	"harbour": {"scene": "Harbour", "size": 0.95, "faces_water": true,
-		"model": "building_watermill_green", "tinted": true},
+	# Made in Blender (tools/blender/make_models.py): turned so its pier runs out over the water.
+	"harbour": {"model": "civsim_harbour", "size": 0.95, "faces_water": true, "tinted": true},
 	# Barracks keep their arms racked outside, and a butt to practise on.
 	"barracks": {"model": "building_barracks_green", "size": 0.88, "tinted": true,
 		"props": [["weaponrack", 0.2, Vector3(0.4, 0, 0.3)], ["target", 0.2, Vector3(0.36, 0, -0.38)]]},
@@ -51,7 +51,7 @@ const BUILDING_MODELS := {
 	"walls": {"model": "wall_straight", "alt": "wall_straight_gate", "size": 0.98},
 	"fortress": {"model": "building_tower_catapult_green", "size": 0.8, "tinted": true},
 	# Its own model, from assets/characters.
-	"stables": {"scene": "Stable", "size": 0.95},
+	"stables": {"model": "civsim_stable", "size": 0.95, "tinted": true},  # made in Blender
 }
 # Capitals have their own models in assets/characters; the pack's castle and tower stand in
 # if a file is missing.
@@ -65,7 +65,7 @@ const KEEP := "building_castle_green"
 const SITE_STAGES := ["building_stage_A", "building_stage_B", "building_stage_C"]
 const SITE_SIZE := 0.85
 ## Every pack model drawn other than through BUILDING_MODELS, for the asset check.
-const EXTRA_MODELS := ["building_destroyed", "building_scaffolding", "flag_green", "wall_straight", "wall_straight_gate",
+const EXTRA_MODELS := ["civsim_gold_mine", "civsim_ship", "civsim_catapult", "civsim_ram", "building_destroyed", "building_scaffolding", "flag_green", "wall_straight", "wall_straight_gate",
 	"fence_wood_straight", "fence_wood_straight_gate", "building_tower_base_green", "building_tower_A_green",
 	"building_tower_catapult_green", "building_church_green", "building_blacksmith_green", "building_well_green",
 	"building_tavern_green", "building_market_green", "building_castle_green", "building_tower_A_green", "building_stage_A",
@@ -153,14 +153,12 @@ func _castle_piece(root: Node3D, model: String, material: Material, size: float,
 
 
 ## A gold mine: a fixed site on its vein, in the colours of whoever holds its region.
-const GOLD_MINE := {"model": "building_mine_green", "size": 0.85, "tinted": true,
-	"props": [["sack", 0.12, Vector3(0.38, 0, 0.3)], ["crate_B_small", 0.12, Vector3(0.42, 0, 0.12)],
-		["sack", 0.12, Vector3(0.3, 0, 0.42)]]}
+const GOLD_MINE := {"model": "civsim_gold_mine", "size": 1.0, "tinted": true}  # made in Blender
 ## A capital an enemy has broken into: rubble against its walls while the hold lasts.
 const RUIN_SPOTS := [["building_destroyed", 1.0, Vector3(-1.1, 0, 1.4)], ["building_destroyed", 0.85, Vector3(1.3, 0, -1.2)],
 	["building_scaffolding", 0.9, Vector3(1.25, 0, 1.35)]]
 
-const WATER_SIDE := 0.0  # turn that brings the harbour model's quay round to face the water
+const WATER_SIDE := PI  # turn that brings the harbour model's pier round to face the water
 
 ## A village seen from afar, by how many buildings it has: [at least, tiles across, models].
 const VILLAGE_TIERS := [
@@ -602,6 +600,8 @@ func _make_building(civ_id: int, building: Dictionary) -> Node3D:
 	else:
 		# Face one of four ways, the same way every time for a given tile.
 		model.rotation.y = (x * 7 + y * 13) % 4 * PI / 2
+		if spec.get("faces_water", false):
+			model.rotation.y = _toward_water(spot, tiles * 0.5 + 0.5) + WATER_SIDE
 		model.position.y = float(spec.get("lift", 0.0)) * tiles
 		root.add_child(model)
 		var top: float = (_models.height(spec["model"], float(spec["size"])) + float(spec.get("lift", 0.0))) * tiles
@@ -673,7 +673,9 @@ func _make_village(civ_id: int, village: Dictionary) -> Node3D:
 ## True for a building type drawn with one of the pack's models, which can go in the batches.
 func _batchable(type: String) -> bool:
 	var spec: Dictionary = BUILDING_MODELS.get(type, {})
-	return spec.has("model") and not spec.has("scene") and not _models.parts(spec["model"], 1.0).is_empty()
+	# A harbour is turned to its water when placed, which the batches do not do.
+	return spec.has("model") and not spec.has("scene") and not spec.get("faces_water", false) \
+		and not _models.parts(spec["model"], 1.0).is_empty()
 
 
 ## Where a building stands and which way it faces: the same for a site and the finished thing.

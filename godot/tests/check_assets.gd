@@ -63,7 +63,7 @@ func _init() -> void:
 			_fail("%s: the skin changes with the civ" % texture)
 
 	# Our own characters and the pack's buildings and nature.
-	for model: String in ["Archer", "Knight", "Rider", "Villager", "Boat", "Stable", "Harbour"]:
+	for model: String in ["Archer", "Knight", "Rider", "Villager"]:
 		if not characters.has(model):
 			_fail("%s did not load" % model)
 	var names := {}
