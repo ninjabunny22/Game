@@ -8,7 +8,9 @@ from civsim.bridge import protocol
 from civsim.civ import VILLAGE_RANGE, Building
 from civsim.config import SimConfig
 from civsim.economy import advance_construction, manage_villagers
-from civsim.economy.buildings import find_site
+from civsim.economy.buildings import CASTLE_REACH, find_site
+
+BESIDE = CASTLE_REACH + 1  # the first ring outside a castle's ground
 from civsim.map import BIOME_INFO
 from civsim.simulation import Simulation
 from civsim.strategy import RuleBrain
@@ -40,7 +42,7 @@ def test_a_tile_holds_one_building(sim):
     civ = sim.civs[0]
     house, market = sim.building_defs["house"], sim.building_defs["market"]
     first = find_site(civ, sim.world, house)
-    assert reach(sim, first, civ.capital.tile) == 2, "right beside the castle, which has its own ground"
+    assert reach(sim, first, civ.capital.tile) == BESIDE, "right beside the castle, which has its own ground"
     civ.buildings.append(Building("house", first))
     assert find_site(civ, sim.world, house) != first
     assert find_site(civ, sim.world, market) != first, "nothing shares a tile"
@@ -50,18 +52,18 @@ def test_sites_beside_what_is_built_are_taken_before_new_ground_is_broken(sim):
     civ = sim.civs[0]
     far = tile_at(sim, civ, 5)
     workshop = sim.building_defs["workshop"]
-    assert reach(sim, find_site(civ, sim.world, workshop), civ.capital.tile) == 2
+    assert reach(sim, find_site(civ, sim.world, workshop), civ.capital.tile) == BESIDE
     civ.buildings.append(Building("house", far))
     # Fill the ground beside the castles: the next site is beside the far house.
     for _ in range(200):
         site = find_site(civ, sim.world, workshop)
-        if min(reach(sim, site, s.tile) for s in civ.settlements) > 2 and reach(sim, site, far) == 1:
+        if min(reach(sim, site, s.tile) for s in civ.settlements) > BESIDE and reach(sim, site, far) == 1:
             break
         civ.buildings.append(Building("granary", site))
     else:
         raise AssertionError("never built beside the far house")
     assert all(reach(sim, b.tile, far) <= 1 or any(reach(sim, b.tile, o.tile) <= 1 or
-               min(reach(sim, b.tile, s.tile) for s in civ.settlements) <= 2 for o in civ.buildings if o is not b)
+               min(reach(sim, b.tile, s.tile) for s in civ.settlements) <= BESIDE for o in civ.buildings if o is not b)
                for b in civ.buildings), "the town grew outward from what stood, never off on its own"
 
 

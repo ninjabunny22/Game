@@ -14,6 +14,9 @@ const RIVER_COLOR := Color(0.2, 0.5, 0.9)
 const NATIVE_TINT := 0.16
 const REGION_BORDER_COLOR := Color(0.07, 0.07, 0.09)
 const REGION_BORDER_WIDTH := 0.14
+const CASTLE_PAD := 2  # tiles each way from a capital that are levelled flat for its castle ...
+const PAD_EASE := 2  # ... and how many more over which the level eases back into the land
+const PAD_ABOVE_SEA := 0.02  # a castle's ground stays at least this high (in map height) above the sea
 const LAKE_DEPTH := 0.9  # how far the bed of a lake is sunk below its surface, so the water has depth
 const TREES_PER_TILE := 2
 const STAND_SHARE := 0.35  # share of forest tiles drawn as a stand of trees rather than single ones
@@ -84,13 +87,15 @@ var _material: StandardMaterial3D
 var _region_ids := PackedInt32Array()
 var _is_land := PackedByteArray()
 var _native_color := Color(0.6, 0.55, 0.48)
+var _castle_ground := {}  # tiles where a capital's castle stands, and the ring around them
 var _region_lines: MeshInstance3D
 var _water_material: ShaderMaterial
 var _trees: Array = []  # every forest tree: {multimesh, index, place, felled}
 var _clearings := {}  # key -> [centre, radius]: where trees are felled for a large building
 
 
-func build(map: Dictionary, biomes: Array, native_color: Color, models: RefCounted) -> void:
+## `capitals` is the init message's list of regions: each capital's ground is levelled for its castle.
+func build(map: Dictionary, biomes: Array, native_color: Color, models: RefCounted, capitals: Array = []) -> void:
 	for child in get_children():
 		child.queue_free()
 	_trees.clear()
@@ -112,8 +117,8 @@ func build(map: Dictionary, biomes: Array, native_color: Color, models: RefCount
 	var hills: Array[int] = []
 
 	var size := map_width * map_height
-	var heights: Array = map["heights"]
 	var biome_ids: Array = map["biomes"]
+	var heights: Array = _level_capitals(map["heights"], biome_ids, water, capitals)
 	_heights.resize(size)
 	_region_ids.resize(size)
 	_is_land.resize(size)
@@ -182,6 +187,47 @@ func build(map: Dictionary, biomes: Array, native_color: Color, models: RefCount
 	_add_mountains(mountains, models)
 	_add_hills(hills, models)
 	_add_shallows(lakes, models)
+
+
+## The ground under each region capital, levelled so its castle stands on it rather than
+## half inside a hillside: flat across the castle's square, then easing back into the land
+## around it. Only the drawn ground changes; water tiles and the simulation's map do not.
+func _level_capitals(heights: Array, biome_ids: Array, water: Dictionary, capitals: Array) -> Array:
+	var levelled := heights.duplicate()
+	_castle_ground.clear()
+	for capital: Dictionary in capitals:
+		var cx := int(capital["x"])
+		var cy := int(capital["y"])
+		# No peak or boulder stands where the castle will.
+		for dy in range(-CASTLE_PAD - 1, CASTLE_PAD + 2):
+			for dx in range(-CASTLE_PAD - 1, CASTLE_PAD + 2):
+				if cx + dx >= 0 and cy + dy >= 0 and cx + dx < map_width and cy + dy < map_height:
+					_castle_ground[(cy + dy) * map_width + cx + dx] = true
+		var ground: Array[float] = []
+		for dy in range(-CASTLE_PAD, CASTLE_PAD + 1):
+			for dx in range(-CASTLE_PAD, CASTLE_PAD + 1):
+				var x := cx + dx
+				var y := cy + dy
+				if x >= 0 and y >= 0 and x < map_width and y < map_height and not water[int(biome_ids[y * map_width + x])]:
+					ground.append(float(levelled[y * map_width + x]))
+		if ground.is_empty():
+			continue
+		ground.sort()
+		var pad := maxf(ground[ground.size() / 2], PAD_ABOVE_SEA)  # the middle height: no deep pit, no tall mound
+		var reach := CASTLE_PAD + PAD_EASE
+		for dy in range(-reach, reach + 1):
+			for dx in range(-reach, reach + 1):
+				var x := cx + dx
+				var y := cy + dy
+				if x < 0 or y < 0 or x >= map_width or y >= map_height:
+					continue
+				var i := y * map_width + x
+				if water[int(biome_ids[i])]:
+					continue  # the shore stays where it is
+				var away := maxi(absi(dx), absi(dy)) - CASTLE_PAD  # 0 or less: under the castle
+				var keep := clampf(float(away) / float(PAD_EASE + 1), 0.0, 1.0)
+				levelled[i] = lerpf(pad, float(levelled[i]), keep)
+	return levelled
 
 
 ## Height of the ground at any point, between tile centres as well as on them.
@@ -565,7 +611,7 @@ func _add_scatter(tiles: Array[int], kinds: Array, share: float, size: float, si
 		var places: Array[Transform3D] = []
 		for tile: int in tiles:
 			var seed := tile * 109 + kinds.size() * 7 + int(size * 100.0)
-			if _hash(seed) > share or int(_hash(seed + 1) * 1000.0) % kinds.size() != kind:
+			if _hash(seed) > share or int(_hash(seed + 1) * 1000.0) % kinds.size() != kind or _castle_ground.has(tile):
 				continue
 			var px := float(tile % map_width) + (_hash(seed + 2) - 0.5) * 0.7
 			var pz := float(tile / map_width) + (_hash(seed + 3) - 0.5) * 0.7
@@ -584,7 +630,7 @@ func _add_peaks(mountains: Array[int], kinds: Array, models: RefCounted) -> void
 			var x := tile % map_width
 			var z := tile / map_width
 			# About one tile in three, picked irregularly and nudged off-centre so no pattern shows.
-			if _hash(tile * 23 + 7) > 0.36 or int(_hash(tile * 11) * 1000.0) % kinds.size() != kind:
+			if _hash(tile * 23 + 7) > 0.36 or int(_hash(tile * 11) * 1000.0) % kinds.size() != kind or _castle_ground.has(tile):
 				continue
 			var px := float(x) + (_hash(tile * 41) - 0.5) * 0.7
 			var pz := float(z) + (_hash(tile * 43) - 0.5) * 0.7

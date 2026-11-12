@@ -65,4 +65,4 @@ def test_science_never_piles_up_once_the_tree_is_finished():
         raised += len(sim._outbox)
         assert all(civ.science <= SCIENCE_BANK_CAP for civ in sim.civs)
     assert all(civ.research is None for civ in sim.civs), "nothing is left to research"
-    assert len(sim.tech_tree.techs) == 39, "and nobody adds to the tree"
+    assert len(sim.tech_tree.techs) == 42, "and nobody adds to the tree"

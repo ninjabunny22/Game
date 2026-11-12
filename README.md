@@ -123,8 +123,9 @@ The overlay is built for watching:
   tier better (strength x1.25, x1.55, x1.9; arms cost x1.15, x1.3, x1.5). Recruits get the
   best there is; older soldiers are re-armed, a few a day and for gold and ore, while they
   stand in one of the civ's capitals. An army in the field keeps what it has.
-- **Hospitals.** The wounded go to hospital beds (40 shown in every capital, 80 more for each
-  Hospital, up to three). After 10 days they are healed and join the garrison; they are back
+- **Hospitals.** Every capital's castle has its own hospital, with 40 beds shown. Field Medicine
+  (era 1), Surgeons (era 3) and Military Hospitals (era 5) each add 40 more to every castle. The
+  wounded go to these beds. After 10 days they are healed and join the garrison; they are back
   with an army only when it next fills its ranks. Wounded there is no bed for die.
 - **Ranks are filled at home.** An army takes soldiers from the garrison only while it stands
   in one of its civ's capitals. One worn down to under half of what its general can lead,
@@ -212,9 +213,16 @@ model the viewer uses and checks the animations, weapons and colours
   Types that share a model carry a small pennant in the type's colour; models
   with nothing to repaint (fields, walls, stockpiles) fly their owner's flag.
 - **Buildings.** A building going up shows the pack's three construction stages in turn.
-  The Gold Mine has sacks and crates at its door, the Hospital a field tent, barracks a weapon
+  The Gold Mine has sacks and crates at its door, barracks a weapon
   rack and an archery butt, the academy a butt and a tent, the market crates. The fortress is
   the catapult tower, and walls alternate with gatehouses.
+- **Castles** stand on 5 x 5 tiles that the simulation keeps free of buildings: 4.4 tiles across
+  for a civ's own capital, 3.6 for its others. The ground under each is levelled so it never
+  sinks into a hillside, then eases back into the land; the shore and water are left as they
+  are. Inside the walls stand the castle's hospital (a tent, and one more for each hospital
+  tech), the garrison drawn up in the front court, and the generals in reserve. An army
+  waiting in its own capital stands outside the gate. While an enemy holds a capital, rubble
+  and scaffolding lie against its walls.
 - **Our own figures.** Archers, cavalry knights, villagers, mounted villagers, the stables, the
   harbour, the ship and the two castles are models in `godot/assets/characters` (`Knight.glb`,
   `Archer.glb`, `Villager.glb`, `Rider.glb`, `Stable.glb`, `Harbour.glb`, `Boat.glb`,
@@ -229,7 +237,7 @@ model the viewer uses and checks the animations, weapons and colours
   size in the whole-map view. The harbour is turned so its quay faces the water.
 - A civ's own capital is the large castle (`CapitalCastle.glb`); every other
   region capital is the smaller one (`Castle.glb`). A castle stands on its
-  capital's tile and the eight around it. Each is made of thousands of small
+  capital's tile and the two rings around it (5 x 5). Each is made of thousands of small
   parts, welded into one mesh when first loaded.
 - Buildings are drawn one by one at every zoom, each on its own ground; a
   village's name appears closer in.
@@ -576,7 +584,7 @@ those on a captured tile change sides and wait for their new owner's orders.
   of tiles, `size` a side in `data/buildings.json`: most are 1, farms, stables,
   harbours, aqueducts, reservoirs, universities, banks, academies and factories
   are 2x2, and a fortress is 3x3. No two buildings' ground overlaps, across
-  borders too. A capital's castle has its tile and the eight around it, and
+  borders too. A capital's castle has its tile and the two rings around it (5 x 5), and
   nothing is built there. Stables can never stand on a capital's tile by any
   route: every placement goes through one rule (`placement_problem` and `place`
   in `economy/buildings.py`), and anything found on a castle's ground when it

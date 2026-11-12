@@ -29,9 +29,6 @@ const BUILDING_MODELS := {
 	"gold_mine": {"model": "building_mine_green", "size": 0.8, "tinted": true, "marker": true,
 		"props": [["sack", 0.12, Vector3(0.38, 0, 0.3)], ["crate_B_small", 0.12, Vector3(0.42, 0, 0.12)],
 			["sack", 0.12, Vector3(0.3, 0, 0.42)]]},
-	# A chapel with a field hospital's tent beside it.
-	"hospital": {"model": "building_church_green", "size": 0.62, "tinted": true, "marker": true,
-		"props": [["tent", 0.36, Vector3(0.3, 0, 0.28)]]},
 	"granary": {"model": "building_windmill_green", "size": 0.85, "tinted": true},
 	"lumber_yard": {"model": "resource_lumber", "size": 0.8},
 	"stone_yard": {"model": "resource_stone", "size": 0.7},
@@ -68,13 +65,25 @@ const TOWN_SCENE := "Castle"  # every other region capital
 const SITE_STAGES := ["building_stage_A", "building_stage_B", "building_stage_C"]
 const SITE_SIZE := 0.85
 ## Every pack model drawn other than through BUILDING_MODELS, for the asset check.
-const EXTRA_MODELS := ["flag_green", "building_castle_green", "building_tower_A_green", "building_stage_A",
+const EXTRA_MODELS := ["building_destroyed", "building_scaffolding", "flag_green", "building_castle_green", "building_tower_A_green", "building_stage_A",
 	"building_stage_B", "building_stage_C", "sack", "crate_A_small", "crate_B_small", "tent", "weaponrack", "target"]
 const CAPITAL_MODEL := "building_castle_green"
 const TOWN_MODEL := "building_tower_A_green"
-# A castle stands on its capital's tile and the eight around it, where the sim builds nothing.
-const CAPITAL_FOOTPRINT := 2.9
-const TOWN_FOOTPRINT := 2.4
+# A castle stands on its capital's tile and the two rings around it (5 x 5 tiles), where the
+# sim builds nothing.
+const CAPITAL_FOOTPRINT := 4.4
+const TOWN_FOOTPRINT := 3.6
+## Every castle has its hospital: a tent in the courtyard, and one more for each hospital tech.
+const HOSPITAL_TECHS := ["field_medicine", "surgeons", "military_hospitals"]
+const TENT_SIZE := 0.3
+## Where the tents stand in each castle's courtyard, in tiles from its centre (the gate is at +z).
+const TENT_SPOTS := {
+	"CapitalCastle": [Vector3(1.15, 0, -1.0), Vector3(1.45, 0, -1.0), Vector3(1.15, 0, -0.6), Vector3(1.45, 0, -0.6)],
+	"Castle": [Vector3(0.75, 0, -0.95), Vector3(1.05, 0, -0.95), Vector3(0.75, 0, -0.55), Vector3(1.05, 0, -0.55)],
+}
+## A capital an enemy has broken into: rubble against its walls while the hold lasts.
+const RUIN_SPOTS := [["building_destroyed", 1.0, Vector3(-1.1, 0, 1.4)], ["building_destroyed", 0.85, Vector3(1.3, 0, -1.2)],
+	["building_scaffolding", 0.9, Vector3(1.25, 0, 1.35)]]
 
 const WATER_SIDE := 0.0  # turn that brings the harbour model's quay round to face the water
 
@@ -191,6 +200,7 @@ func update(civs: Array, regions: Array) -> void:
 				_nodes[key] = _make_capital(_civ_colors[civ_id], caption, int(settlement["x"]), int(settlement["y"]), is_main)
 				# A castle is wider than its tile: fell the trees it would stand in.
 				_terrain.set_clearing(key, _nodes[key].position, (CAPITAL_FOOTPRINT if is_main else TOWN_FOOTPRINT) * 0.5 + 0.15)
+			_show_hospital(_nodes[key], civ.get("techs", []), _civ_colors[civ_id], is_main)
 		var capital_tiles := {}  # "x:y" -> footprint of the capital standing there
 		index = 0
 		for settlement: Dictionary in civ["settlements"]:
@@ -303,6 +313,13 @@ func _show_sieges(regions: Array) -> void:
 			label.no_depth_test = true
 			label.position = _terrain.tile_position(int(info["x"]), int(info["y"])) + Vector3(0.0, 6.2, 0.0)
 			add_child(label)
+			# Rubble against the walls while the enemy is inside.
+			for ruin: Array in RUIN_SPOTS:
+				var piece: Node3D = _models.instance(ruin[0], _models.base_material(), float(ruin[1]))
+				if piece != null:
+					piece.position = Vector3(ruin[2]) - Vector3(0, 6.2, 0)
+					piece.rotation.y = (id * 7 % 4) * PI / 2
+					label.add_child(piece)
 			_sieges[id] = label
 		var siege: Label3D = _sieges[id]
 		var done := clampf(float(region.get("hold", 0.0)), 0.0, 1.0)
@@ -312,6 +329,29 @@ func _show_sieges(regions: Array) -> void:
 		if not held.has(id):
 			_sieges[id].queue_free()
 			_sieges.erase(id)
+
+
+## The castle's hospital: a tent in the courtyard, and one more for each hospital tech known.
+func _show_hospital(castle: Node3D, techs: Array, color: Color, is_main: bool) -> void:
+	var level := 1
+	for tech: String in HOSPITAL_TECHS:
+		if tech in techs:
+			level += 1
+	if int(castle.get_meta("tents", 0)) == level:
+		return
+	castle.set_meta("tents", level)
+	var old: Node = castle.get_node_or_null("hospital")
+	if old != null:
+		old.queue_free()
+	var hospital := Node3D.new()
+	hospital.name = "hospital"
+	var spots: Array = TENT_SPOTS[CAPITAL_SCENE if is_main else TOWN_SCENE]
+	for i in mini(level, spots.size()):
+		var tent: Node3D = _models.instance("tent", _models.tinted_material(color), TENT_SIZE)
+		if tent != null:
+			tent.position = spots[i]
+			hospital.add_child(tent)
+	castle.add_child(hospital)
 
 
 func _show_capital_label(node: Node3D) -> void:

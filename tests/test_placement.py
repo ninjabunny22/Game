@@ -6,6 +6,7 @@ import pytest
 from civsim.civ import Building
 from civsim.config import SimConfig
 from civsim.economy import castle_ground, find_site, footprint, place, placement_problem
+from civsim.economy.buildings import castle_square
 from civsim.simulation import Simulation
 from civsim.strategy import RuleBrain
 from civsim.survey import survey
@@ -87,7 +88,10 @@ def test_nothing_is_built_where_a_castle_stands(sim):
     world = sim.world
     house = sim.building_defs["house"]
     capital = civ.capital.tile
-    for tile in [capital, *world.neighbors(capital, diagonal=True)]:
+    x, y = world.xy(capital)
+    square = castle_square(world, capital)
+    assert len(square) == 25 and (y + 2) * world.width + x + 2 in square, "a castle stands on 5 x 5 tiles"
+    for tile in square:
         assert castle_ground(world, tile)
         assert placement_problem(civ, world, house, tile) is not None
     civ.buildings = []

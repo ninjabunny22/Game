@@ -26,8 +26,8 @@ def mods_with(sim, civ, *techs):
     return compute_modifiers(civ, sim.building_defs, sim.tech_tree)
 
 
-# The efficiency line (one tech in each of eras 3, 4 and 5) came after the three new eras.
-EFFICIENCY = ("logistics", "quartermasters", "standing_army")
+# Added after the three new eras: the efficiency line (eras 3, 4 and 5) and the hospital line (1, 3 and 5).
+EFFICIENCY = ("logistics", "quartermasters", "standing_army", "field_medicine", "surgeons", "military_hospitals")
 
 
 def test_three_new_eras_of_six_techs_each_dearer_than_the_last(sim):

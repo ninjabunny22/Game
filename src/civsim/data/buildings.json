@@ -71,12 +71,6 @@
     "effects": {"yield_mult": {"gold": 0.5}},
     "color": "#d4a514", "height": 0.5
   },
-  "hospital": {
-    "name": "Hospital", "category": "military", "placement": "center", "max_count": 3,
-    "cost": {"wood": 40, "stone": 20}, "build_time": 14, "upkeep": {"gold": 0.2, "water": 0.03},
-    "effects": {"beds": 20},
-    "color": "#e8e4d8", "height": 0.6
-  },
   "library": {
     "name": "Library", "category": "science", "placement": "center", "requires_tech": "writing",
     "cost": {"wood": 40, "stone": 30}, "build_time": 16, "upkeep": {"gold": 0.15},

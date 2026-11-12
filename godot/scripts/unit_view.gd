@@ -22,7 +22,7 @@ const COMMANDER_HEIGHT := 0.8  # in tiles: the old placeholder
 const GENERAL_HEIGHT := 0.74  # a general of the Adventurers pack, a head taller than his soldiers
 const FOOT_HEIGHT := 0.56  # a foot soldier of the same pack
 const MID_RANKS := 3  # rank figures shown at middle zoom: enough to read as an army
-const POSTED_SPOT := Vector3(-0.9, 0, 1.4)  # where a general in reserve stands, before the castle
+const POSTED_SPOT := Vector3(-0.85, 0, 1.0)  # where a general in reserve stands: in the castle's front court
 const VILLAGER_HEIGHT := 0.45
 const RIDER_HEIGHT := 0.62
 const KNIGHT_HEIGHT := 0.72
@@ -37,7 +37,8 @@ const MAX_RANKS := 8  # ... up to this many behind whoever leads it
 const RANK_SPACING := 0.34
 const STRIKES := ["attack", "shoot"]  # what a model's fighting animation may be called
 const BOAT_LENGTH := 0.95
-const GARRISON_SPOT := Vector3(0.5, 0, 1.3)  # before the castle gate, not inside the walls
+const GARRISON_SPOT := Vector3(0.8, 0, 1.15)  # the garrison is drawn up in the castle's front court
+const AT_THE_GATE := Vector3(0, 0, 2.9)  # a field army in one of its own capitals waits outside the gate
 const AT_ARMS := ["fighting", "besieging"]  # army states shown as striking
 const MOVE_SPEED := 6.0  # how fast figures glide toward their tile, in tiles per second
 const SKIN := Color(0.87, 0.72, 0.58)
@@ -55,6 +56,7 @@ var _swell := 0.0
 var _characters: RefCounted  # characters.gd
 var _adventurers: RefCounted  # adventurers.gd
 var _posted := {}  # "civ:name" -> {"node", "look", "target"}: generals in reserve, at their capitals
+var _capitals := {}  # "x,y" -> civ id, of every capital a civ holds (from the last tick)
 
 
 func setup(terrain: Node3D, init: Dictionary, civ_colors: Array, characters: RefCounted,
@@ -102,7 +104,12 @@ func update(armies: Array, villagers: Array) -> void:
 		entry["size_text"] = str(entry["size"]) if counted else "~%d" % (maxi(1, roundi(entry["size"] / 50.0)) * 50)
 		entry["caption"] = _army_caption(army) if counted else "About %s soldiers" % str(entry["size_text"]).substr(1)
 		_show_army(entry)
-		_aim(entry, _spot(int(army["x"]), int(army["y"]), GARRISON_SPOT if army["role"] == "garrison" else Vector3.ZERO))
+		var offset := Vector3.ZERO
+		if army["role"] == "garrison":
+			offset = GARRISON_SPOT
+		elif int(_capitals.get("%d,%d" % [int(army["x"]), int(army["y"])], -1)) == civ:
+			offset = AT_THE_GATE  # not standing on the keep
+		_aim(entry, _spot(int(army["x"]), int(army["y"]), offset))
 	_drop_missing(_armies, seen)
 
 	seen = {}
@@ -374,8 +381,11 @@ func _soldier(unit_id: String, color: Color) -> Node3D:
 ## only up close. `civs` is the tick's list of civs.
 func update_posted(civs: Array) -> void:
 	var seen := {}
+	_capitals.clear()
 	for civ: Dictionary in civs:
 		var civ_id := int(civ["id"])
+		for settlement: Dictionary in civ.get("settlements", []):
+			_capitals["%d,%d" % [int(settlement["x"]), int(settlement["y"])]] = civ_id
 		var crowd := {}  # capital -> generals already standing there
 		for commander: Dictionary in civ.get("commanders_in_reserve", []):
 			if commander.get("x") == null:

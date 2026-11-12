@@ -12,7 +12,7 @@ COST_GROWTH_PER_COPY = 0.2
 FILL_FIRST = 1000.0  # a site beside something already built is preferred to breaking new ground
 HARBOUR_SPREAD = 12  # tiles a civ's harbours keep apart, so they serve different shores
 FILL_FIRST_YIELD = 1.0  # ... for buildings placed by yield, worth half a point of yield
-CASTLE_REACH = 1  # a capital's castle stands on its own tile and the tiles this far around it
+CASTLE_REACH = 2  # a capital's castle stands on its own tile and the tiles this far around it: 5 x 5
 
 
 @dataclass(frozen=True)
@@ -79,7 +79,7 @@ def placement_problem(civ, world: WorldMap, bdef: BuildingDef, tile: int, withou
 
     The one rule for where buildings go, whoever is placing them. A building stands on a
     square of its own size; every tile of it must be the civ's, buildable, and free of any
-    other building and of a capital's castle (the capital's tile and the eight around it).
+    other building and of a capital's castle (the capital's tile and those CASTLE_REACH around it).
     `without` is a building, or a list of them, to reckon as already gone (about to be
     demolished to make room); `built` is everything_built(), for a caller asking about many
     tiles at once.
@@ -131,9 +131,17 @@ def castle_ground(world: WorldMap, tile: int) -> bool:
     those around it. Nothing is ever built there."""
     ground = getattr(world, "_castle_ground", None)
     if ground is None or ground[0] != len(world.capital_tiles):
-        tiles = {n for capital in world.capital_tiles for n in world.neighbors(capital, diagonal=True)}
-        ground = world._castle_ground = (len(world.capital_tiles), tiles | set(world.capital_tiles))
+        tiles = {n for capital in world.capital_tiles for n in castle_square(world, capital)}
+        ground = world._castle_ground = (len(world.capital_tiles), tiles)
     return tile in ground[1]
+
+
+def castle_square(world: WorldMap, tile: int) -> list[int]:
+    """The tiles a castle on `tile` stands on: it and those within CASTLE_REACH, on the map."""
+    x, y = world.xy(tile)
+    return [(y + dy) * world.width + x + dx
+            for dy in range(-CASTLE_REACH, CASTLE_REACH + 1) for dx in range(-CASTLE_REACH, CASTLE_REACH + 1)
+            if 0 <= x + dx < world.width and 0 <= y + dy < world.height]
 
 
 def may_stand(world: WorldMap, building_type: str, tile: int) -> bool:
@@ -149,7 +157,7 @@ def survey_ground(civ, world: WorldMap) -> tuple[set[int], set[int]]:
     the next building goes up or comes down."""
     built = everything_built(civ, world)
     own_castles = {n for s in civ.settlements if s.tile not in world.capital_tiles
-                   for n in [s.tile, *world.neighbors(s.tile, diagonal=True)]}
+                   for n in castle_square(world, s.tile)}
     free, taken = set(), set(built)
     for tile in civ.territory:
         if castle_ground(world, tile) or tile in own_castles:

@@ -26,6 +26,12 @@
       "description": "+10% food, +15% population growth; unlocks Stables"
     },
     {
+      "id": "field_medicine", "name": "Field Medicine", "era": 1, "prereqs": ["agriculture"],
+      "cost": {"science": 95, "food": 40, "wood": 30},
+      "effects": {"beds": 10},
+      "description": "Every castle's hospital takes 40 more wounded"
+    },
+    {
       "id": "writing", "name": "Writing", "era": 1, "prereqs": ["pottery"],
       "cost": {"science": 90, "wood": 40},
       "effects": {"science_mult": 0.15},
@@ -104,6 +110,12 @@
       "description": "+15% to all resource yields, troops can be armed one tier better"
     },
     {
+      "id": "surgeons", "name": "Surgeons", "era": 3, "prereqs": ["field_medicine", "mathematics"],
+      "cost": {"science": 860, "food": 80, "gold": 60},
+      "effects": {"beds": 10},
+      "description": "Every castle's hospital takes a further 40 wounded"
+    },
+    {
       "id": "logistics", "name": "Logistics", "era": 3, "prereqs": ["currency", "iron_working"],
       "cost": {"science": 850, "wood": 60, "gold": 60},
       "effects": {"soldier_cost": -0.15},
@@ -168,6 +180,12 @@
       "cost": {"science": 9800, "ore": 300, "wood": 200},
       "effects": {"tier": 1},
       "description": "Troops can be armed one tier better: the best there is"
+    },
+    {
+      "id": "military_hospitals", "name": "Military Hospitals", "era": 5, "prereqs": ["surgeons", "military_academy"],
+      "cost": {"science": 9400, "stone": 200, "gold": 250},
+      "effects": {"beds": 10},
+      "description": "Every castle's hospital takes a further 40 wounded"
     },
     {
       "id": "standing_army", "name": "Standing Army", "era": 5, "prereqs": ["quartermasters", "military_academy"],

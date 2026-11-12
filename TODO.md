@@ -18,7 +18,7 @@ Agreed next, in order:
      a bow shot;
    - archer and cavalry soldiers, and a mounted general (the pack has no horses);
    - ship, harbour and stable in the same style (ours are more detailed than the rest);
-   - a hospital and a gold mine of their own (they are the church and the mine, with props);
+   - a gold mine of its own (it is the mine with props), and a hospital building for the castle courtyard (now tents);
    - siege engines in the field, and battle and siege effects;
    - a spear for the spearman (now a pole and blade added in code).
 

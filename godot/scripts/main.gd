@@ -152,7 +152,7 @@ func _on_init(data: Dictionary) -> void:
 	_civ_colors.clear()
 	for civ: Dictionary in data["civs"]:
 		_civ_colors.append(Color.html(civ["color"]))
-	_terrain.build(data["map"], data["biomes"], Color.html(data["native_faction"]["color"]), _models)
+	_terrain.build(data["map"], data["biomes"], Color.html(data["native_faction"]["color"]), _models, data["regions"])
 	_civ_view.setup(_terrain, data, _civ_colors, _models, _characters)
 	_unit_view.setup(_terrain, data, _civ_colors, _characters, _adventurers)
 	_hud.setup(data)

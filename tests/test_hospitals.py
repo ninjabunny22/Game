@@ -54,7 +54,7 @@ def test_the_wounded_are_healed_in_ten_days_and_join_the_garrison_not_their_army
     assert army.size == pytest.approx(20), "they do not go back to their army by themselves"
 
 
-def test_wounded_there_is_no_bed_for_die_and_a_hospital_adds_beds(sim):
+def test_wounded_there_is_no_bed_for_die_and_research_adds_beds_to_every_castle(sim):
     civ, military = sim.civs[0], sim.military
     beds = military.beds(civ)
     military._tick = 50
@@ -64,10 +64,13 @@ def test_wounded_there_is_no_bed_for_die_and_a_hospital_adds_beds(sim):
     assert civ.beds_short == 50 and civ.hospital_deaths == pytest.approx(6.0)
     assert military._admit(civ, {"spearman": 4.0}, 1.0) == pytest.approx(4.0), "every bed is taken"
 
-    civ.buildings.append(Building("hospital", away(sim, civ), 1.0, True))
+    assert "hospital" not in sim.building_defs, "the hospital is in the castle, not a building of its own"
+    civ.known_techs = ["agriculture", "field_medicine", "mathematics", "surgeons"]
     sim.modifiers[civ.id] = compute_modifiers(civ, sim.building_defs, sim.tech_tree)
     military.mods = sim.modifiers
-    assert military.beds(civ) == pytest.approx(beds + 20)
+    assert military.beds(civ) == pytest.approx(beds + 20 * len(civ.settlements)), "10 more in every castle, twice"
+    civ.settlements.append(type(civ.settlements[0])("Newhold", away(sim, civ)))
+    assert military.beds(civ) == pytest.approx((economy.INFIRMARY_BEDS + 20) * len(civ.settlements))
     assert military._admit(civ, {"spearman": 4.0}, 1.0) == 0.0
 
 

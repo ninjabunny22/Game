@@ -45,10 +45,10 @@ HORSE_FOOD = 0.16  # per horse per tick: twice what a person eats ...
 HORSE_WATER = 0.06  # ... and drinks
 MOUNTED_WORKERS = 3.0  # extra workers' worth of output from a mounted villager on the land he works
 MOUNTED_SHARE = 0.5  # at most this share of a civ's villagers ride
-# The wounded lie in hospital beds: a few in every capital, more in each hospital. They are
+# The wounded lie in hospital beds: every capital's castle has a hospital, larger with research. They are
 # healed after a fixed stay and join the garrison; those there is no bed for die.
 HEAL_TICKS = 10
-INFIRMARY_BEDS = 10.0  # in every capital
+INFIRMARY_BEDS = 10.0  # in every capital's castle, before research
 
 GROWTH_RATE = 0.01
 EARLY_GROWTH = 1.0  # a young civ grows this much faster ...

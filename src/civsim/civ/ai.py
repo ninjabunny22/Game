@@ -48,7 +48,7 @@ MATERIALS = ("wood", "stone", "ore", "gold")
 GOAL_PULL = 0.4  # how much a tech on the way to what the civ is concentrating on is preferred
 GOAL_EFFECTS = {  # what each focus is after in the tech tree
     "military": ("military", "defense", "capture_speed", "mobilization", "casualties", "commander_xp", "tier",
-                 "soldier_cost"),
+                 "soldier_cost", "beds"),
     "science": ("science_mult",),
     "economy": ("income", "build_speed", "build_slots"),
     "expansion": ("expand_cost", "bridges", "boats", "boat_range"),
@@ -133,7 +133,7 @@ class CivAI:
             # Gold is what armies run on: wanted badly by a civ that cannot pay or arm its soldiers.
             "pay": 1.0 if civ.unpaid else _clamp(
                 1.5 * scarcity["gold"] * (civ.soldier_target - civ.soldiers) / max(civ.soldier_target, 1.0), 0, 1),
-            # Hospital beds: wanted once soldiers have died for want of one, and by any civ at war.
+            # More hospital beds (by research): wanted once soldiers have died for want of one, and by any civ at war.
             "beds": 1.0 if tick - civ.beds_short < BEDS_MEMORY else 0.7 * civ.military_need,
             "expansion": (0.25 + 0.75 * _clamp(3 * idle_share, 0, 1) + (0.4 if wanted else 0.0)
                           + (0.5 if civ.march_target is not None else 0.0)),
@@ -232,6 +232,8 @@ class CivAI:
                    + effects.get("capture_speed", 0) - 2 * effects.get("casualties", 0)
                    + 3 * effects.get("mobilization", 0) + 0.5 * effects.get("tier", 0)
                    - 2 * effects.get("soldier_cost", 0))
+        # More beds in every castle: worth most to a civ that has lost wounded for want of them.
+        value += 0.04 * effects.get("beds", 0) * weights["military"] * (0.2 + needs["beds"])
         value += warfare * weights["military"] * (0.3 + needs["military"])
         value -= 0.6 * effects.get("deal_fee", 0) * weights["wealth"]
         value += 0.3 * effects.get("villager_speed", 0) * weights["industry"]
@@ -398,8 +400,6 @@ class CivAI:
             return max(needs["store"][res] for res in bdef.stores)
         if bdef.id == "gold_mine":
             return max(needs["resource"]["gold"], needs["pay"])
-        if bdef.id == "hospital":
-            return needs["beds"]
         if bdef.need_resource:
             return needs["resource"][bdef.need_resource]
         if bdef.id == "harbour":

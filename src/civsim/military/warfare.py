@@ -250,8 +250,8 @@ class Military:
     # -- hospitals -----------------------------------------------------------
 
     def beds(self, civ) -> float:
-        """Hospital beds: a few in every capital, and those of its working hospitals."""
-        return INFIRMARY_BEDS * len(civ.settlements) + self.mods[civ.id].beds
+        """Hospital beds: every castle has its hospital, and research adds beds to each."""
+        return (INFIRMARY_BEDS + self.mods[civ.id].beds) * len(civ.settlements)
 
     def _admit(self, civ, units: dict[str, float], tier: float) -> float:
         """Wounded soldiers are put to bed, as many as there are beds free; the rest die.
