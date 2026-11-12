@@ -17,7 +17,7 @@ import os
 import sys
 
 import bpy
-from mathutils import Vector
+from mathutils import Matrix, Vector
 
 sys.path.insert(0, os.path.dirname(__file__))
 from make_models import KNIGHT, Model  # noqa: E402
@@ -29,29 +29,77 @@ CELLS = dict(KNIGHT, coat=(5, 0), dark=(2, 0), muzzle=(6, 0), cloth=(0, 1), stee
 LEGS = ("fl", "fr", "bl", "br")
 SIDES = 12  # sides of each cross-section: enough to read as rounded
 
-# The body, rump to chest: (y, z of the middle, half its width, half its depth).
-BODY = [(0.68, 0.84, 0.08, 0.1), (0.62, 0.82, 0.17, 0.21), (0.5, 0.79, 0.22, 0.26),
-        (0.32, 0.77, 0.22, 0.26), (0.1, 0.75, 0.21, 0.26), (-0.12, 0.75, 0.22, 0.29),
-        (-0.32, 0.77, 0.21, 0.32), (-0.47, 0.81, 0.17, 0.3), (-0.57, 0.87, 0.1, 0.2)]
-# The neck rises forward and up from the withers in an arch: (y, z, half width, half depth).
-NECK = [(-0.38, 0.98, 0.15, 0.25), (-0.52, 1.15, 0.125, 0.19), (-0.63, 1.31, 0.1, 0.14),
-        (-0.71, 1.44, 0.085, 0.115), (-0.76, 1.53, 0.075, 0.1)]
-# The head, from the poll down to the muzzle.
-# The head runs from the poll down to the muzzle along HEAD_AXIS. Its front (the line of the
-# face) is straight; it is deep at the jaw and cheek, narrows along the face, and swells a
-# little at a blunt muzzle. Rings: (share of the length, half width, half depth).
-HEAD_POLL = Vector((0.0, -0.74, 1.58))
-HEAD_AXIS = Vector((0.0, -0.66, -0.75)).normalized()
-HEAD_LENGTH = 0.46
-HEAD_JAW = Vector((0.0, -HEAD_AXIS.z, HEAD_AXIS.y))  # square to the axis, toward the jaw (back and down)
-HEAD_FACE = 0.06  # how far the line of the face stands from the axis
-HEAD = [(0.0, 0.07, 0.065), (0.12, 0.08, 0.125), (0.3, 0.078, 0.12), (0.5, 0.066, 0.085),
-        (0.7, 0.064, 0.07), (0.88, 0.078, 0.074), (1.0, 0.072, 0.06)]
+# The trunk (body, neck and head) is one mesh, lofted from rump to muzzle through cross-sections
+# set by the horse's side outline: for each, a point on the top line (back, withers, crest of
+# the neck, poll, then the line of the face) and one on the bottom line (belly, chest, the front
+# of the neck, the throat, then the jaw and chin), as (y, z), and half its width. Each section
+# spans the two points, so the neck flows out of the chest and into the head with no seam.
+# The bone each section moves with is given too.
+TRUNK = [
+    ((0.70, 0.92), (0.70, 0.76), 0.07, "body"),     # the point of the rump
+    ((0.64, 1.02), (0.64, 0.60), 0.16, "body"),
+    ((0.52, 1.05), (0.52, 0.53), 0.22, "body"),     # quarters
+    ((0.32, 1.03), (0.32, 0.51), 0.22, "body"),
+    ((0.10, 1.00), (0.10, 0.49), 0.21, "body"),     # the dip of the back
+    ((-0.12, 1.02), (-0.12, 0.46), 0.22, "body"),
+    ((-0.30, 1.09), (-0.32, 0.45), 0.21, "body"),   # withers and girth
+    ((-0.38, 1.14), (-0.48, 0.48), 0.19, "body"),   # shoulder
+    ((-0.44, 1.21), (-0.59, 0.62), 0.16, "neck"),   # the base of the neck and the breast
+    ((-0.50, 1.31), (-0.66, 0.82), 0.125, "neck"),
+    ((-0.56, 1.42), (-0.70, 1.00), 0.105, "neck"),
+    ((-0.62, 1.52), (-0.73, 1.17), 0.088, "neck"),  # the neck tapers up to the throat
+    ((-0.68, 1.60), (-0.79, 1.31), 0.08, "head"),   # poll and throatlatch
+    ((-0.78, 1.61), (-0.89, 1.24), 0.094, "head"),  # forehead and the deep round of the jaw
+    ((-0.88, 1.52), (-0.95, 1.21), 0.082, "head"),
+    ((-0.97, 1.42), (-1.01, 1.18), 0.074, "head"),  # down the face
+    ((-1.04, 1.34), (-1.06, 1.13), 0.082, "head"),  # the muzzle, fuller
+    ((-1.085, 1.28), (-1.085, 1.15), 0.072, "head"),  # its blunt end
+]
+MANE = range(6, 13)  # the sections the mane runs along, withers to poll
+MANE_HEIGHT = 0.07  # how far the mane stands up from the crest
 
 
-def on_head(share: float, toward_jaw: float, x: float = 0.0) -> Vector:
-    """A point of the head: `share` of the way from poll to muzzle, `toward_jaw` from the axis."""
-    return HEAD_POLL + HEAD_AXIS * (share * HEAD_LENGTH) + HEAD_JAW * toward_jaw + Vector((x, 0, 0))
+def section(i: int) -> tuple[Vector, Vector, float, float, Vector]:
+    """Section i of the trunk: its centre, its top point, half its depth, half its width, and
+    the direction from its bottom to its top."""
+    (ty, tz), (by, bz), width, _bone = TRUNK[i]
+    top, bottom = Vector((0, ty, tz)), Vector((0, by, bz))
+    return (top + bottom) / 2, top, (top - bottom).length / 2, width, (top - bottom).normalized()
+
+
+def surface(at: float, angle: float) -> tuple[Vector, Vector]:
+    """A point on the trunk's surface and the way out from it: `at` sections along (fractions
+    between them), `angle` round the section (0 the right side, 90 the top, 180 the left)."""
+    i = min(int(at), len(TRUNK) - 2)
+    t = at - i
+    a, b = section(i), section(i + 1)
+    centre = a[0].lerp(b[0], t)
+    up = a[4].lerp(b[4], t).normalized()
+    depth, width = a[2] + (b[2] - a[2]) * t, a[3] + (b[3] - a[3]) * t
+    side = Vector((1, 0, 0))
+    r = math.radians(angle)
+    point = centre + side * (math.cos(r) * width) + up * (math.sin(r) * depth)
+    out = (side * (math.cos(r) / width) + up * (math.sin(r) / depth)).normalized()
+    return point, out
+
+
+def decal(m: Model, cell: str, at: float, angle: float, size: tuple, sink: float = 0.4) -> None:
+    """A small flat patch (eye, nostril) laid on the trunk's surface, `size` (across, along,
+    thick), sunk `sink` of its thickness into it so it reads as part of the face."""
+    import bmesh
+    point, out = surface(at, angle)
+    ahead = (surface(at + 0.05, angle)[0] - surface(at - 0.05, angle)[0]).normalized()
+    across = out.cross(ahead).normalized()
+    ahead = across.cross(out).normalized()
+    geom = bmesh.ops.create_cube(m.bm, size=1.0)["verts"]
+    frame = Matrix((across * size[0], ahead * size[1], out * size[2])).transposed().to_4x4()
+    frame.translation = point + out * (size[2] * (0.5 - sink))
+    bmesh.ops.transform(m.bm, matrix=frame, verts=geom)
+    faces = list({f for v in geom for f in v.link_faces})
+    bmesh.ops.recalc_face_normals(m.bm, faces=faces)  # facing out, whichever way the frame turned
+    m._paint(faces, cell, 0.2)
+
+
 TAIL = [(0.65, 0.9, 0.04, 0.05), (0.72, 0.78, 0.045, 0.055), (0.76, 0.6, 0.04, 0.05), (0.77, 0.45, 0.02, 0.025)]
 # Each leg: where it leaves the body, its joint (knee or hock), fetlock and the ground, with
 # the thickness at each. Front legs are straight; hind legs bend back at the hock.
@@ -66,7 +114,7 @@ COAT_START = 0.38  # the coat is painted from the deeper end of the texture's br
 
 
 def tube(m: Model, cell: str, rings: list, shade: float = 0.7, x: float = 0.0, close: bool = True,
-         facing: Vector | None = None) -> None:
+         facing: Vector | None = None, ups: list | None = None, smooth: bool = True) -> list:
     """A loft through rings of (centre, half width, half depth), each eight-sided, square to
     the line it follows (or, with `facing`, all with their depth along it); the ends are closed."""
     bm = m.bm
@@ -76,9 +124,12 @@ def tube(m: Model, cell: str, rings: list, shade: float = 0.7, x: float = 0.0, c
         centre = Vector(centre) + Vector((x, 0, 0))
         ahead = (centres[min(i + 1, len(centres) - 1)] - centres[max(i - 1, 0)]).normalized()
         side = Vector((1, 0, 0))
-        up = ahead.cross(side).normalized() if facing is None else facing.normalized()
-        if up.z < 0 and facing is None:
-            up = -up
+        if ups is not None:
+            up = ups[i]
+        else:
+            up = ahead.cross(side).normalized() if facing is None else facing.normalized()
+            if up.z < 0 and facing is None:
+                up = -up
         ring = []
         for k in range(SIDES):
             angle = 2 * math.pi * (k + 0.5) / SIDES
@@ -95,7 +146,8 @@ def tube(m: Model, cell: str, rings: list, shade: float = 0.7, x: float = 0.0, c
     bmesh.ops.recalc_face_normals(bm, faces=faces)
     m._paint(faces, cell, min(shade, 1.0 - COAT_START), COAT_START if cell == "coat" else 0.0)
     for face in faces:
-        face.smooth = True  # shaded smooth: the body reads as one rounded form, not a set of facets
+        face.smooth = smooth  # shaded smooth: the body reads as one rounded form, not a set of facets
+    return made
 
 
 def leg_rings(leg: str, which: str) -> list:
@@ -108,34 +160,19 @@ def leg_rings(leg: str, which: str) -> list:
 
 def parts(bone: str, m: Model) -> None:
     """What hangs on each bone."""
-    if bone == "body":
-        tube(m, "coat", [((0, y, z), w, d) for y, z, w, d in BODY], shade=0.75)
+    if bone == "body":  # (the trunk itself is built in trunk())
         m.box("cloth", (0.46, 0.42, 0.035), at=(0, -0.05, 1.03), shade=0.3)  # saddle cloth over the back
         for side in (-1, 1):  # and down each flank
             m.box("cloth", (0.02, 0.4, 0.2), at=(side * 0.225, -0.05, 0.84), shade=0.4)
         m.box("leather", (0.26, 0.3, 0.07), at=(0, -0.05, 1.06))  # the saddle
         m.box("leather", (0.22, 0.06, 0.09), at=(0, -0.19, 1.09))  # its pommel
-    elif bone == "neck":
-        tube(m, "coat", [((0, y, z), w, d) for y, z, w, d in NECK], shade=0.6)
-        for (y1, z1, _w, d1), (y2, z2, _w2, d2) in zip(NECK, NECK[1:]):  # the mane along its crest
-            mid_y, mid_z = (y1 + y2) / 2, (z1 + d1 + z2 + d2) / 2
-            tilt = math.atan2(z2 - z1, -(y2 - y1))
-            m.box("dark", (0.06, math.hypot(y2 - y1, z2 - z1) * 1.2, 0.12), at=(0, mid_y + 0.04, mid_z - 0.06),
-                  tilt=-tilt + math.pi / 2 - math.pi / 2, shade=0.3)
     elif bone == "head":
-        # Each ring sits so that its face side stays on one straight line.
-        rings = [(tuple(on_head(s, depth - HEAD_FACE)), w, depth) for s, w, depth in HEAD]
-        tube(m, "coat", rings, shade=0.5, facing=-HEAD_JAW)
-        along = math.atan2(HEAD_AXIS.z, HEAD_AXIS.y)  # the tilt that lays a box along the head
-        m.box("blaze", (0.034, HEAD_LENGTH * 0.72, 0.012), at=tuple(on_head(0.52, -HEAD_FACE - 0.004)), tilt=along,
-              shade=0.2)  # a white blaze down the face
-        m.box("dark", (0.09, 0.08, 0.008), at=tuple(on_head(0.93, 0.045)), tilt=along, shade=0.3)  # the mouth
+        poll = section(12)[1]
+        for angle in (35, 145):  # eyes high on the sides, nostrils at the front of the muzzle
+            decal(m, "dark", 13.35, angle, (0.032, 0.042, 0.012))
+            decal(m, "dark", 16.55, 62 if angle < 90 else 118, (0.024, 0.04, 0.012))
         for side in (-1, 1):
-            m.box("dark", (0.008, 0.032, 0.024), at=tuple(on_head(0.2, -0.02, side * 0.072)), tilt=along,
-                  shade=0.2)  # eyes, set into the sides high up
-            m.box("dark", (0.008, 0.026, 0.02), at=tuple(on_head(0.93, -0.025, side * 0.064)), tilt=along,
-                  shade=0.2)  # nostrils
-            m.cylinder("coat", 0.028, 0.13, at=tuple(on_head(0.04, -0.03, side * 0.038)), segments=4,
+            m.cylinder("coat", 0.03, 0.14, at=(side * 0.045, poll.y - 0.03, poll.z - 0.035), segments=4,
                        top=0.0)  # ears, standing from the poll
     elif bone == "tail":
         tube(m, "dark", [((0, y, z), w, d) for y, z, w, d in TAIL], shade=0.3)
@@ -148,13 +185,54 @@ def parts(bone: str, m: Model) -> None:
         m.cylinder("dark", 0.05, 0.08, at=(hx, hy - 0.01, 0.0), segments=8, top=0.036, shade=0.3)  # the hoof, under it
 
 
+def trunk() -> bpy.types.Object:
+    """The body, neck and head as one smooth mesh, with the mane and the blaze laid along it.
+    Each section's vertices move with that section's bone."""
+    m = Model(CELLS)
+    groups: dict[str, list[int]] = {}
+
+    def note(rings: list, bones: list) -> None:
+        for ring, bone in zip(rings, bones):
+            groups.setdefault(bone, []).extend(v.index for v in ring)
+
+    sections = [section(i) for i in range(len(TRUNK))]
+    bones = [bone for _t, _b, _w, bone in TRUNK]
+    m.bm.verts.index_update()
+    rings = tube(m, "coat", [(c, w, d) for c, _top, d, w, _up in sections], shade=0.75,
+                 ups=[up for *_rest, up in sections])
+    m.bm.verts.index_update()
+    note(rings, bones)
+    # The mane: a ridge along the crest, from the withers to the poll, standing up off it.
+    mane = [sections[i] for i in MANE]
+    rings = tube(m, "dark", [(top + up * (MANE_HEIGHT * 0.45), 0.03 if k else 0.015, MANE_HEIGHT * 0.6)
+                             for k, (_c, top, _d, _w, up) in enumerate(mane)],
+                 shade=0.3, ups=[up for *_rest, up in mane], smooth=False)
+    m.bm.verts.index_update()
+    note(rings, [bones[i] for i in MANE])
+    # The blaze: a white stripe down the line of the face.
+    face = [sections[i] for i in range(13, 17)]
+    rings = tube(m, "blaze", [(top - up * (d * 0.03), 0.017, 0.004) for _c, top, d, _w, up in face], shade=0.2,
+                 ups=[up for *_rest, up in face], smooth=False)
+    m.bm.verts.index_update()
+    note(rings, ["head"] * len(face))
+    mesh = bpy.data.meshes.new("Trunk")
+    m.bm.normal_update()
+    m.bm.to_mesh(mesh)
+    m.bm.free()
+    obj = bpy.data.objects.new("Trunk", mesh)
+    bpy.context.scene.collection.objects.link(obj)
+    for bone, indices in groups.items():
+        obj.vertex_groups.new(name=bone).add(indices, 1.0, "REPLACE")
+    return obj
+
+
 def bones() -> dict:
     """name -> (head, tail, parent)."""
     out = {
         "root": ((0, 0, 0), (0, 0, 0.3), None),
         "body": ((0, 0.6, 0.82), (0, -0.5, 0.86), "root"),
-        "neck": ((0, -0.42, 1.0), (0, -0.76, 1.5), "body"),
-        "head": (tuple(HEAD_POLL), tuple(on_head(1.0, 0.0)), "neck"),
+        "neck": (tuple(section(8)[0]), tuple(section(12)[0]), "body"),
+        "head": (tuple(section(12)[0]), tuple(section(17)[0]), "neck"),
         "tail": ((0, 0.65, 0.92), (0, 0.76, 0.5), "body"),
         "saddle": ((0, -0.05, 1.07), (0, -0.05, 1.27), "body"),
     }
@@ -187,7 +265,7 @@ def build():
             data.edit_bones[name].parent = data.edit_bones[parent]
     bpy.ops.object.mode_set(mode="OBJECT")
 
-    pieces = []
+    pieces = [trunk()]
     for name in layout:
         m = Model(CELLS)
         parts(name, m)
