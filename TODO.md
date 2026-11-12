@@ -17,6 +17,10 @@ Agreed next, in order:
 
 Later:
 
+- **Zoom tiers in the viewer:** far (territory, city and army markers only), mid (simplified
+  towns, one figure per army), near (everything); draw only what is on screen. Measure
+  frame rate on a late large game before and after.
+
 - **Playing a civ:** click the map to give army orders, fog of war, save and load.
 - **Watching:** a minimap, a "story so far" timeline, an end-of-game summary with graphs, a
   camera that follows the action.
@@ -30,5 +34,6 @@ Later:
   often too far from the city to arrive in 40 days. To settle in the timing pass.
 - **Population:** head counts are shown at four to the unit; the economy itself is unscaled.
   A denser population (more people per tile, with yields rebalanced) would be a real change.
+- **Hospital and Gold Mine models:** they borrow the church and the mine for now.
 - **Loose ends:** the map names were given without looking at the maps; one large map
   (Wyrmcoast) is slow to simulate.

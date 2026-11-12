@@ -109,12 +109,34 @@ The overlay is built for watching:
   Easy / Normal / Hard sets how hard the others go on you.
 - **League.** Every number the strategist decides by is a field of `Params`
   (`strategy/utility.py`). `python -m civsim.league --tweak NAME=VALUE ...` plays a changed
-  set against the standard one in ten games, half the civs on each; `--evolve N` mutates,
+  set against the standard one in six games, half the civs on each; `--evolve N` mutates,
   keeps what wins, and refuses anything that makes games duller.
 - **Armies are built.** Soldiers are trained a few a day (a levy that grows with the
   population, plus 0.6 a day for each working barracks) and each costs gold and ore to arm;
   a civ with no ore buys its arms in for more gold. Standing down is quick. A lost army
   takes time and money to replace.
+- **Bigger armies sooner.** A civ starts with 160 people (shown) and grows twice as fast for
+  its first 750 days. Barracks need no research. A **Gold Mine** on a gold deposit raises
+  what it yields by half. Three late techs (Logistics, Quartermasters, Standing Army) each
+  make a soldier 15% cheaper to arm and to pay.
+- **Troop tiers.** Iron Working, Machinery and Gunpowder each let a civ arm its soldiers one
+  tier better (strength x1.25, x1.55, x1.9; arms cost x1.15, x1.3, x1.5). Recruits get the
+  best there is; older soldiers are re-armed, a few a day and for gold and ore, while they
+  stand in one of the civ's capitals. An army in the field keeps what it has.
+- **Hospitals.** The wounded go to hospital beds (40 shown in every capital, 80 more for each
+  Hospital, up to three). After 10 days they are healed and join the garrison; they are back
+  with an army only when it next fills its ranks. Wounded there is no bed for die.
+- **Ranks are filled at home.** An army takes soldiers from the garrison only while it stands
+  in one of its civ's capitals. One worn down to under half of what its general can lead,
+  with soldiers waiting at home, goes back for them.
+- **Standing with an ally.** A civ sends an army to stand in an ally's capital that an enemy
+  holds or has an army within 4 tiles of. It adds to the city's defence, fights whoever the
+  civ is itself at war with, and goes home 30 days after the danger has passed. A ruler
+  sends his with the "Reinforce" button and calls it back himself.
+- **Scouting.** An army's exact size is known only to its own civ, its allies, and a civ with
+  an army or capital within 6 tiles. A strategist with most of a neighbour's soldiers in
+  sight knows its power exactly; otherwise it has only the rough comparison. When you rule
+  a civ, armies out of sight are shown as "~150".
 - **More than one army.** Against each enemy a civ fields a main body; from 60 soldiers a
   second column sets out for another of the enemy's capitals; and an intruder far from
   every army gets a home force raised against it, which never leaves its own land. Allies
@@ -424,13 +446,13 @@ them, each under a commander.
   tiles. The chase lasts at most 8 days or 6 tiles. Each day the pursuer is
   within a tile, the fleeing army loses 15% of the soldiers it had when it
   broke and cannot fight back; below a fifth of that it is destroyed. It is
-  safe once it reaches its capital or a friendly army, and gets no
-  reinforcements while in flight. A pursuer fights at 80% strength during the
+  safe once it reaches its capital or a friendly army, and fills no
+  ranks while in flight. A pursuer fights at 80% strength during the
   chase and for 5 days after.
 - **The fallen.** Of the soldiers a beaten army lost in the battle, and of
-  those cut off in a pursuit, 60% are wounded (they leave the army, do no
-  work, and recover into the population at about 1% a day), 30% escape to the
-  garrison and 10% die. The winner's losses are simply dead. A beaten army's
+  those cut off in a pursuit, 60% are wounded (they go to hospital: see Hospitals above), 30% escape to the
+  garrison and 10% die. Half of the winner's losses are wounded too, and half
+  of an expedition's against natives. A beaten army's
   commander is killed (10%), captured (25%) or escapes (65%): rolled at every
   rout, and again if the army is then run down. A captured commander changes
   sides half the time (if the captor's roster has room); otherwise he is held

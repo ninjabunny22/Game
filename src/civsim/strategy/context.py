@@ -27,6 +27,7 @@ def army_band(their_power: float, your_power: float) -> str:
     return next((label for limit, label in ARMY_BANDS if ratio < limit), STRONGEST_BAND)
 
 
+SCOUTED_SHARE = 0.5  # share of a neighbour's soldiers that must be in sight for its power to be known
 MARCH_CACHE_TICKS = 50  # how long a measured march to a neighbour's capital is trusted
 ROUT_MEMORY = 100  # ticks for which a lost battle is still plain for all to see
 
@@ -94,6 +95,10 @@ def stance_context(sim, civ) -> dict:
             "army_vs_yours": army_band(diplomacy.power(other), diplomacy.power(civ)),
             # Exact numbers are shared between allies only.
             "intel": _intel(sim, other) if relation.status == "alliance" else None,
+            # Scouting: with most of their soldiers in sight of your armies and capitals you can
+            # count them, and know their power as it is (None while they are out of sight).
+            "seen_power": (round(diplomacy.power(other)) if relation.status != "alliance"
+                           and sim.military.sighted(civ, other) >= SCOUTED_SHARE else None),
             "distrusted_ticks_left": max(0, diplomacy.distrust_until.get(other_id, 0) - sim.tick),
             "relation": relation.status,
             "war_ticks": sim.tick - relation.war.start if relation.war else None,

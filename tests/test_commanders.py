@@ -109,7 +109,8 @@ def test_most_of_a_beaten_armys_losses_are_wounded_or_got_away(sim):
     assert b.wounded > 0
     assert population - b.population == pytest.approx(0.1 * fallen, rel=1e-6), "one in ten is dead"
     assert lost == pytest.approx(0.1 * fallen, rel=1e-6)
-    assert a.wounded == 0 and a.population < dead_a, "the winner's losses are simply dead"
+    # Half the winner's losses are only wounded: in hospital, and still among its people.
+    assert a.wounded > 0 and a.population < dead_a, "the winner loses some for good too"
     assert sum(x.size for x in b.armies) == pytest.approx(b.soldiers)
 
 

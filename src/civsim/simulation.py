@@ -89,7 +89,7 @@ class Simulation:
             self.ai.plan(civ, mods, self.tick, events)
             manage_villagers(civ, self.world, mods, lambda: next(self._ids))
             tend_horses(civ)
-            produce(civ, mods, self.building_defs)
+            produce(civ, mods, self.building_defs, self.tick)
             advance_construction(civ, mods, self.building_defs, events)
             advance_research(civ, self.tech_tree, events)
         self.diplomacy.update(self.tick, events)

@@ -220,7 +220,10 @@ def test_a_strong_civ_takes_a_neighbouring_native_capital_by_force(sim):
             break
     assert region.owner == civ.id
     assert any("from the Hinterfolk" in e["text"] for e in events)
-    assert all(sim.world.owner[t] == civ.id for t in region.tiles)
+    # Every native tile is taken; land another civ had already settled there stays its own.
+    assert all(sim.world.owner[t] == civ.id or sim.world.owner[t] in {c.id for c in sim.civs if c is not civ}
+               for t in region.tiles)
+    assert sum(sim.world.owner[t] == civ.id for t in region.tiles) > len(region.tiles) / 2
     assert civ.diplomacy_points >= points, "no declaration and no diplomacy cost"
     assert need > 0 and not sim.diplomacy.enemies(civ.id)
 

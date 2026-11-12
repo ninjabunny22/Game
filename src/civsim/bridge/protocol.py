@@ -20,6 +20,7 @@ Client -> server
 
 import json
 
+from ..economy.production import soldier_cost
 from ..economy.rules import RESOURCES
 from ..map import BIOME_INFO, DEPOSIT_TYPES, Biome, load_faction
 from ..military import UNIT_TYPES
@@ -28,9 +29,9 @@ from ..simulation import Simulation
 from ..config import HEADCOUNT, MAP_SIZES, MAPS
 from ..diplomacy import rules
 
-PROTOCOL_VERSION = 17
+PROTOCOL_VERSION = 18
 RULER_COMMANDS = ("take_control", "release_control", "set_stance", "set_focus", "set_research", "set_build",
-                  "answer_proposal", "start_rally", "cancel_rally")
+                  "answer_proposal", "start_rally", "cancel_rally", "reinforce_ally", "recall_reinforcement")
 GAME_COMMANDS = ("new_game", "end_game")  # start a game from the menu; go back to the menu
 COMMANDS = ("pause", "resume", "toggle_pause", "step", "set_speed", *RULER_COMMANDS, *GAME_COMMANDS)
 
@@ -211,7 +212,14 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
             "commanders": sim.military.roster(civ),
             "commander_cap": ROSTER_CAP,
             "army_strength": round(diplomacy.strength(civ), 1),
+            # Soldiers in hospital (they join the garrison when healed), the beds there are for
+            # them, and how many have died in all for want of one.
             "wounded": heads(civ.wounded),
+            "beds": heads(sim.military.beds(civ)),
+            "hospital_deaths": heads(civ.hospital_deaths),
+            # How well the civ can arm its soldiers, 1 to 4, and what a soldier costs it (1 = the usual).
+            "tier": int(sim.military.best_tier(civ)),
+            "soldier_cost": round(soldier_cost(mods), 2),
             # Horses standing in the stables, and the whole herd including those under riders.
             "horses": int(civ.horses),
             "herd": int(civ.herd),
@@ -231,6 +239,7 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
         })
     armies = []
     villagers = []
+    watcher = sim.ruler.civ if sim.ruler.civ is not None and sim.ruler.civ.alive else None
     for civ in sim.civs:
         for army in civ.armies:
             if army.size < 0.5:
@@ -239,8 +248,15 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
             armies.append({
                 "id": army.id, "civ": civ.id, "x": army.tile % world.width, "y": army.tile // world.width,
                 "role": army.role, "state": army.state, "target_civ": army.target_civ,
-                # duty: "attack" (out after the enemy's capitals) or "defend" (a home force on its own land).
+                # duty: "attack" (out after the enemy's capitals), "defend" (a home force on its own
+                # land) or "reinforce" (standing in an ally's capital). refit: going home to fill its ranks.
                 "duty": army.duty,
+                "refit": army.refit,
+                # How well its soldiers are armed, 1 to 4 (an average when they differ).
+                "tier": round(army.tier, 1),
+                # False when a human rules a civ whose armies and capitals are too far off to
+                # count this army: the viewer then shows its size only roughly.
+                "scouted": watcher is None or sim.military.scouted(watcher, army),
                 # Whole soldiers per unit type, adding up exactly to "size".
                 "units": whole(shown(army.units)),
                 "size": heads(army.size),

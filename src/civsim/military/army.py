@@ -92,7 +92,12 @@ class Army:
     disordered_until: int = 0  # a pursuer is out of formation during the chase and for a while after
     rout_size: float = 0.0  # soldiers this army had when it broke
     rally: int | None = None  # the rally it has joined, if any
-    duty: str = "attack"  # "attack": makes for the enemy's capitals. "defend": stays on its own land
+    # "attack": makes for the enemy's capitals. "defend": stays on its own land. "reinforce":
+    # stands in an ally's capital that is under threat (`post` is that capital's tile).
+    duty: str = "attack"
+    post: int | None = None
+    tier: float = 1.0  # how well its soldiers are armed, 1 to 4: an average, when they differ
+    refit: bool = False  # on its way to one of its civ's capitals to fill its ranks
     wing: int = 0  # among the armies sent against one enemy: the main body, or a second column
     boat: bool = False  # aboard ship on open water, having put out from near one of its civ's harbours
 
@@ -113,7 +118,11 @@ class Army:
     def scale(self, factor: float) -> None:
         self.units = {u: count * factor for u, count in self.units.items()}
 
-    def add(self, units: dict[str, float]) -> None:
+    def add(self, units: dict[str, float], tier: float | None = None) -> None:
+        """Take soldiers in. `tier` is how well they are armed, if not the same as the army's."""
+        joining = sum(units.values())
+        if tier is not None and joining > 0:
+            self.tier = (self.tier * self.size + tier * joining) / (self.size + joining)
         for unit_id, count in units.items():
             self.units[unit_id] = self.units.get(unit_id, 0.0) + count
 

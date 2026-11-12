@@ -75,7 +75,12 @@ class Civilization:
     villagers: list[Villager] = field(default_factory=list)
     horses: float = 0.0  # in the stables without a rider; cavalry and mounted villagers have theirs
     horse_progress: float = 0.0  # toward the next foal
-    wounded: float = 0.0  # soldiers out of action: they neither fight nor work until they recover
+    wounded: float = 0.0  # soldiers in hospital: they neither fight nor work until they are healed
+    # The wounded by the day they leave hospital: [tick, soldiers by unit type, their tier].
+    hospital: list[list] = field(default_factory=list)
+    beds_short: int = -10_000  # the last tick wounded soldiers died for want of a bed
+    hospital_deaths: float = 0.0  # ... and how many have, in all
+    reinforce_order: int | None = None  # the ally a human ruler has ordered an army sent to stand with
     captives: list[Captive] = field(default_factory=list)  # enemy commanders this civ holds
 
     # Standing orders from the diplomacy layer, executed by the economy and the AI.

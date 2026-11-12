@@ -47,7 +47,8 @@ MATERIALS = ("wood", "stone", "ore", "gold")
 
 GOAL_PULL = 0.4  # how much a tech on the way to what the civ is concentrating on is preferred
 GOAL_EFFECTS = {  # what each focus is after in the tech tree
-    "military": ("military", "defense", "capture_speed", "mobilization", "casualties", "commander_xp"),
+    "military": ("military", "defense", "capture_speed", "mobilization", "casualties", "commander_xp", "tier",
+                 "soldier_cost"),
     "science": ("science_mult",),
     "economy": ("income", "build_speed", "build_slots"),
     "expansion": ("expand_cost", "bridges", "boats", "boat_range"),
@@ -63,6 +64,7 @@ UPKEEP_CAUTION = 0.2  # don't add upkeep in a resource that is below this share 
 TILES_PER_EXPANSION = 4  # claiming budget per expansion; a river tile without bridges uses more of it
 RULER_ORDER = 1e6  # the score of a building a human ruler has ordered
 HARBOUR_NEED = 0.6  # ... and a harbour, once it can build one
+BEDS_MEMORY = 400  # ticks a civ remembers soldiers dying for want of a hospital bed
 BARRACKS_NEED = 0.35  # how much a civ at peace wants barracks to train its soldiers in
 STABLES_NEED = 0.5  # how much a civ at peace wants stables, on the scale of the other needs
 NO_FOREST = 6  # wood work slots on the land (capitals aside) below which expansion stops costing wood
@@ -88,7 +90,7 @@ class CivAI:
         self._cap_blocked: dict[int, set[str]] = {}
 
     def plan(self, civ: Civilization, mods: Modifiers, tick: int, events: list) -> None:
-        needs = self.assess_needs(civ, mods)
+        needs = self.assess_needs(civ, mods, tick)
         self._choose_research(civ, mods, needs, tick)
         self._abandon_unaffordable(civ, mods, tick, events)
         self._choose_project(civ, mods, needs, tick, events)
@@ -96,7 +98,7 @@ class CivAI:
 
     # -- needs ---------------------------------------------------------------
 
-    def assess_needs(self, civ: Civilization, mods: Modifiers) -> dict:
+    def assess_needs(self, civ: Civilization, mods: Modifiers, tick: int = 0) -> dict:
         fill = {res: min(1.0, civ.resources[res] / mods.storage[res]) for res in RESOURCES}
         scarcity = {res: 1 - fill[res] for res in RESOURCES}
         blocked = self._cap_blocked.pop(civ.id, set())
@@ -112,6 +114,8 @@ class CivAI:
         # Water is not gathered, so "barely provided" means supply is not keeping up with use.
         if mods.income["water"] < WATER_MARGIN * civ.upkeep["water"] or fill["water"] < 0.3:
             wanted.insert(0, "water")
+        if civ.capacity["gold"] - SETTLEMENT_YIELDS["gold"] * capitals < 2:
+            wanted.append("gold")  # last: gold to mine is worth reaching for once nothing else is missing
         idle_share = civ.idle / max(civ.workforce, 1.0)
         return {
             # No point housing people there is no water for.
@@ -126,6 +130,11 @@ class CivAI:
             "military": 0.1 + 0.9 * civ.military_need,
             # How far the army lags what the civ means to raise: what barracks are for.
             "training": _clamp((civ.soldier_target - civ.soldiers) / max(civ.soldier_target, 1.0), 0, 1),
+            # Gold is what armies run on: wanted badly by a civ that cannot pay or arm its soldiers.
+            "pay": 1.0 if civ.unpaid else _clamp(
+                1.5 * scarcity["gold"] * (civ.soldier_target - civ.soldiers) / max(civ.soldier_target, 1.0), 0, 1),
+            # Hospital beds: wanted once soldiers have died for want of one, and by any civ at war.
+            "beds": 1.0 if tick - civ.beds_short < BEDS_MEMORY else 0.7 * civ.military_need,
             "expansion": (0.25 + 0.75 * _clamp(3 * idle_share, 0, 1) + (0.4 if wanted else 0.0)
                           + (0.5 if civ.march_target is not None else 0.0)),
             "resource": {res: 0.2 + 0.6 * scarcity[res] for res in RESOURCES},
@@ -221,7 +230,8 @@ class CivAI:
                   + 0.2 * effects.get("reinforce", 0)) * weights["expansion"]
         warfare = (effects.get("commander_xp", 0) + 0.5 * effects.get("commander_start", 0)
                    + effects.get("capture_speed", 0) - 2 * effects.get("casualties", 0)
-                   + 3 * effects.get("mobilization", 0))
+                   + 3 * effects.get("mobilization", 0) + 0.5 * effects.get("tier", 0)
+                   - 2 * effects.get("soldier_cost", 0))
         value += warfare * weights["military"] * (0.3 + needs["military"])
         value -= 0.6 * effects.get("deal_fee", 0) * weights["wealth"]
         value += 0.3 * effects.get("villager_speed", 0) * weights["industry"]
@@ -386,6 +396,10 @@ class CivAI:
     def _building_need(self, bdef: BuildingDef, needs: dict) -> float:
         if bdef.stores:
             return max(needs["store"][res] for res in bdef.stores)
+        if bdef.id == "gold_mine":
+            return max(needs["resource"]["gold"], needs["pay"])
+        if bdef.id == "hospital":
+            return needs["beds"]
         if bdef.need_resource:
             return needs["resource"][bdef.need_resource]
         if bdef.id == "harbour":

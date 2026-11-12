@@ -224,6 +224,25 @@ func _refresh_ruler(ruler: Variant) -> void:
 			_ruler_box.add_child(call_row)
 			_button(call_row, "Call a rally against %s" % str(_civ_info[foe]["name"]), func() -> void:
 				command_requested.emit("start_rally", {"civ": foe}))
+	var standing: Variant = ruler.get("reinforcing")
+	if standing != null:
+		var stand_row := HBoxContainer.new()
+		_ruler_box.add_child(stand_row)
+		var stand_text := Label.new()
+		var with_whom := str(_civ_info[int(standing["civ"])]["name"])
+		stand_text.text = ("Your army stands with %s in %s" % [with_whom, standing["city"]]
+				if standing["city"] != null else "An army will set out to stand with %s" % with_whom)
+		stand_text.add_theme_font_size_override("font_size", 13)
+		stand_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		stand_row.add_child(stand_text)
+		_button(stand_row, "Call back", func() -> void: command_requested.emit("recall_reinforcement", {}))
+	else:
+		for friend: Variant in ruler.get("reinforce_targets", []):
+			var ally := int(friend)
+			var send_row := HBoxContainer.new()
+			_ruler_box.add_child(send_row)
+			_button(send_row, "Reinforce %s" % str(_civ_info[ally]["name"]), func() -> void:
+				command_requested.emit("reinforce_ally", {"civ": ally}))
 	for offer: Dictionary in ruler.get("proposals", []):
 		if offer.get("popup", false):
 			continue  # asked in a dialogue of its own
@@ -753,8 +772,10 @@ func _army_text(civ: Dictionary) -> String:
 			posted.append("%s (level %d) holds %s" % [officer["name"], int(officer["level"]), officer["post"]])
 	if not posted.is_empty():
 		text += "\n   " + "\n   ".join(posted)
-	if int(civ["wounded"]) > 0:
-		text += "\n[color=#8a93a0]Wounded and recovering:[/color] %d" % int(civ["wounded"])
+	text += "\n[color=#8a93a0]Troops:[/color] tier %d   [color=#8a93a0]In hospital:[/color] %d of %d beds" % [
+		int(civ.get("tier", 1)), int(civ["wounded"]), int(civ.get("beds", 0))]
+	if int(civ.get("hospital_deaths", 0)) > 0:
+		text += "   [color=#d98a8a]%d died for want of a bed[/color]" % int(civ["hospital_deaths"])
 	if not civ["captives"].is_empty():
 		var held: Array[String] = []
 		for captive: Dictionary in civ["captives"]:

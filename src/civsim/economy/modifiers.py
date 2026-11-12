@@ -7,7 +7,8 @@ Buildings and techs share one effects vocabulary (see data/*.json):
   military (army strength), defense (strength when holding own land),
   purification (water per owned coast tile), water_mult, water_use, bridges, boats,
   boat_range, commander_xp, commander_start, officer_appointment, capture_speed, casualties, mobilization,
-  home_speed, reinforce, villager_speed, deal_fee
+  home_speed, reinforce, villager_speed, deal_fee, soldier_cost (what a soldier costs to arm
+  and to pay), tier (how well its troops are equipped, 1 to 4), beds (hospital beds)
 """
 
 from dataclasses import dataclass, field
@@ -53,7 +54,10 @@ class Modifiers:
     casualties: float = 0.0  # change to battle losses (negative = fewer)
     mobilization: float = 0.0  # added to the share of the population that can be under arms
     home_speed: float = 0.0  # extra army movement per tick on the civ's own land
-    reinforce: float = 0.0  # extra speed at which soldiers reach armies in the field
+    reinforce: float = 0.0  # extra speed of an army on its way home to fill its ranks
+    soldier_cost: float = 0.0  # change to what a soldier costs to arm and to pay (negative = cheaper)
+    tier: int = 1  # how well the civ can equip its troops: 1 to 4
+    beds: float = 0.0  # hospital beds, beyond the few every capital has
     villager_speed: int = 0  # extra tiles a villager walks per tick
     deal_fee: float = 0.0  # change to the cost of opening a trade deal (negative = cheaper)
 

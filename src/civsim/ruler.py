@@ -90,6 +90,17 @@ class Ruler:
             result = self.sim.military.start_rally(civ, value.get("civ"), self.sim.tick, self._news)
             if isinstance(result, str):
                 return result
+        elif action == "reinforce_ally":
+            other = value.get("civ")
+            if (not isinstance(other, int) or isinstance(other, bool) or other == civ.id
+                    or not 0 <= other < len(self.sim.civs) or not self.sim.civs[other].alive
+                    or self.sim.diplomacy.relation(civ.id, other).status != "alliance"):
+                return "you can only send an army to stand with an ally"
+            if self.sim.military.reinforcing(civ) is not None:
+                return "you already have an army standing with an ally"
+            civ.reinforce_order = other
+        elif action == "recall_reinforcement":
+            civ.reinforce_order = None
         elif action == "cancel_rally":
             rally = self.sim.military.rally_led_by(civ.id)
             if rally is None:
@@ -231,6 +242,12 @@ class Ruler:
         return {"state": rally.state, "city": name(rally.city), "target": name(rally.target),
                 "days_left": max(0, rally.departs - self.sim.tick) if rally.state == "gathering" else 0}
 
+    def _reinforcing(self, civ) -> dict | None:
+        army = self.sim.military.reinforcing(civ)
+        if army is None:
+            return {"civ": civ.reinforce_order, "city": None} if civ.reinforce_order is not None else None
+        return {"civ": self.sim.world.owner[army.post], "city": self.sim.military._city_name(army.post)}
+
     def state(self) -> dict | None:
         civ = self.civ
         if civ is None:
@@ -245,6 +262,11 @@ class Ruler:
             # The rally this civ is leading, if any, and the enemies it could call one against.
             "rally": self._rally_state(civ),
             "rally_targets": [e for e in self.sim.diplomacy.enemies(civ.id) if self.sim.military._war_allies(civ, e)],
+            # Standing with an ally: the ally an army has been ordered to (or is with), the city
+            # it is for, and the allies one could be sent to.
+            "reinforcing": self._reinforcing(civ),
+            "reinforce_targets": [] if civ.reinforce_order is not None or self.sim.military.reinforcing(civ)
+            else self.sim.diplomacy.allies(civ.id),
             "research_order": civ.research_order,
             "research_options": [{"id": t.id, "name": t.name} for t in tree.available(civ.known_techs)],
             "build_order": civ.build_order,

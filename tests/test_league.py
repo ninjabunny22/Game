@@ -17,8 +17,8 @@ def test_a_game_pits_half_the_civs_on_changed_numbers_against_the_rest():
         league.play("small", 0, {"NO_SUCH_NUMBER": 1}, game=0, ticks=5)
 
 
-def test_a_comparison_never_plays_more_than_ten_games_and_sums_them_up():
-    assert league.MAX_GAMES == 10 == len(league.GAMES)
+def test_a_comparison_never_plays_more_than_six_games_and_sums_them_up():
+    assert league.MAX_GAMES == 6 == len(league.GAMES)
     result = league.compare({"PARITY": 1.0}, games=2, ticks=120)
     assert result["games"] == 2 and result["advantage"] > 0 and result["length"] == 120
 

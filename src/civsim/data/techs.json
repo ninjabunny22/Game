@@ -76,8 +76,8 @@
     {
       "id": "iron_working", "name": "Iron Working", "era": 2, "prereqs": ["bronze_working"],
       "cost": {"science": 330, "wood": 40, "ore": 40},
-      "effects": {"yield_mult": {"ore": 0.25, "stone": 0.15}, "military": 0.2},
-      "description": "+25% ore, +15% stone, +20% army strength; unlocks Workshop"
+      "effects": {"yield_mult": {"ore": 0.25, "stone": 0.15}, "tier": 1},
+      "description": "+25% ore, +15% stone, troops can be armed one tier better; unlocks Workshop"
     },
     {
       "id": "mathematics", "name": "Mathematics", "era": 2, "prereqs": ["writing", "the_wheel"],
@@ -100,8 +100,14 @@
     {
       "id": "machinery", "name": "Machinery", "era": 3, "prereqs": ["engineering", "iron_working"],
       "cost": {"science": 880, "wood": 80, "ore": 80},
-      "effects": {"yield_mult": {"all": 0.15}, "military": 0.1},
-      "description": "+15% to all resource yields, +10% army strength"
+      "effects": {"yield_mult": {"all": 0.15}, "tier": 1},
+      "description": "+15% to all resource yields, troops can be armed one tier better"
+    },
+    {
+      "id": "logistics", "name": "Logistics", "era": 3, "prereqs": ["currency", "iron_working"],
+      "cost": {"science": 850, "wood": 60, "gold": 60},
+      "effects": {"soldier_cost": -0.15},
+      "description": "Soldiers cost 15% less to arm and to pay"
     },
     {
       "id": "guilds", "name": "Guilds", "era": 3, "prereqs": ["currency", "engineering"],
@@ -120,6 +126,12 @@
       "cost": {"science": 3500, "stone": 150, "gold": 150},
       "effects": {"income": {"gold": 1.0}, "deal_fee": -0.5},
       "description": "+1 gold per tick, trade deals cost half to open; unlocks Bank"
+    },
+    {
+      "id": "quartermasters", "name": "Quartermasters", "era": 4, "prereqs": ["logistics"],
+      "cost": {"science": 3600, "wood": 150, "gold": 120},
+      "effects": {"soldier_cost": -0.15},
+      "description": "Soldiers cost a further 15% less to arm and to pay"
     },
     {
       "id": "fortification", "name": "Fortification", "era": 4, "prereqs": ["engineering", "machinery"],
@@ -154,8 +166,14 @@
     {
       "id": "gunpowder", "name": "Gunpowder", "era": 5, "prereqs": ["military_academy", "machinery"],
       "cost": {"science": 9800, "ore": 300, "wood": 200},
-      "effects": {"military": 0.25},
-      "description": "+25% army strength"
+      "effects": {"tier": 1},
+      "description": "Troops can be armed one tier better: the best there is"
+    },
+    {
+      "id": "standing_army", "name": "Standing Army", "era": 5, "prereqs": ["quartermasters", "military_academy"],
+      "cost": {"science": 9500, "ore": 200, "gold": 300},
+      "effects": {"soldier_cost": -0.15},
+      "description": "Soldiers cost a further 15% less to arm and to pay"
     },
     {
       "id": "siegecraft", "name": "Siegecraft", "era": 5, "prereqs": ["fortification", "gunpowder"],
@@ -196,8 +214,8 @@
     {
       "id": "rifling", "name": "Rifling", "era": 6, "prereqs": ["gunpowder", "steam_power"],
       "cost": {"science": 21500, "ore": 500, "gold": 300},
-      "effects": {"military": 0.25, "casualties": -0.1},
-      "description": "+25% army strength, 10% fewer casualties"
+      "effects": {"military": 0.1, "casualties": -0.1},
+      "description": "+10% army strength, 10% fewer casualties"
     },
     {
       "id": "general_staff", "name": "General Staff", "era": 6, "prereqs": ["military_academy", "rifling"],

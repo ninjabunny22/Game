@@ -11,7 +11,7 @@ import random
 from ..civ.civilization import Settlement
 from ..economy import may_stand, ports, recompute_capacity
 from ..economy.villagers import convert_villagers
-from ..military.units import unit_strength
+from ..military.units import tier_strength, unit_strength
 from ..economy.rules import (
     GARRISON,
     MAX_MOBILIZATION,
@@ -99,12 +99,14 @@ class Diplomacy:
         if not civ.armies:
             return civ.soldiers * self.quality(civ)
         return self.quality(civ) * sum(
-            unit_strength(army.units) * (1 + (army.commander.strength_bonus if army.commander else 0.0))
+            unit_strength(army.units) * tier_strength(army.tier)
+            * (1 + (army.commander.strength_bonus if army.commander else 0.0))
             for army in civ.armies)
 
     def power(self, civ) -> float:
         """Strength the civ could field if it mobilised fully."""
-        return civ.population * self.mobilization_cap(civ) * (1 + self.mods[civ.id].military)
+        mods = self.mods[civ.id]
+        return civ.population * self.mobilization_cap(civ) * (1 + mods.military) * tier_strength(mods.tier)
 
     def mobilization_cap(self, civ) -> float:
         """Largest share of the population the civ can put under arms."""

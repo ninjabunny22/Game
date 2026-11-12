@@ -32,10 +32,11 @@ from collections.abc import Callable
 
 from ..diplomacy import rules
 from ..economy.harbours import ports
-from ..economy.rules import MIN_POPULATION
+from ..economy.production import soldier_cost
+from ..economy.rules import HEAL_TICKS, INFIRMARY_BEDS, MIN_POPULATION
 from ..map import WorldMap, find_path, region_neighbours, step_cost
 from .army import LEADERLESS_CAPACITY, XP_PER_LEVEL_STEP, Army, Captive, Commander, Rally
-from .units import BASE_UNIT, UNIT_TYPES, unit_strength
+from .units import BASE_UNIT, MAX_TIER, UNIT_TYPES, tier_strength, unit_strength
 
 GARRISON_KEEP = 0.2  # share of the soldiers that stays to hold the capital during a war ...
 GUARDED_KEEP = 0.35  # ... or while a civ it is not yet fighting is set on attacking it
@@ -52,7 +53,19 @@ HOME_CALL = 8  # tiles: an intruder further than this from every army gets a for
 JOINT_PULL = 10  # tiles further an army will go to attack the capital an ally is already attacking
 OUTMATCHED = 1.8  # an army falls back from enemies within reach this many times its strength
 DANGER_RADIUS = 3  # ... counted this many tiles around it
-REINFORCE_RATE = 0.05  # share of the army that can reach a field army per tick once it has left home
+# An army fills its ranks only in one of its civ's capitals: one worn down in the field goes home for more.
+REFIT_BELOW = 0.5  # share of what its commander can lead below which an army goes home to refill ...
+REFIT_WAITING = 0.25  # ... if at least this share of that is waiting in the garrison
+# Better arms, once the civ has learned to make them, are handed out in its capitals.
+UPGRADE_GOLD = 0.3  # to bring one soldier up one tier ...
+UPGRADE_ORE = 0.1
+UPGRADE_PER_TICK = 3.0  # ... and how many soldiers a day can be re-armed
+# Standing with an ally: an army sent to one of its capitals that an enemy is at or near.
+REINFORCE_ALERT = 4  # tiles: an enemy army this close to a capital threatens it
+REINFORCE_REACH = 40  # tiles from our capital beyond which no help is sent
+REINFORCE_STAY = 30  # ticks the army stays on after the threat has gone
+REINFORCE_RETRY = 150  # ticks before trying again for a capital there was no way to
+SCOUT_RANGE = 6  # tiles within which a civ's armies and capitals can count an army exactly
 MIN_FIELD_ARMY = 3.0  # soldiers below which an army will not set out
 REPLAN_TICKS = 15
 DEFENCE_RADIUS = 6  # a defending army also answers threats this close to the capital
@@ -75,7 +88,8 @@ DISORDER_DAYS = 5
 
 # What becomes of the soldiers a beaten army lost in the battle, or loses in a pursuit, and of
 # its commander: rolled when the army is routed, and again if it is then run down.
-WOUNDED_SHARE = 0.6  # out of action: they return to the population and recover in time
+WOUNDED_SHARE = 0.6  # out of action: they go to hospital, and die if there is no bed for them
+WOUNDED_IN_VICTORY = 0.5  # share of the losses of an army that was not broken who are wounded, not dead
 ESCAPE_SHARE = 0.3  # make their own way home and rejoin the garrison
 DEAD_SHARE = 0.1
 COMMANDER_DEATH_CHANCE = 0.10
@@ -130,6 +144,7 @@ class Military:
         self._called: dict[int, int] = {}  # civ -> tick before which it calls no new rally
         self._no_way: dict[tuple[int, int], int] = {}  # (civ, region) -> tick until which no expedition is sent there
         self._lost: dict[tuple[int, int], dict[str, float]] = {}  # (army id, enemy id) -> soldiers lost in the battle
+        self._stay: dict[int, int] = {}  # reinforcing army id -> tick until which it stays though the threat is gone
         self._named = 0
         self._names = random.Random(sum(civ.capital.tile for civ in civs))  # naming never disturbs the game's dice
         self._tick = 0
@@ -142,6 +157,7 @@ class Military:
     def army_strength(self, army: Army, enemy_units: dict[str, float] | None = None) -> float:
         """Soldiers x unit type (with counters) x quality x commander skill."""
         strength = unit_strength(army.units, enemy_units) * self.diplomacy.quality(self.civs[army.civ])
+        strength *= tier_strength(army.tier)
         if army.commander:
             strength *= 1 + army.commander.strength_bonus
         if army.state == "pursuing" or self._tick < army.disordered_until:
@@ -156,7 +172,10 @@ class Military:
         for civ in living:
             self._sync(civ)
         for civ in living:
+            self._heal(civ, tick)
+            self._upgrade(civ)
             self._organise(civ, tick)
+            self._support(civ, tick, events)
             self._campaign(civ, tick)
             self._station(civ)
             self._hold_captives(civ, tick, events)
@@ -193,13 +212,83 @@ class Military:
         garrison.tile = civ.capital.tile
         total = sum(army.size for army in civ.armies)
         if civ.soldiers > total + 1e-9:
-            garrison.add(self._mount(civ, self._recruits(civ, civ.soldiers - total)))
+            garrison.add(self._mount(civ, self._recruits(civ, civ.soldiers - total)), self.best_tier(civ))
         elif total > civ.soldiers + 1e-9:
             factor = civ.soldiers / total
             riders = civ.unit_counts().get("cavalry", 0.0)
             for army in civ.armies:
                 army.scale(factor)
             civ.horses += riders * (1 - factor)  # cavalry stood down bring their horses back
+
+    def best_tier(self, civ) -> float:
+        """How well the civ can arm a soldier: what its research allows."""
+        return float(max(1, min(MAX_TIER, self.mods[civ.id].tier)))
+
+    def _upgrade(self, civ) -> None:
+        """Soldiers standing in one of the civ's capitals are given the best arms it can make,
+        a few a day, as far as its gold and ore go. Armies in the field keep what they have."""
+        best = self.best_tier(civ)
+        cost = soldier_cost(self.mods[civ.id])
+        gold, ore = UPGRADE_GOLD * cost, UPGRADE_ORE * cost
+        left = UPGRADE_PER_TICK
+        for army in civ.armies:
+            if army.size < 0.5:
+                army.tier = best if army.size <= 0 else army.tier
+                continue
+            behind = (best - army.tier) * army.size  # soldier-tiers still to make up
+            if behind <= 1e-6 or not self._at_home(civ, army.tile) or army.state in ("fighting", "retreating"):
+                continue
+            affordable = min(max(0.0, civ.resources["gold"] - GOLD_RESERVE) / gold, civ.resources["ore"] / ore)
+            done = min(behind, left, affordable)
+            if done <= 0:
+                continue
+            civ.resources["gold"] -= done * gold
+            civ.resources["ore"] -= done * ore
+            army.tier = min(best, army.tier + done / army.size)
+            left -= done
+
+    # -- hospitals -----------------------------------------------------------
+
+    def beds(self, civ) -> float:
+        """Hospital beds: a few in every capital, and those of its working hospitals."""
+        return INFIRMARY_BEDS * len(civ.settlements) + self.mods[civ.id].beds
+
+    def _admit(self, civ, units: dict[str, float], tier: float) -> float:
+        """Wounded soldiers are put to bed, as many as there are beds free; the rest die.
+        Returns how many died. The wounded stay among the civ's people but are no longer
+        counted as soldiers until they are healed."""
+        amount = sum(units.values())
+        if amount <= 0:
+            return 0.0
+        share = min(1.0, max(0.0, self.beds(civ) - civ.wounded) / amount)
+        if share > 0:
+            civ.hospital.append([self._tick + HEAL_TICKS, {u: count * share for u, count in units.items()}, tier])
+            civ.wounded += share * amount
+        dead = (1 - share) * amount
+        if dead > 1e-9:
+            civ.beds_short = self._tick
+            civ.hospital_deaths += dead
+        return dead
+
+    def _casualties(self, civ, fallen: dict[str, float], tier: float, share: float) -> None:
+        """Of soldiers already struck off as lost, `share` were only wounded: they are among
+        the civ's people again, in hospital if there is a bed for them."""
+        wounded = {unit: count * share for unit, count in fallen.items()}
+        amount = sum(wounded.values())
+        if amount <= 0:
+            return
+        civ.population += amount - self._admit(civ, wounded, tier)
+
+    def _heal(self, civ, tick: int) -> None:
+        """Soldiers whose stay in hospital is over join the garrison. They do not go back to
+        the army they fell with: it has them again only when it next fills its ranks in a capital."""
+        for batch in [b for b in civ.hospital if b[0] <= tick]:
+            civ.hospital.remove(batch)
+            healed = sum(batch[1].values())
+            civ.soldiers += healed
+            if civ.garrison is not None:
+                civ.garrison.add(self._mount(civ, batch[1]), batch[2])
+        civ.wounded = sum(sum(batch[1].values()) for batch in civ.hospital)
 
     def _mount(self, civ, recruits: dict[str, float]) -> dict[str, float]:
         """Cavalry recruits each need a horse from the stables; those without one serve on foot."""
@@ -258,7 +347,7 @@ class Military:
     def _organise(self, civ, tick: int) -> None:
         """Field armies against each enemy, each as large as its commander can lead and no more
         than MAX_ARMIES in all; the rest of the soldiers hold the capitals, and fill the ranks
-        of armies that come home."""
+        of armies that come home. Nobody is sent out to an army in the field."""
         enemies = self.diplomacy.enemies(civ.id)
         garrison = civ.garrison
         # More stays at home while someone it is not yet fighting is set on attacking it.
@@ -304,7 +393,7 @@ class Military:
             if army.role != "field":
                 continue
             if (army.target_region is None and army.target_civ not in enemies and army.state != "returning"
-                    and army.rally is None):
+                    and army.rally is None and army.duty != "reinforce"):
                 army.state, army.path, army.siege_progress = "returning", [], 0.0  # the war is over: go home
             if army.commander is None and self._at_home(civ, army.tile) and tick >= army.leaderless_until:
                 army.commander = self._appoint(civ)
@@ -320,16 +409,13 @@ class Military:
             room = self.capacity(army) - army.size
             home = self._at_home(civ, army.tile)
             if room < 0 and home:
-                garrison.add(army.take(-room))  # more than its commander can lead: the rest stay behind
+                garrison.add(army.take(-room), army.tier)  # more than its commander can lead: the rest stay behind
                 continue
             spare = garrison.size - keep
-            if room <= 0 or spare <= 0 or army.state == "retreating":
-                continue  # nobody is sent out to join an army in flight
-            # In one of its own capitals an army fills its ranks at once; in the field
-            # reinforcements trickle out to it.
-            pace = REINFORCE_RATE * (1 + self.mods[civ.id].reinforce)
-            limit = room if home else max(1.0, pace * civ.soldiers)
-            army.add(garrison.take(min(room, spare, limit)))
+            if room <= 0 or spare <= 0 or not home or army.state == "retreating":
+                continue  # ranks are filled in the civ's own capitals, and nowhere else
+            army.add(garrison.take(min(room, spare)), garrison.tier)
+            army.refit = False
 
     def roster(self, civ) -> int:
         """Commanders the civ has: those leading armies and those in reserve."""
@@ -425,11 +511,12 @@ class Military:
             army.commander.experience += experience * (1 + self.mods[army.civ].commander_xp)
 
     def _disband(self, civ, army: Army) -> None:
-        civ.garrison.add(army.units)
+        civ.garrison.add(army.units, army.tier)
         if army.commander:
             civ.commanders.append(army.commander)
         civ.armies.remove(army)
         self._rally.pop(army.id, None)
+        self._stay.pop(army.id, None)
 
     # -- orders --------------------------------------------------------------
 
@@ -460,6 +547,11 @@ class Military:
             goal = self.world.regions[army.target_region].capital
             if army.state == "idle":
                 army.state = "marching"
+        elif army.duty == "reinforce":
+            # Stand in the ally's capital; a beaten one rests at home first.
+            fit = tick >= self._rally.get(army.id, 0) and army.size >= MIN_FIELD_ARMY
+            goal = army.post if fit else self._refuge(civ, army.tile)
+            army.state = "marching" if army.tile != goal else "idle"
         else:
             enemy = self.civs[army.target_civ]
             war = self.diplomacy.relation(civ.id, enemy.id).war
@@ -477,6 +569,12 @@ class Military:
                 # One of our capitals is held: nothing matters more than driving them out.
                 goal = besieger.tile
                 army.state = "marching"
+            elif war and civ.id in war.aggressors and rested and (army.refit or self._worn_down(civ, army)):
+                # Too few left to go on, and more waiting at home: back to fill the ranks.
+                army.refit = True
+                goal = self._refuge(civ, army.tile)
+                army.siege_progress = 0.0
+                army.state = "marching" if army.tile != goal else "idle"
             elif war and civ.id in war.aggressors and rested and army.size >= MIN_FIELD_ARMY:
                 # Make for the nearest capital the enemy holds: taking it takes its region.
                 # Make for the capital that is cheapest to take: near, and not too strongly held.
@@ -677,13 +775,13 @@ class Military:
         head = max(own, key=lambda a: (a.commander.level if a.commander else 0, a.size, -a.id))
         for army in own:
             if army is not head:
-                head.add(army.take(army.size))
+                head.add(army.take(army.size), army.tier)
                 army.rally = None
         lent: dict[int, float] = {}
         for army in guests:
             owner = self.civs[army.civ]
             count = army.size
-            head.add(army.take(count))
+            head.add(army.take(count), army.tier)
             # The soldiers march under the leader's banner, and are his to pay, until the rally is over.
             owner.soldiers -= count
             owner.population = max(MIN_POPULATION, owner.population - count)
@@ -723,7 +821,7 @@ class Military:
                 owner.population += count
                 home = theirs if theirs is not None else owner.garrison
                 if home is not None:
-                    home.add(back)
+                    home.add(back, head.tier)
                 if theirs is not None and head is not None:
                     theirs.tile, theirs.state, theirs.path = head.tile, "returning", []
                 if taken:
@@ -748,6 +846,116 @@ class Military:
                 if other.role == "field" and other.target_civ == enemy.id and other.path and other.path[-1] in capitals:
                     found.add(other.path[-1])
         return found
+
+    # -- standing with an ally -------------------------------------------------
+
+    def _threatened(self, ally, tile: int) -> bool:
+        """Whether an enemy holds this capital of `ally`, or has an army close to it."""
+        region = self.world.regions[self.world.capital_tiles[tile]]
+        if region.owner != ally.id:
+            return False
+        if region.held_by is not None:
+            return True
+        for enemy_id in self.diplomacy.enemies(ally.id):
+            for other in self.civs[enemy_id].armies:
+                if (other.role == "field" and other.size >= MIN_FIELD_ARMY
+                        and other.state not in ("retreating", "returning")
+                        and self._reach(other.tile, tile) <= REINFORCE_ALERT):
+                    return True
+        return False
+
+    def _guests(self, tile: int) -> list[Army]:
+        """Allied armies standing in the capital on this tile to help hold it."""
+        return [army for civ in self.civs.values() if civ.alive for army in civ.armies
+                if army.duty == "reinforce" and army.post == tile and army.size >= 0.5
+                and army.state not in ("retreating", "returning") and self._reach(army.tile, tile) <= 1]
+
+    def reinforcing(self, civ) -> Army | None:
+        """The army the civ has sent to stand with an ally, if any."""
+        return next((a for a in civ.armies if a.duty == "reinforce" and a.state != "returning"), None)
+
+    def _support(self, civ, tick: int, events: list) -> None:
+        """Send an army to stand in an ally's capital that an enemy is at or near, and bring it
+        home once the danger has passed. A human ruler's civ sends one only when he orders it,
+        and it stays until he calls it back."""
+        ruled = civ.id == self.diplomacy.player
+        out = self.reinforcing(civ)
+        if out is not None:
+            ally = self.civs.get(self.world.owner[out.post])
+            allied = (ally is not None and ally.alive and ally.id != civ.id
+                      and self.diplomacy.relation(civ.id, ally.id).status == "alliance")
+            if allied and self._threatened(ally, out.post):
+                self._stay[out.id] = tick + REINFORCE_STAY
+            wanted = allied and (civ.reinforce_order == ally.id if ruled else tick < self._stay.get(out.id, 0))
+            if not wanted:
+                out.state, out.path = "returning", []
+                if ruled:
+                    civ.reinforce_order = None
+            return
+        if ruled and civ.reinforce_order is None:
+            return
+        garrison = civ.garrison
+        spare = garrison.size - GARRISON_KEEP * civ.soldiers
+        if (spare < 2 * MIN_FIELD_ARMY
+                or sum(1 for a in civ.armies if a.role == "field" and a.state != "returning") >= MAX_ARMIES):
+            return
+        if not ruled and any(r.owner == civ.id and r.held_by is not None for r in self.world.regions):
+            return  # its own capitals come first
+        allies = [civ.reinforce_order] if ruled else self.diplomacy.allies(civ.id)
+        for ally_id in allies:
+            ally = self.civs.get(ally_id)
+            if ally is None or not ally.alive or self.diplomacy.relation(civ.id, ally_id).status != "alliance":
+                if ruled:
+                    civ.reinforce_order = None
+                continue
+            capitals = sorted((s.tile for s in ally.settlements),
+                              key=lambda t: (not self._threatened(ally, t), self._gap(civ.capital.tile, t), t))
+            for tile in capitals:
+                if not ruled and (not self._threatened(ally, tile)
+                                  or self._gap(civ.capital.tile, tile) > REINFORCE_REACH):
+                    continue
+                if tick < self._no_way.get((civ.id, -tile - 1), 0):
+                    continue
+                if self._route(civ, civ.capital.tile, tile) is None:
+                    self._no_way[(civ.id, -tile - 1)] = tick + REINFORCE_RETRY
+                    continue
+                army = Army(self.next_id(), civ.id, civ.capital.tile, "field", commander=self._appoint(civ),
+                            state="marching", duty="reinforce", post=tile)
+                army.add(garrison.take(min(spare, self.capacity(army))), garrison.tier)
+                civ.armies.append(army)
+                self._stay[army.id] = tick + REINFORCE_STAY
+                self.diplomacy.remember(ally.id, civ.id, 0.5)  # help that came is not forgotten
+                self.diplomacy._log(tick, events, "war", [civ, ally],
+                                    f"{civ.name} sends an army to stand with {ally.name} in {self._city_name(tile)}")
+                return
+
+    # -- scouting ----------------------------------------------------------------
+
+    def scouted(self, viewer, army: Army) -> bool:
+        """Whether `viewer` can count this army: it is its own or an ally's, or one of its
+        armies or capitals is within sight of it."""
+        if army.civ == viewer.id or self.diplomacy.relation(viewer.id, army.civ).status == "alliance":
+            return True
+        spots = [s.tile for s in viewer.settlements]
+        spots += [a.tile for a in viewer.armies if a.role == "field" and a.size >= 0.5]
+        return any(self._reach(spot, army.tile) <= SCOUT_RANGE for spot in spots)
+
+    def sighted(self, viewer, other) -> float:
+        """The share of `other`'s soldiers that `viewer` can count."""
+        total = sum(army.size for army in other.armies)
+        if total <= 0:
+            return 1.0
+        return sum(army.size for army in other.armies if self.scouted(viewer, army)) / total
+
+    def _worn_down(self, civ, army: Army) -> bool:
+        """Whether an army in the field should go home to fill its ranks: it is well below what
+        its commander can lead, and there are soldiers waiting in the garrison. An army holding
+        a capital stays to see it through."""
+        capacity = self.capacity(army)
+        if army.size >= REFIT_BELOW * capacity or self._at_home(civ, army.tile) or self._holding(army):
+            return False
+        waiting = civ.garrison.size - GARRISON_KEEP * civ.soldiers
+        return waiting >= max(MIN_FIELD_ARMY, REFIT_WAITING * capacity)
 
     def _outmatched(self, civ, army: Army) -> bool:
         """Whether enemy armies close by are far too strong for this one to face. An army that
@@ -806,10 +1014,13 @@ class Military:
         mods = self.mods[civ.id]
         enemies = set(self.diplomacy.enemies(civ.id))
         speed = army.speed + (mods.home_speed if world.owner[army.tile] == civ.id else 0.0)
+        if army.refit or army.state == "returning":
+            speed += mods.reinforce  # the way home is the quickest once there are railways
         army.move_points = min(army.move_points + speed, 2 * speed + 3)
         while army.path:
             step = army.path[0]
-            if world.owner[step] in enemies and army.state not in ("retreating", "returning", "pursuing"):
+            if (world.owner[step] in enemies and not army.refit
+                    and army.state not in ("retreating", "returning", "pursuing")):
                 # Enemy ground: it has to be taken before the army can move onto it.
                 army.move_points = 0.0  # waiting does not bank movement
                 return
@@ -918,17 +1129,19 @@ class Military:
         return tick < self._rally.get(army.id, 0) and (army.role == "garrison" or army.state == "idle")
 
     def _spare(self, loser: Army, winner: Army) -> None:
-        """Not all the beaten side's losses are dead: 60% are wounded and 30% got away unharmed."""
+        """Not all a battle's losses are dead. Of the beaten side's, 60% are wounded and 30% got
+        away unharmed; of the winner's, half are wounded. The wounded go to hospital."""
         fallen = self._lost.pop((loser.id, winner.id), {})
-        self._lost.pop((winner.id, loser.id), None)
+        self._casualties(self.civs[winner.civ], self._lost.pop((winner.id, loser.id), {}), winner.tier,
+                         WOUNDED_IN_VICTORY)
         amount = sum(fallen.values())
         if amount <= 0:
             return
         civ = self.civs[loser.civ]
-        civ.population += (WOUNDED_SHARE + ESCAPE_SHARE) * amount
-        civ.wounded += WOUNDED_SHARE * amount
+        self._casualties(civ, fallen, loser.tier, WOUNDED_SHARE)
+        civ.population += ESCAPE_SHARE * amount
         civ.soldiers += ESCAPE_SHARE * amount
-        civ.garrison.add({unit: count * ESCAPE_SHARE for unit, count in fallen.items()})
+        civ.garrison.add({unit: count * ESCAPE_SHARE for unit, count in fallen.items()}, loser.tier)
         war = self.diplomacy.relation(loser.civ, winner.civ).war
         if war:
             war.casualties[civ.id] = max(0.0, war.casualties[civ.id] - ESCAPE_SHARE * amount)
@@ -1055,10 +1268,10 @@ class Military:
         if amount <= 0:
             return
         taken = army.take(amount)
-        civ.garrison.add({unit: count * ESCAPE_SHARE for unit, count in taken.items()})
+        civ.garrison.add({unit: count * ESCAPE_SHARE for unit, count in taken.items()}, army.tier)
         wounded, dead = WOUNDED_SHARE * amount, DEAD_SHARE * amount
         civ.soldiers = max(0.0, civ.soldiers - wounded - dead)
-        civ.wounded += wounded
+        dead += self._admit(civ, {unit: count * WOUNDED_SHARE for unit, count in taken.items()}, army.tier)
         civ.population = max(MIN_POPULATION, civ.population - dead)
         if war:
             war.casualties[civ.id] += wounded + dead
@@ -1162,7 +1375,7 @@ class Military:
             return
         army = Army(self.next_id(), civ.id, civ.capital.tile, "field", target_region=target.id,
                     commander=self._appoint(civ), state="marching")
-        army.add(civ.garrison.take(min((1 - GARRISON_KEEP) * civ.soldiers, self.capacity(army))))
+        army.add(civ.garrison.take(min((1 - GARRISON_KEEP) * civ.soldiers, self.capacity(army))), civ.garrison.tier)
         civ.armies.append(army)
 
     def _campaign_target(self, civ):
@@ -1205,9 +1418,10 @@ class Military:
             if army.commander:
                 loss *= 1 - army.commander.casualty_reduction
             loss = min(army.size, loss * max(0.2, 1 + self.mods[civ.id].casualties))
-            army.take(loss)
+            fallen = army.take(loss)
             civ.soldiers = max(0.0, civ.soldiers - loss)
             civ.population = max(MIN_POPULATION, civ.population - loss)
+            self._casualties(civ, fallen, army.tier, WOUNDED_IN_VICTORY)
             region.garrison = max(0.0, region.garrison - rate * engaged * attack / (attack + defence))
             self._gain(army, XP_PER_BATTLE_TICK)
 
@@ -1243,7 +1457,7 @@ class Military:
 
     def _besiege(self, civ, army: Army, tick: int, events: list) -> None:
         """Capture the enemy tile blocking the army's way, by the phase 3 capture rule."""
-        if not army.path or army.state in ("retreating", "returning", "idle"):
+        if not army.path or army.refit or army.state in ("retreating", "returning", "idle"):
             return
         target = army.path[0]
         enemy = self.civs.get(army.target_civ)
@@ -1264,7 +1478,10 @@ class Military:
         if target in self.world.capital_tiles and target != enemy.capital.tile and enemy.garrison is not None:
             # The soldiers no general is leading are spread through the civ's capitals.
             held = unit_strength(enemy.garrison.units) * self.diplomacy.quality(enemy) / max(1, len(enemy.settlements))
-            defence += held * (1 + home + mods.defense)
+            defence += held * tier_strength(enemy.garrison.tier) * (1 + home + mods.defense)
+        if target in self.world.capital_tiles:
+            # Allies standing in the capital help hold it.
+            defence += sum(self.army_strength(guest) for guest in self._guests(target)) * (1 + home + mods.defense)
         if attack > defence:
             gain = rules.CAPTURE_RATE * (attack - defence) / (attack + defence)
             if surprised:

@@ -1,5 +1,5 @@
 from ..map import Biome, WorldMap
-from ..military.units import upkeep_per_soldier
+from ..military.units import tier_cost, upkeep_per_soldier
 from .modifiers import Modifiers
 from .rules import (
     DESERTION_RATE,
@@ -8,6 +8,9 @@ from .rules import (
     MOUNTED_WORKERS,
     CONSUMPTION_PER_TECH,
     FOOD_PER_POP,
+    EARLY_GROWTH,
+    EARLY_GROWTH_FADE,
+    EARLY_GROWTH_UNTIL,
     GROWTH_RATE,
     MIN_POPULATION,
     ARMS_BOUGHT,
@@ -31,7 +34,6 @@ from .rules import (
     TAX_PER_POP,
     WOOD_PER_POP,
     WORK_RATE,
-    WOUND_RECOVERY,
 )
 
 
@@ -90,7 +92,19 @@ def water_urgency(civ, mods: Modifiers) -> float:
     return 0.5 + 0.5 * max(0.0, min(1.0, 1 - ticks_left / WATER_RESERVE_TICKS))
 
 
-def produce(civ, mods: Modifiers, building_defs) -> None:
+def early_growth(tick: int | None) -> float:
+    """How much faster a young civ grows: the full bonus at first, fading away to nothing."""
+    if tick is None:
+        return 0.0
+    return EARLY_GROWTH * max(0.0, min(1.0, (EARLY_GROWTH_UNTIL + EARLY_GROWTH_FADE - tick) / EARLY_GROWTH_FADE))
+
+
+def soldier_cost(mods: Modifiers) -> float:
+    """What a soldier costs to arm and to pay, as a share of the usual: research lowers it."""
+    return max(0.3, 1 + mods.soldier_cost)
+
+
+def produce(civ, mods: Modifiers, building_defs, tick: int | None = None) -> None:
     """Gather with the current worker allocation, pay upkeep, then feed and grow the population."""
     before = dict(civ.resources)
     # A mounted villager at work on the land does the work of several.
@@ -125,7 +139,7 @@ def produce(civ, mods: Modifiers, building_defs) -> None:
     fuel = WOOD_PER_POP * civ.population * _living_standard(civ)
     warm = _charge(civ, upkeep, "wood", fuel)
 
-    _maintain_army(civ, upkeep)
+    _maintain_army(civ, upkeep, mods)
 
     # Thirst: the population shrinks slowly, in proportion to how much water is missing.
     thirst = WATER_PER_POP * civ.population * max(0.2, 1 + mods.water_use) + civ.herd * HORSE_WATER
@@ -141,7 +155,7 @@ def produce(civ, mods: Modifiers, building_defs) -> None:
         civ.population = max(MIN_POPULATION, civ.population * (1 - STARVE_RATE))
     elif warm and not civ.thirsty and civ.population < mods.housing:
         crowding = 1 - civ.population / mods.housing
-        growth = max(0.02, GROWTH_RATE * civ.population * crowding) * (1 + mods.growth)
+        growth = max(0.02, GROWTH_RATE * civ.population * crowding) * (1 + mods.growth + early_growth(tick))
         # No growing blindly into a drought: growth eases off as water use nears supply.
         growth *= water_growth_factor(civ, mods)
         civ.population = min(mods.housing, civ.population + growth)
@@ -159,17 +173,20 @@ def training_rate(civ) -> float:
     return TRAIN_LEVY + TRAIN_LEVY_PER_POP * civ.population + TRAIN_PER_BARRACKS * barracks
 
 
-def _maintain_army(civ, upkeep: dict[str, float]) -> None:
+def _maintain_army(civ, upkeep: dict[str, float], mods: Modifiers) -> None:
     """Recruit or demobilise toward the standing order, then pay and equip the soldiers."""
-    # The wounded mend slowly; until they do they can be neither soldiers nor workers.
-    civ.wounded = max(0.0, civ.wounded - max(0.05, WOUND_RECOVERY * civ.wounded))
     target = min(civ.soldier_target, max(0.0, civ.population - MIN_POPULATION - civ.wounded))
     factors = upkeep_per_soldier(civ.unit_counts())
+    cheaper = soldier_cost(mods)
     change = max(-(RECRUIT_RATE * civ.population + 0.2), target - civ.soldiers)
     if change > 0:
+        # The wounded in hospital will be back in the ranks: nobody is trained to replace them.
+        change = max(0.0, change - civ.wounded)
         # Soldiers are trained and armed: only so many a day, and only those that can be paid for.
         change = 0.0 if civ.unpaid else min(change, training_rate(civ))  # nobody enlists in an unpaid army
-        gold, ore = RECRUIT_GOLD * factors["gold"], RECRUIT_ORE * factors["ore"]
+        # Better arms cost more; research into supply makes every soldier cheaper.
+        arms = cheaper * tier_cost(mods.tier)
+        gold, ore = arms * RECRUIT_GOLD * factors["gold"], arms * RECRUIT_ORE * factors["ore"]
         if civ.resources["ore"] < change * ore:
             gold, ore = gold + ARMS_BOUGHT * ore, 0.0  # no ore of its own: the arms are bought in, dearly
         change = max(0.0, min(change, civ.resources["gold"] / gold if gold > 0 else change))
@@ -177,8 +194,8 @@ def _maintain_army(civ, upkeep: dict[str, float]) -> None:
         civ.resources["ore"] -= change * ore
     civ.soldiers = max(0.0, civ.soldiers + change)
     # What the army costs depends on what it is made of: swordsmen need ore, archers wood, cavalry gold.
-    civ.unpaid = not _charge(civ, upkeep, "gold", civ.soldiers * SOLDIER_GOLD * factors["gold"])
-    civ.unsupplied = not _charge(civ, upkeep, "ore", civ.soldiers * SOLDIER_ORE * factors["ore"])
+    civ.unpaid = not _charge(civ, upkeep, "gold", civ.soldiers * cheaper * SOLDIER_GOLD * factors["gold"])
+    civ.unsupplied = not _charge(civ, upkeep, "ore", civ.soldiers * cheaper * SOLDIER_ORE * factors["ore"])
     _charge(civ, upkeep, "wood", civ.soldiers * factors["wood"])
     if civ.unpaid:
         civ.soldiers *= 1 - DESERTION_RATE

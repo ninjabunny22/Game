@@ -5,6 +5,28 @@ from dataclasses import dataclass
 from ..datafiles import load_json
 
 COUNTER_BONUS = 0.25
+# Troop tiers: research lets a civ equip its soldiers better. A tier-4 soldier is worth nearly
+# two of tier 1, and costs half as much again to arm.
+MAX_TIER = 4
+TIER_STRENGTH = (1.0, 1.25, 1.55, 1.9)
+TIER_COST = (1.0, 1.15, 1.3, 1.5)
+
+
+def _at_tier(table: tuple[float, ...], tier: float) -> float:
+    """The table's value at a tier, which for a mixed body of troops lies between two whole ones."""
+    tier = max(1.0, min(float(MAX_TIER), tier))
+    low = int(tier) - 1
+    if low >= MAX_TIER - 1:
+        return table[-1]
+    return table[low] + (table[low + 1] - table[low]) * (tier - 1 - low)
+
+
+def tier_strength(tier: float) -> float:
+    return _at_tier(TIER_STRENGTH, tier)
+
+
+def tier_cost(tier: float) -> float:
+    return _at_tier(TIER_COST, tier)
 
 
 @dataclass(frozen=True)

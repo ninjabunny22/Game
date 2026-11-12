@@ -288,9 +288,12 @@ class UtilityBrain:
 
     @staticmethod
     def _edge(you: dict, n: dict) -> float:
-        """Our military power over theirs: exact for an ally, otherwise from the rough comparison."""
+        """Our military power over theirs: exact for an ally or an army our scouts can count,
+        otherwise from the rough comparison."""
         if n["intel"]:
             return you["military_power"] / max(n["intel"]["military_power"], 1)
+        if n.get("seen_power"):
+            return you["military_power"] / max(n["seen_power"], 1)
         return 1 / BAND_RATIO[n["army_vs_yours"]]
 
     def _commitment(self, edge: float, wars: int, zeal: float = 0.0) -> float:

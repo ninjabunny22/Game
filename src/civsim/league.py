@@ -10,7 +10,7 @@ against the others in the same games, and by what it does to the games themselve
 wars there are, when the first comes and how long the game runs. Winning by making games dull
 is not an improvement, so a variant that cuts wars sharply is refused however well it does.
 
-Never more than ten games to a comparison: more adds minutes, not information.
+Never more than six games to a comparison: more adds minutes, not information.
 """
 
 import argparse
@@ -23,9 +23,8 @@ from .config import MAP_SIZES, game_config
 from .simulation import Simulation
 from .strategy.utility import DEFAULT, Params, UtilityBrain
 
-MAX_GAMES = 10
-GAMES = (("small", 0), ("small", 1), ("small", 2), ("medium", 0), ("medium", 1), ("medium", 2), ("medium", 3),
-         ("large", 0), ("large", 1), ("large", 2))
+MAX_GAMES = 6
+GAMES = (("small", 0), ("small", 1), ("medium", 0), ("medium", 1), ("large", 0), ("large", 1))
 BETTER = 1.05  # a variant's civs must outscore the others by this much to be kept ...
 DULLER = 0.7  # ... without cutting the number of wars below this share of what the standard gives
 STEP = 0.15  # how far a mutation moves a number, as a share of its value

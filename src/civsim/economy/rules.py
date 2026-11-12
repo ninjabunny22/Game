@@ -45,19 +45,25 @@ HORSE_FOOD = 0.16  # per horse per tick: twice what a person eats ...
 HORSE_WATER = 0.06  # ... and drinks
 MOUNTED_WORKERS = 3.0  # extra workers' worth of output from a mounted villager on the land he works
 MOUNTED_SHARE = 0.5  # at most this share of a civ's villagers ride
-WOUND_RECOVERY = 0.01  # share of the wounded who return to ordinary life each tick
+# The wounded lie in hospital beds: a few in every capital, more in each hospital. They are
+# healed after a fixed stay and join the garrison; those there is no bed for die.
+HEAL_TICKS = 10
+INFIRMARY_BEDS = 10.0  # in every capital
 
 GROWTH_RATE = 0.01
+EARLY_GROWTH = 1.0  # a young civ grows this much faster ...
+EARLY_GROWTH_UNTIL = 750  # ... until this tick ...
+EARLY_GROWTH_FADE = 250  # ... after which the bonus fades away over this many
 STARVE_RATE = 0.01
 MIN_POPULATION = 5.0
 
-BASE_HOUSING = 30.0
+BASE_HOUSING = 60.0
 DEMOLITION_REFUND = 0.10  # share of a building's base cost recovered on demolition, before techs
 BASE_STORAGE = 250.0
 
 # Work slots a settlement provides regardless of the surrounding land.
 SETTLEMENT_YIELDS = {"food": 4, "wood": 3, "stone": 2, "ore": 0, "gold": 1, "water": 0}
 
-START_POPULATION = 20.0
+START_POPULATION = 40.0
 # Water starts full: the simulation tops it up to the civ's cap once its territory is known.
-START_RESOURCES = {"food": 100.0, "wood": 60.0, "stone": 20.0, "ore": 0.0, "gold": 10.0, "water": 0.0}
+START_RESOURCES = {"food": 200.0, "wood": 110.0, "stone": 30.0, "ore": 0.0, "gold": 20.0, "water": 0.0}

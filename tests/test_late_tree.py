@@ -26,12 +26,16 @@ def mods_with(sim, civ, *techs):
     return compute_modifiers(civ, sim.building_defs, sim.tech_tree)
 
 
+# The efficiency line (one tech in each of eras 3, 4 and 5) came after the three new eras.
+EFFICIENCY = ("logistics", "quartermasters", "standing_army")
+
+
 def test_three_new_eras_of_six_techs_each_dearer_than_the_last(sim):
     tree = sim.tech_tree
-    assert len(tree.techs) == 36
+    assert len(tree.techs) == 36 + len(EFFICIENCY)
     medians = []
     for era, name in NEW_ERAS.items():
-        techs = [t for t in tree.techs.values() if t.era == era]
+        techs = [t for t in tree.techs.values() if t.era == era and t.id not in EFFICIENCY]
         assert tree.eras[era] == name and len(techs) == 6
         medians.append(statistics.median(t.science_cost for t in techs))
         for tech in techs:
@@ -43,7 +47,7 @@ def test_three_new_eras_of_six_techs_each_dearer_than_the_last(sim):
 
 def test_the_original_eighteen_techs_are_unchanged(sim):
     tree = sim.tech_tree
-    old = [t for t in tree.techs.values() if t.era <= 3]
+    old = [t for t in tree.techs.values() if t.era <= 3 and t.id not in EFFICIENCY]
     assert len(old) == 18
     assert tree.techs["agriculture"].cost == {"science": 30, "food": 20}
     assert tree.techs["guilds"].cost == {"science": 840, "stone": 60, "gold": 80}
@@ -135,7 +139,8 @@ def test_commander_training_techs(sim):
 def test_war_techs_change_the_fight(sim):
     civ = sim.civs[0]
     mods = mods_with(sim, civ, "gunpowder", "rifling", "siegecraft", "fortification", "railways")
-    assert mods.military == pytest.approx(0.5)
+    # Gunpowder arms troops a tier better instead of adding to their strength.
+    assert mods.military == pytest.approx(0.1) and mods.tier == 2
     assert mods.casualties == pytest.approx(-0.1)
     assert mods.capture_speed == pytest.approx(0.5)
     assert mods.defense == pytest.approx(0.25)
