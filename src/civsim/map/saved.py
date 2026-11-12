@@ -27,6 +27,8 @@ def to_data(world: WorldMap) -> dict:
         "rivers": {str(t): s for t, s in sorted(world.rivers.items())},
         "river_flow": {str(t): to for t, to in sorted(world.river_flow.items())},
         "bridges": sorted(world.bridges),
+        "passes": sorted(world.passes),
+        "spans": [list(span) for span in world.spans],
         "region_of": world.region_of,
         "regions": [{"name": r.name, "capital_name": r.capital_name, "capital": r.capital, "strength": r.strength,
                      "defects": r.defects, "tags": list(r.tags), "points": r.points} for r in world.regions],
@@ -54,6 +56,8 @@ def from_data(data: dict) -> WorldMap:
     world.rivers = {int(t): s for t, s in data["rivers"].items()}
     world.river_flow = {int(t): to for t, to in data["river_flow"].items()}
     world.bridges = set(data["bridges"])
+    world.passes = set(data["passes"])
+    world.spans = [tuple(span) for span in data["spans"]]
     world.region_of = list(data["region_of"])
     compute_yields(world)
     world.regions = []

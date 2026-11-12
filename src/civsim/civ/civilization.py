@@ -90,6 +90,8 @@ class Civilization:
     # The capital its next harbour should face: the most valuable place it can only reach by
     # water (set by the AI before it picks a harbour's site; None: the nearest foreign capital).
     harbour_goal: int | None = None
+    # Places its villagers found no way to, and for how many more days they are left alone.
+    out_of_reach: dict[int, int] = field(default_factory=dict)
     campaign_muster: float = 0.0  # share of the population wanted under arms for a campaign against natives
     campaign_cooldown: int = 0  # tick before which no new campaign is launched
 

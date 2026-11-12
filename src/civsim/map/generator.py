@@ -6,6 +6,7 @@ import random
 from opensimplex import OpenSimplex
 
 from .biomes import Biome
+from .passes import carve_passes
 from .regions import generate_regions
 from .resources import compute_yields, place_deposits
 from .water import add_lakes, add_rivers
@@ -73,6 +74,7 @@ def generate_map(seed: int, width: int = 96, height: int = 96) -> WorldMap:
 
     add_lakes(world, rng)
     add_rivers(world, rng)
+    carve_passes(world)  # no dice thrown: the map is the same as before, with ways over its mountains
     place_deposits(world, rng)
     compute_yields(world)
     generate_regions(world, rng)

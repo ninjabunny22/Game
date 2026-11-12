@@ -162,7 +162,8 @@ def test_civil_engineering_and_banking(sim):
     civ = sim.civs[0]
     mods = mods_with(sim, civ, "civil_engineering")
     assert (mods.build_slots, mods.villager_speed) == (2, 1)
-    tile = max(civ.territory, key=lambda t: abs(sim.world.xy(t)[0] - sim.world.xy(civ.capital.tile)[0])
+    tile = max((t for t in civ.territory if sim.world.walkable(t)),
+               key=lambda t: abs(sim.world.xy(t)[0] - sim.world.xy(civ.capital.tile)[0])
                + abs(sim.world.xy(t)[1] - sim.world.xy(civ.capital.tile)[1]))
     civ.buildings = [Building("house", tile)]
     for v in civ.villagers:

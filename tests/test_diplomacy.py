@@ -36,7 +36,7 @@ def make_neighbours(sim: Simulation, a, b) -> int:
     """Give `a` a strip of land right up against `b`'s territory. Returns that tile."""
     world = sim.world
     edge = next(n for t in sorted(b.territory) for n in world.neighbors(t)
-                if world.owner[n] < 0 and not world.is_open_water(n))
+                if world.owner[n] < 0 and world.walkable(n))
     world.claim(edge, a.id)
     a.territory.add(edge)
     return edge
@@ -278,11 +278,14 @@ def test_weaker_attacker_gains_nothing_and_bleeds(sim, monkeypatch):
     assert war
     army = field_army(a, b)
     army.tile, army.path = edge, []  # the attacker's army arrives at the border
-    texts = events_of(sim, 60)
+    routed_state = None
+    for _ in range(60):
+        texts = events_of(sim, 1)
+        if routed_state is None and any("routs" in t for t in texts):
+            routed_state = field_army(a, b).state  # how it stands the day it is beaten
     assert war.tiles_taken[a.id] == 0 and len(b.territory) >= size
     assert war.casualties[a.id] > war.casualties[b.id] > 0, "the defender's army came out to meet it"
-    assert any("routs" in t for t in texts)
-    assert field_army(a, b).state in ("retreating", "idle"), "the beaten army falls back"
+    assert routed_state in ("retreating", "idle"), "the beaten army falls back"
 
 
 def test_war_ends_when_nobody_wants_it_any_more(sim):
@@ -578,7 +581,7 @@ def _hostile_pair(sim, soldiers, population):
     from civsim.diplomacy import rules
     a, b = sim.civs[0], sim.civs[1]
     edge = next(n for t in sorted(b.territory) for n in sim.world.neighbors(t)
-                if sim.world.owner[n] < 0 and not sim.world.is_open_water(n))
+                if sim.world.owner[n] < 0 and sim.world.walkable(n))
     sim.world.claim(edge, a.id)
     a.territory.add(edge)
     a.population, a.soldiers, a.diplomacy_points = population, soldiers, 300.0

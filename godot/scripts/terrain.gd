@@ -74,6 +74,8 @@ void fragment() {
 }
 """
 
+var _deck := {}  # tile -> the height of the bridge deck over it, for tiles under a long bridge
+const DECK_TOP := 0.24  # a bridge deck's walking surface above where the model stands
 var map_width := 0
 var map_height := 0
 
@@ -96,6 +98,7 @@ var _clearings := {}  # key -> [centre, radius]: where trees are felled for a la
 
 ## `capitals` is the init message's list of regions: each capital's ground is levelled for its castle.
 func build(map: Dictionary, biomes: Array, native_color: Color, models: RefCounted, capitals: Array = []) -> void:
+	_deck.clear()
 	for child in get_children():
 		child.queue_free()
 	_trees.clear()
@@ -119,6 +122,9 @@ func build(map: Dictionary, biomes: Array, native_color: Color, models: RefCount
 
 	var size := map_width * map_height
 	var biome_ids: Array = map["biomes"]
+	var passes := {}  # tiles of a pass: walked through, so kept clear of peaks
+	for tile: Dictionary in map.get("passes", []):
+		passes[int(tile["y"]) * int(map["width"]) + int(tile["x"])] = true
 	var heights: Array = _level_capitals(map["heights"], biome_ids, water, capitals)
 	_heights.resize(size)
 	_region_ids.resize(size)
@@ -144,7 +150,10 @@ func build(map: Dictionary, biomes: Array, native_color: Color, models: RefCount
 		elif biome_id == ids.get("Forest", -1):
 			forests.append(i)
 		elif biome_id == ids.get("Mountain", -1):
-			mountains.append(i)
+			if passes.has(i):
+				hills.append(i)
+			else:
+				mountains.append(i)
 		elif biome_id == ids.get("Peaks", -1):
 			high_peaks.append(i)
 		elif biome_id == ids.get("Hills", -1):
@@ -252,7 +261,10 @@ func center() -> Vector3:
 
 ## World position of a tile's surface; water tiles report the sea surface.
 func tile_position(x: int, y: int) -> Vector3:
-	return Vector3(x, maxf(_heights[y * map_width + x], 0.0) * HEIGHT_SCALE, y)
+	var tile := y * map_width + x
+	if _deck.has(tile):
+		return Vector3(x, _deck[tile], y)  # on a bridge over water
+	return Vector3(x, maxf(_heights[tile], 0.0) * HEIGHT_SCALE, y)
 
 
 ## `territory` is base64 of one byte per tile: the owning civ's id, or 255 if unowned.
@@ -573,7 +585,9 @@ func _apply_clearings() -> void:
 ## range, and loose stones between them. (The pack's grassy and wooded peaks rise in
 ## hexagonal terraces, which do not sit on a square map.)
 func _add_mountains(mountains: Array[int], models: RefCounted) -> void:
-	_add_peaks(mountains, ["mountain_A", "mountain_B", "mountain_C"], models)
+	# Mountains are walls to armies and villagers (only passes lead through): drawn thick enough
+	# to read as one.
+	_add_peaks(mountains, ["mountain_A", "mountain_B", "mountain_C"], models, 0.6)
 	_add_scatter(mountains, ["rock_single_D", "rock_single_E"], 0.3, 0.5, 0.0, models)
 
 
@@ -625,23 +639,57 @@ func _add_scatter(tiles: Array[int], kinds: Array, share: float, size: float, si
 		_scatter(mesh, places, models.base_material())
 
 
-## The old bridges of a drawn map: a stone bridge across the river, square to its flow.
+## The bridges of a drawn map. Over a river, the pack's stone bridge, square to the flow. Over
+## shallow water, one long bridge laid whole from one shore to the other (a deck stretched to
+## the length, with supports every couple of tiles), the only way over on foot.
 func _add_bridges(map: Dictionary, models: RefCounted) -> void:
-	var mesh: Mesh = models.mesh("building_bridge_A")
-	if mesh == null or not map.has("bridges"):
-		return
 	var flow := {}
 	for river: Dictionary in map["rivers"]:
 		flow[Vector2i(int(river["x"]), int(river["y"]))] = Vector2i(int(river["to"][0]), int(river["to"][1]))
-	var places: Array[Transform3D] = []
-	for bridge: Dictionary in map["bridges"]:
-		var at := Vector2i(int(bridge["x"]), int(bridge["y"]))
-		var along: Vector2i = flow.get(at, at + Vector2i(1, 0)) - at
-		# The model spans its own x axis; turn that across the water's way.
-		var angle := 0.0 if along.y != 0 else PI / 2.0
-		var basis := Basis(Vector3.UP, angle).scaled(Vector3.ONE * 0.9)
-		places.append(Transform3D(basis, Vector3(at.x, height_at(at.x, at.y) + 0.02, at.y)))
-	_scatter(mesh, places, models.base_material())
+	var stone: Mesh = models.mesh("building_bridge_A")
+	if stone != null:
+		var places: Array[Transform3D] = []
+		for bridge: Dictionary in map.get("bridges", []):
+			var at := Vector2i(int(bridge["x"]), int(bridge["y"]))
+			if not flow.has(at):
+				continue  # a long bridge's tile: drawn with the span below
+			var along: Vector2i = flow[at] - at
+			# The model runs along its own z axis; turn that across the river's way.
+			var angle := PI / 2.0 if along.y != 0 else 0.0
+			var basis := Basis(Vector3.UP, angle).scaled(Vector3.ONE * 0.9)
+			places.append(Transform3D(basis, Vector3(at.x, height_at(at.x, at.y) + 0.02, at.y)))
+		_scatter(stone, places, models.base_material())
+	var deck: Mesh = models.mesh("civsim_bridge")
+	var pier: Mesh = models.mesh("civsim_bridge_pier")
+	if deck == null:
+		return
+	var decks: Array[Transform3D] = []
+	var piers: Array[Transform3D] = []
+	for span: Dictionary in map.get("spans", []):
+		var a := Vector3(float(span["from"][0]), 0.0, float(span["from"][1]))
+		var b := Vector3(float(span["to"][0]), 0.0, float(span["to"][1]))
+		var length := a.distance_to(b)
+		if length < 0.5:
+			continue
+		# Level with the higher shore, and never below the water.
+		var level := maxf(0.05, maxf(height_at(a.x, a.z), height_at(b.x, b.z)))
+		var way := (b - a).normalized()
+		var basis := Basis.looking_at(way, Vector3.UP)  # its -z along the way; the deck runs along z either way
+		var middle := (a + b) / 2.0
+		# Whoever crosses walks on the deck, not in the water under it.
+		for k in range(int(length * 4.0) + 1):
+			var on := a.lerp(b, k / (length * 4.0))
+			var tile := roundi(on.z) * map_width + roundi(on.x)
+			if tile >= 0 and tile < _heights.size() and _heights[tile] <= 0.0:
+				_deck[tile] = level + DECK_TOP
+		decks.append(Transform3D(basis * Basis.from_scale(Vector3(1.0, 1.0, length)), Vector3(middle.x, level, middle.z)))
+		var count := maxi(1, int(length / 1.8))
+		for k in range(1, count + 1):
+			var at := a.lerp(b, float(k) / float(count + 1))
+			piers.append(Transform3D(basis, Vector3(at.x, level, at.z)))
+	_scatter(deck, decks, models.base_material())
+	if pier != null:
+		_scatter(pier, piers, models.base_material())
 
 
 ## High peaks no army can cross: a peak on every tile, taller than on ordinary mountains, so the

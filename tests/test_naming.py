@@ -34,7 +34,7 @@ def update(sim, ticks=1) -> list[str]:
 def touch(sim, a, b):
     world = sim.world
     edge = next(n for t in sorted(b.territory) for n in world.neighbors(t)
-                if world.owner[n] < 0 and not world.is_open_water(n))
+                if world.owner[n] < 0 and world.walkable(n))
     world.claim(edge, a.id)
     a.territory.add(edge)
 

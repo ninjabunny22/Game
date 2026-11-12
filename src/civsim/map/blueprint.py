@@ -18,6 +18,7 @@ from opensimplex import OpenSimplex
 from .biomes import BIOME_INFO, Biome
 from .regions import Region
 from .resources import DEPOSIT_TYPES, _grow_cluster, _pick_centre, compute_yields
+from .passes import carve_passes
 from .shapes import Shape, distance_to_line
 from .world import BOAT_RANGE, WorldMap
 
@@ -85,6 +86,9 @@ class Blueprint:
     # Pairs that may touch, but need not: corners of regions meeting across a river, where the
     # squares of the grid decide. Any that do touch are kept as links of kind "river".
     may_touch: list[tuple[str, str]] = field(default_factory=list)
+    # Bridges over water, as drawn lines: every water tile a line crosses is bridged, the only
+    # way across on foot (Tidewalk's causeways).
+    causeways: list[list[tuple[float, float]]] = field(default_factory=list)
 
     @property
     def civs(self) -> tuple[int, int]:
@@ -141,6 +145,7 @@ def build(bp: Blueprint) -> WorldMap:
             gap = any((x + 0.5 - gx) ** 2 + (y + 0.5 - gy) ** 2 <= r * r for gx, gy, r in ridge.gaps)
             if gap:
                 world.biomes[i] = Biome.HILLS
+                world.passes.add(i)  # walked through, slowly
             else:
                 world.biomes[i] = Biome.PEAKS if d <= ridge.width / 2 else Biome.MOUNTAIN
     for shape in bp.lakes:
@@ -162,6 +167,15 @@ def build(bp: Blueprint) -> WorldMap:
         if not near:
             raise BlueprintError(f"{bp.id}: the bridge at {x},{y} is not on a river")
         world.bridges.add(min(near, key=lambda t: ((world.xy(t)[0] - x) ** 2 + (world.xy(t)[1] - y) ** 2, t)))
+    for line in bp.causeways:
+        tiles = _line_tiles(world, line)
+        wet = [k for k, tile in enumerate(tiles) if world.is_water(tile)]
+        for k in wet:
+            world.bridges.add(tiles[k])
+        if wet:  # the bridge as drawn: from the last land before the water to the first after it
+            first, last = tiles[max(0, wet[0] - 1)], tiles[min(len(tiles) - 1, wet[-1] + 1)]
+            world.spans.append((*world.xy(first), *world.xy(last)))
+    carve_passes(world)
     _deposits(world, bp, rng)
     compute_yields(world)
     _regions(world, bp)
@@ -424,11 +438,11 @@ def walking_links(world: WorldMap) -> set[tuple[int, int]]:
     """Pairs of regions an army can walk between: neighbouring tiles, both walkable."""
     pairs = set()
     for t, r in enumerate(world.region_of):
-        if r < 0 or not world.claimable(t):
+        if r < 0 or not world.walkable(t):
             continue
         for n in world.neighbors(t):
             other = world.region_of[n]
-            if other >= 0 and other != r and world.claimable(n):
+            if other >= 0 and other != r and world.walkable(n):
                 pairs.add((min(r, other), max(r, other)))
     return pairs
 

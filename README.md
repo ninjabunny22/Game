@@ -90,7 +90,7 @@ The overlay is built for watching:
   | The Gilded Isle | 72x72 | 2-4 | a ring of coast round a lagoon; the only gold is on the stronghold isle in the middle |
   | Confluence | 72x72 | 2-3 | three rivers cut the land into wedges round a rich heartland; one old bridge each |
   | Highgate | 72x72 | 2-4 | a plateau of iron and gold walled in by peaks; one pass beside each start |
-  | Tidewalk Isles | 96x96 | 2-5 | five isles joined by causeways armies can walk; iron isles and stone isles |
+  | Tidewalk Isles | 96x96 | 2-5 | five isles joined by long bridges over the shallows; iron isles and stone isles |
   | Emberwaste | 96x96 | 2-5 | fertile valleys round a desert that holds the gold; the Oasis of Kesh at the centre |
   | The Divide | 96x96 | 2-5 | a ridge of peaks splits the land; three passes, the Kingsgate fortress in the middle |
   | The Five Gates | 160x160 | 2-5 | five home lands round a walled heartland, each with its own gate |
@@ -434,12 +434,21 @@ and if none will deal it may attack one that is weaker and in reach. The
 strategists follow this directly, and whatever one answers is corrected to the
 first two rules (`strategy/checkin.py`).
 
-**Crossing water.** One rule (`WorldMap.crossing_cost`) governs border
-expansion and war reach, and is meant for unit movement later. Lakes and deep
-sea can never be claimed. Without Bridge Building a river tile costs three
-times as much to claim or to capture; with it, rivers cost nothing extra. An **old bridge**
-drawn on a map is crossed at the plain cost by anyone. **High peaks** cannot be crossed,
-claimed or built on at all: a ridge of them is a wall, and its passes the only way through.
+**Crossing water and mountains.** One rule (`WorldMap.walkable` and `crossing_cost`)
+governs how armies and villagers move, war reach, and how settling spreads:
+- **No one walks on water,** deep or shallow, except over a **bridge**. Water is crossed by
+  boat only (armies from near a harbour; villagers with boats from any shore). Shallows can
+  still be claimed, as fishing grounds, but settling steps from them onto land only by boat.
+- **Mountains are walls:** armies and villagers go round them or through a **pass**, which
+  is as slow as climbing (2.5 times a plain). Land can still be settled on a mountain, but not
+  from there on to the land beyond. Hills are walked. Every map has passes wherever its
+  mountains would otherwise part the land, drawn ones and carved ones (`map/passes.py`).
+- **High peaks** cannot be crossed, claimed or built on at all.
+- **Rivers:** without Bridge Building a river tile costs three times as much to claim, to
+  capture or to cross; with it, nothing extra. An **old bridge** drawn over a river is
+  crossed at the plain cost by anyone.
+- A villager with no way to a place stays where it is, and the place is left alone for 60
+  days (a building site there waits without holding up the others).
 Without Boatbuilding, lakes and deep sea block expansion and attack entirely;
 with it a civ can claim land across up to 6 tiles of open water. Armies, and so
 war, need more than boats: see **Ships** below. Boats are transport only.

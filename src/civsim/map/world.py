@@ -31,8 +31,13 @@ class WorldMap:
         # Where each river tile's water goes next: the next river tile downstream, or the
         # sea or lake tile it empties into. Rivers are these links, not just neighbouring tiles.
         self.river_flow: dict[int, int] = {}
-        # Old bridges: river tiles anyone crosses at the plain cost, before the Bridges research.
+        # Bridges drawn on the map: over a river, crossed at the plain cost before the Bridges
+        # research; over shallow water, the only way across it on foot.
         self.bridges: set[int] = set()
+        # Long bridges over water, as drawn: (x0, y0, x1, y1), from shore to shore.
+        self.spans: list[tuple[int, int, int, int]] = []
+        # Passes: mountain tiles (and gaps in ridges of peaks) that can be walked, slowly.
+        self.passes: set[int] = set()
         # Start slots of a drawn map: slot -> (home region id, second region id), and which
         # slots a game of each number of civs uses. Empty on a generated map.
         self.starts: dict[str, tuple[int, int]] = {}
@@ -81,15 +86,26 @@ class WorldMap:
         """Can be settled or taken tile by tile: anything but open water and high peaks."""
         return not self.is_open_water(i) and not self.is_peak(i)
 
-    def crossing_cost(self, i: int, bridges: bool, boats: bool) -> float | None:
-        """Cost of moving onto a tile, or None if it cannot be entered.
+    def walkable(self, i: int) -> bool:
+        """Can be walked by armies and villagers: land that is not high peaks, nor mountain
+        unless a pass; and bridges. No water is walked, deep or shallow, except over a bridge."""
+        if i in self.bridges:
+            return True
+        if self.is_water(i) or self.is_peak(i):
+            return False
+        return self.biomes[i] != Biome.MOUNTAIN or i in self.passes
 
-        The one rule for how water affects movement: used for border expansion
-        and war reach now, and meant for unit pathfinding later.
-        """
-        if self.is_open_water(i):
+    def is_boat_water(self, i: int) -> bool:
+        """Water that only boats cross: sea, shallows and lakes, but for bridges."""
+        return self.is_water(i) and i not in self.bridges
+
+    def crossing_cost(self, i: int, bridges: bool, boats: bool) -> float | None:
+        """Cost of moving onto a tile, or None if it cannot be entered: the one rule for how
+        water, mountains and rivers affect movement (armies, villagers, war reach), and what a
+        river costs to claim or to capture."""
+        if self.is_boat_water(i):
             return 1.0 if boats else None
-        if self.is_peak(i):
+        if not self.walkable(i):
             return None
         if i in self.rivers and not bridges and i not in self.bridges:
             return RIVER_CROSSING_COST

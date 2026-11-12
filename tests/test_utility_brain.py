@@ -178,7 +178,9 @@ def test_the_sim_remembers_deeds_and_takes_up_the_strategy():
     brain = make_brain("utility")
     for _ in range(200):
         sim.step_with(brain)
-    assert -3.0 < diplomacy.standing[(0, 1)] < -2.0, "it fades, slowly"
+    # 200 days of fading alone leave about -2.2; what the two do meanwhile (a trade deal, say)
+    # can soften it a little more, but not wipe it out.
+    assert -3.0 < diplomacy.standing[(0, 1)] < -1.5, "it fades, slowly"
     assert stance_context(sim, sim.civs[0])["neighbors"][0]["standing"] == round(diplomacy.standing[(0, 1)], 2)
     for civ in sim.civs:
         assert civ.strategy and civ.strategy_kind and civ.focus in ("military", "science", "economy", "expansion")

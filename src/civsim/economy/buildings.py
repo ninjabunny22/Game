@@ -164,7 +164,7 @@ def survey_ground(civ, world: WorldMap) -> tuple[set[int], set[int]]:
     for tile in civ.territory:
         if castle_ground(world, tile) or tile in own_castles or tile in world.mines:
             taken.add(tile)
-        elif tile not in built and BIOME_INFO[world.biomes[tile]].buildable:
+        elif tile not in built and BIOME_INFO[world.biomes[tile]].buildable and tile not in civ.out_of_reach:
             free.add(tile)
     # Off the map's side edge this wraps to the far side, which only ever costs a preference.
     width = world.width
@@ -263,8 +263,8 @@ def demolish(civ, building, mods, building_defs, events: list) -> None:
 def advance_construction(civ, mods, building_defs, events: list) -> None:
     """Buildings under way advance, but only those with a villager on site building them."""
     staffed = builders_on_site(civ)
-    active = [b for b in civ.buildings if not b.complete][: mods.build_slots]
-    for building in active:
+    from .villagers import buildings_under_way
+    for building in buildings_under_way(civ, mods):
         if building.id not in staffed:
             continue
         bdef = building_defs[building.type]

@@ -1,5 +1,5 @@
 """Tidewalk Isles: five home isles in a ring, joined to each other and to Saltcrown in the middle
-by tidal causeways of shallows that armies can walk. Each isle is rich in iron or in stone and
+by long bridges over the shallows, the only ways across on foot. Each isle is rich in iron or in stone and
 short of the other. Off Eyot lies Pearl Reef, which only boats can reach."""
 
 from ..biomes import Biome
@@ -29,7 +29,7 @@ def _k(name: str) -> str:
 def blueprint() -> Blueprint:
     centres = [towards(C, C, b, RING) for b, *_ in ISLES]
     land = [Circle(x, y, ISLE) for x, y in centres] + [Circle(C, C, HUB), Circle(*REEF, 4.6)]
-    regions, zones, patches, deposits, links, shallows, protect = [], [], [], [], [], [], []
+    regions, zones, patches, deposits, links, shallows, protect, causeways = [], [], [], [], [], [], [], []
     for i, ((b, name, rich, capitals), (x, y)) in enumerate(zip(ISLES, centres)):
         parts = [("Head", b - 60, b + 60), ("Downs", b + 60, b + 180), ("Strand", b + 180, b + 300)]
         for (part, a0, a1), capital in zip(parts, capitals):
@@ -42,10 +42,12 @@ def blueprint() -> Blueprint:
         # A causeway to the next isle round, from this isle's Downs to that isle's Strand ...
         nx, ny = centres[(i + 1) % len(centres)]
         shallows.append(Band(((x, y), (nx, ny)), CAUSEWAY))
+        causeways.append([(x, y), (nx, ny)])  # a bridge along it: the way across on foot
         links.append((k("Downs"), _k(f"{ISLES[(i + 1) % len(ISLES)][1]} Strand"), "causeway"))
         # ... and one in to Saltcrown, from the Downs.
         landing = towards(x, y, b + 150, ISLE - 1)
         shallows.append(Band((landing, (C, C)), CAUSEWAY))
+        causeways.append([landing, (C, C)])
         links.append((k("Downs"), "saltcrown", "causeway"))
         protect.append(Band(((x, y), (nx, ny)), CAUSEWAY + 4))
         protect.append(Band((landing, (C, C)), CAUSEWAY + 4))
@@ -69,7 +71,7 @@ def blueprint() -> Blueprint:
         id="tidewalk_isles", name="Tidewalk Isles", width=96, height=96, seed=7201,
         premise="Five isles joined by causeways armies can walk; each is rich in iron or in stone and short of the other.",
         best="3 to 5",
-        land=land, shallows=shallows, protect=protect + [Circle(C, C, HUB + 2)], coast_noise=0.9,
+        land=land, shallows=shallows, causeways=causeways, protect=protect + [Circle(C, C, HUB + 2)], coast_noise=0.9,
         zones=zones, patches=patches, deposits=deposits,
         scatter=[("fish", 18, None)], mines=[(45, 45), (51, 51), (16, 14)],
         regions=regions, links=links,

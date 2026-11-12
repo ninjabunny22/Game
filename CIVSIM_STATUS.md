@@ -17,6 +17,9 @@ style). Balance and timing have not had their dedicated pass yet.
     160², 256×112, 176×144);
   - fixed start slots for each number of civs (2–5, Confluence 2–3, small 2–4), civs given
     slots at random;
+  - movement: no walking on water but over bridges, mountains only through (slow) passes,
+    carved automatically where mountains would part the land; villagers never walk
+    through what they cannot cross;
   - impassable high peaks with passes, old bridges, native strongholds (1.5–3× garrison,
     never defect), gold mines drawn where they matter, region points 1–3 (shown only);
   - tools: `civsim.mapmaker` (check, bake, preview), `civsim.fairness` (slots by geography),

@@ -465,12 +465,18 @@ class CivAI:
         water: list[int] = []
         seen: set[int] = set()
         for tile in civ.territory:
+            # Settling spreads over its own shallows and mountains, but from there on to the
+            # land beyond only as people could get there: across water by boat, and over
+            # mountains not at all (they go round, or through a pass).
+            stuck = not world.walkable(tile) and not (mods.boats and world.is_boat_water(tile))
             for n in world.neighbors(tile):
                 if world.is_open_water(n):
                     if n not in seen:
                         seen.add(n)
                         water.append(n)
                 elif world.owner[n] < 0 and n not in world.capital_tiles and world.claimable(n):
+                    if stuck and world.walkable(n):
+                        continue
                     border.add(n)  # native land can be settled; a capital has to defect or be taken
         if mods.boats:
             # Boats: sail up to BOAT_RANGE tiles of open water and land on whatever lies beyond.
@@ -574,11 +580,14 @@ class CivAI:
                         path.append(step)
                     step = parent[step]
                 return path[::-1]
+            stuck = not world.walkable(tile) and not (mods.boats and world.is_boat_water(tile))
             for n in world.neighbors(tile):
                 if n in parent or world.owner[n] >= 0 or n in world.capital_tiles or world.is_peak(n):
                     continue
                 if world.is_open_water(n) and not mods.boats:
                     continue
+                if stuck and world.walkable(n):
+                    continue  # off a mountain or out of the water on to land: not on foot
                 parent[n] = tile
                 queue.append(n)
         return []

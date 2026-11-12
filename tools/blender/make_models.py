@@ -352,7 +352,31 @@ def spear() -> None:
     m.export("civsim_spear", ADVENTURER_OUT)
 
 
+def bridge() -> None:
+    """A bridge's deck over shallow water, one unit long along +y (the way it runs), to be
+    stretched from one shore to the other: planks with a kerb and a rail along each side. It has
+    nothing that would look wrong stretched; the supports are their own model (bridge_pier)."""
+    m = Model(HEX)
+    m.box("plank", (0.62, 1.0, 0.07), at=(0, 0, 0.2))  # the deck
+    m.box("dark_wood", (0.66, 1.0, 0.05), at=(0, 0, 0.15), shade=0.3)  # the beam under it
+    for side in (-1, 1):
+        m.box("timber", (0.05, 1.0, 0.06), at=(side * 0.3, 0, 0.27))  # kerb
+        m.box("timber", (0.04, 1.0, 0.04), at=(side * 0.3, 0, 0.47))  # rail
+    m.export("civsim_bridge", HEXAGON_OUT)
+
+
+def bridge_pier() -> None:
+    """The support under a bridge's deck, set every couple of tiles along it: two piles down
+    into the water, a cap beam across, and the posts that carry the rails."""
+    m = Model(HEX)
+    for side in (-1, 1):
+        m.cylinder("dark_wood", 0.05, 0.5, at=(side * 0.24, 0, -0.32), segments=6)  # pile
+        m.box("timber", (0.05, 0.05, 0.24), at=(side * 0.3, 0, 0.27))  # rail post
+    m.box("dark_wood", (0.7, 0.09, 0.07), at=(0, 0, 0.1))  # cap beam
+    m.export("civsim_bridge_pier", HEXAGON_OUT)
+
+
 if __name__ == "__main__":
-    for make in (gold_mine, ship, harbour, stable, catapult, ram, spear):
+    for make in (gold_mine, ship, harbour, stable, catapult, ram, spear, bridge, bridge_pier):
         reset()
         make()

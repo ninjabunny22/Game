@@ -153,15 +153,15 @@ def test_an_army_takes_ship_only_from_land_near_a_working_harbour(sim):
     civ = sim.civs[0]
     mods = sim.modifiers[civ.id]
     mods.boats = 1
-    shore, sea = next((t, n) for t in sorted(civ.territory) if not world.is_open_water(t)
-                      for n in world.neighbors(t) if world.is_open_water(n))
+    shore, sea = next((t, n) for t in sorted(civ.territory) if world.walkable(t)
+                      for n in world.neighbors(t) if world.is_boat_water(n))
     army = Army(999, civ.id, shore, "field", units={"spearman": 20.0}, state="marching")
     civ.armies.append(army)
 
     def puts_out() -> bool:
         army.tile, army.path, army.move_points, army.boat = shore, [sea], 10.0, False
         sim.military._march(civ, army)
-        assert army.boat == (army.tile == sea), "on open water it is always aboard ship"
+        assert army.boat == (army.tile == sea), "on the water it is always aboard ship"
         return army.tile == sea
 
     assert not puts_out(), "boats alone are not enough: with no harbour nothing leaves the land"

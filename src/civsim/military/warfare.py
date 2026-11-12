@@ -1133,7 +1133,7 @@ class Military:
                 army.move_points = 0.0  # waiting does not bank movement
                 return
             cost = step_cost(world, step, bool(mods.bridges), bool(mods.boats))
-            embarking = world.is_open_water(step) and not world.is_open_water(army.tile)
+            embarking = world.is_boat_water(step) and not world.is_boat_water(army.tile)
             if cost is None or (embarking and army.tile not in ports(civ, world)):
                 # No way on: the harbour it was to sail from may have been lost since the
                 # route was planned. It stays ashore and plans again.
@@ -1145,7 +1145,7 @@ class Military:
             army.move_points -= cost
             # On open water an army is aboard ship: it can only have put out from land near one
             # of its civ's working harbours, and stays aboard until it lands.
-            army.boat = world.is_open_water(step)
+            army.boat = world.is_boat_water(step)
             army.tile = army.path.pop(0)
 
     # -- battles -------------------------------------------------------------

@@ -39,7 +39,7 @@ def go_to_war(sim, attacker, defender, soldiers=(60, 20)):
     """Declare war with the attacker's field army placed on the defender's border."""
     world = sim.world
     edge = next(n for t in sorted(defender.territory) for n in world.neighbors(t)
-                if world.owner[n] < 0 and not world.is_open_water(n))
+                if world.owner[n] < 0 and world.walkable(n))
     world.claim(edge, attacker.id)
     attacker.territory.add(edge)
     attacker.resources["gold"] = 300

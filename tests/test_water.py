@@ -270,10 +270,10 @@ def test_crossing_rule(sim):
     sea = next(i for i, b in enumerate(world.biomes) if b == Biome.OCEAN)
     land = next(i for i, b in enumerate(world.biomes) if b == Biome.PLAINS and i not in world.rivers)
     shallows = next(i for i, b in enumerate(world.biomes) if b == Biome.SHALLOWS)
-    assert world.crossing_cost(land, False, False) == world.crossing_cost(shallows, False, False) == 1
+    assert world.crossing_cost(land, False, False) == 1
     assert world.crossing_cost(river, bridges=False, boats=False) == 3
     assert world.crossing_cost(river, bridges=True, boats=False) == 1
-    for water in (lake, sea):
+    for water in (lake, sea, shallows):  # no water is walked, however shallow
         assert world.crossing_cost(water, bridges=True, boats=False) is None
         assert world.crossing_cost(water, bridges=True, boats=True) == 1
 

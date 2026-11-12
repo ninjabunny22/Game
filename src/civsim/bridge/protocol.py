@@ -110,6 +110,10 @@ def init_message(sim: Simulation, lobby: bool = False) -> str:
             ],
             # Old bridges: river tiles anyone crosses as if bridged.
             "bridges": [{"x": tile % world.width, "y": tile // world.width} for tile in sorted(world.bridges)],
+            # Long bridges over water, each drawn whole from one shore to the other.
+            "spans": [{"from": [x0, y0], "to": [x1, y1]} for x0, y0, x1, y1 in world.spans],
+            # Passes: mountain tiles (and gaps in ridges) armies and villagers can get through.
+            "passes": [{"x": tile % world.width, "y": tile // world.width} for tile in sorted(world.passes)],
         },
         "biomes": [
             {"id": int(biome), "name": BIOME_INFO[biome].name, "color": BIOME_INFO[biome].color,
@@ -309,7 +313,7 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
                 "dominant": army.dominant,
                 # afloat: on open water. boat: aboard ship, which an army on open water always is,
                 # having put out from near one of its civ's harbours; drawn as a ship until it lands.
-                "afloat": world.is_open_water(army.tile),
+                "afloat": world.is_boat_water(army.tile),
                 "boat": army.boat,
                 "strength": round(sim.military.army_strength(army), 1),
                 "commander": {"name": commander.name, "level": commander.level, "battles": commander.battles,
@@ -323,7 +327,7 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
                               "gathers": villager.gathers, "at_work": villager.tile == villager.target,
                               "mounted": villager.mounted,
                               # On open water it is aboard a ship and is not drawn.
-                              "afloat": world.is_open_water(villager.tile)})
+                              "afloat": world.is_boat_water(villager.tile)})
     relations = []
     for (a, b), relation in diplomacy.relations.items():
         war = relation.war

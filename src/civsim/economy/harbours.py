@@ -16,6 +16,6 @@ def ports(civ, world: WorldMap) -> set[int]:
         for y in range(max(0, hy - HARBOUR_REACH), min(world.height, hy + HARBOUR_REACH + 1)):
             for x in range(max(0, hx - HARBOUR_REACH), min(world.width, hx + HARBOUR_REACH + 1)):
                 tile = world.idx(x, y)
-                if not world.is_open_water(tile):
+                if world.walkable(tile):
                     tiles.add(tile)
     return tiles

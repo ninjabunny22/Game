@@ -13,6 +13,7 @@ from ..map import WorldMap, find_path
 from .harbours import ports
 from ..military.army import Villager
 
+OUT_OF_REACH = 60  # days a place no villager could get to is left alone before trying again
 POP_PER_VILLAGER = 25
 MIN_VILLAGERS = 2
 MAX_VILLAGERS = 12
@@ -27,6 +28,10 @@ def manage_villagers(civ, world: WorldMap, mods, next_id: Callable[[], int]) -> 
     for building in civ.buildings:
         if building.id == 0:
             building.id = next_id()
+    for tile in list(civ.out_of_reach):
+        civ.out_of_reach[tile] -= 1
+        if civ.out_of_reach[tile] <= 0:
+            del civ.out_of_reach[tile]
 
     # Builders whose building is finished (or lost) are free again.
     sites = {b.id for b in civ.buildings if not b.complete}
@@ -35,16 +40,15 @@ def manage_villagers(civ, world: WorldMap, mods, next_id: Callable[[], int]) -> 
             _release(villager)
 
     # Every building under way needs a builder: send the nearest villager not already building.
-    under_way = [b for b in civ.buildings if not b.complete][: mods.build_slots]
-    for building in under_way:
+    for building in buildings_under_way(civ, mods):
         if any(v.task == "build" and v.building == building.id for v in civ.villagers):
             continue
         free = [v for v in civ.villagers if v.task != "build"]
         if not free:
             break
         nearest = min(free, key=lambda v: (_distance(world, v.tile, building.tile), v.id))
-        _send(civ, nearest, world, mods, "build", building.tile)
-        nearest.building = building.id
+        if _send(civ, nearest, world, mods, "build", building.tile):
+            nearest.building = building.id
 
     # Anyone with nothing to do goes out to work the land.
     for villager in civ.villagers:
@@ -58,6 +62,12 @@ def manage_villagers(civ, world: WorldMap, mods, next_id: Callable[[], int]) -> 
         for _ in range(1 + mods.villager_speed):
             if villager.path:
                 villager.tile = villager.path.pop(0)
+
+
+def buildings_under_way(civ, mods) -> list:
+    """The unfinished buildings being worked on, as many as the civ has building slots; a site
+    its villagers cannot get to waits, and does not hold up the rest."""
+    return [b for b in civ.buildings if not b.complete and b.tile not in civ.out_of_reach][: mods.build_slots]
 
 
 def builders_on_site(civ) -> set[int]:
@@ -84,17 +94,24 @@ def _release(villager: Villager) -> None:
     villager.path = []
 
 
-def _send(civ, villager: Villager, world: WorldMap, mods, task: str, target: int) -> None:
-    # Like an army, a villager takes ship only from land near one of the civ's working harbours.
-    path = find_path(world, villager.tile, target, bool(mods.bridges), bool(mods.boats), max_nodes=3000,
+def _send(civ, villager: Villager, world: WorldMap, mods, task: str, target: int) -> bool:
+    """Set the villager walking to `target`. Like an army it walks round water and mountains,
+    over bridges and through passes; it takes ship from near a working harbour, or, with boats
+    and no harbour, from any shore. With no way there it stays as it is, and the place is left
+    alone for OUT_OF_REACH days. (A villager afloat is drawn as nothing at all.)"""
+    search = max(3000, int(0.5 * world.width * world.height))
+    boats = bool(mods.boats)
+    path = find_path(world, villager.tile, target, bool(mods.bridges), boats, max_nodes=search,
                      ports=ports(civ, world))
+    if path is None and boats:
+        path = find_path(world, villager.tile, target, bool(mods.bridges), boats, max_nodes=search)
     if path is None:
-        # Cut off by water, or too far to find a way: it is carried there all the same, so no
-        # building site is ever left without a builder. (On open water a villager is not drawn.)
-        path = _straight_line(world, villager.tile, target)
+        civ.out_of_reach[target] = OUT_OF_REACH
+        return False
     villager.task = task
     villager.target = target
     villager.path = path
+    return True
 
 
 def _work_site(civ, world: WorldMap, villager: Villager) -> int | None:
@@ -105,7 +122,7 @@ def _work_site(civ, world: WorldMap, villager: Villager) -> int | None:
     best, best_key = None, None
     for tile in civ.territory:
         amount = world.yields[tile].get(resource, 0)
-        if amount <= 0 or tile in taken:
+        if amount <= 0 or tile in taken or tile in civ.out_of_reach or not world.walkable(tile):
             continue
         x, y = world.xy(tile)
         key = (-amount, abs(x - cx) + abs(y - cy), tile)
@@ -118,16 +135,3 @@ def _distance(world: WorldMap, a: int, b: int) -> int:
     ax, ay = world.xy(a)
     bx, by = world.xy(b)
     return abs(ax - bx) + abs(ay - by)
-
-
-def _straight_line(world: WorldMap, start: int, goal: int) -> list[int]:
-    x, y = world.xy(start)
-    gx, gy = world.xy(goal)
-    path = []
-    while (x, y) != (gx, gy):
-        if abs(gx - x) >= abs(gy - y):
-            x += 1 if gx > x else -1
-        else:
-            y += 1 if gy > y else -1
-        path.append(world.idx(x, y))
-    return path

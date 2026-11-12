@@ -33,7 +33,7 @@ def field_army(sim, civ, size, tile=None, enemy=1):
 def away(sim, civ):
     """A tile of the civ's land that is not one of its capitals."""
     capitals = {s.tile for s in civ.settlements}
-    return next(t for t in sorted(civ.territory) if t not in capitals)
+    return next(t for t in sorted(civ.territory) if t not in capitals and sim.world.walkable(t))
 
 
 def test_the_wounded_are_healed_in_ten_days_and_join_the_garrison_not_their_army(sim):

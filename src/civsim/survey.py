@@ -45,16 +45,16 @@ def survey(seed: int, ticks: int, brain_name: str = "utility", size: str | None 
         for civ in sim.civs:
             if first_harbour is None and any(b.type == "harbour" and b.complete for b in civ.buildings):
                 first_harbour = sim.tick
-            counts["villager_ticks_afloat"] += sum(world.is_open_water(v.tile) for v in civ.villagers)
+            counts["villager_ticks_afloat"] += sum(world.is_boat_water(v.tile) for v in civ.villagers)
             for army in civ.armies:
                 before = was_at.get(army.id, army.tile)
                 was_at[army.id] = army.tile
                 counts["army_ticks_no_route"] += army.no_route is not None
-                if not world.is_open_water(army.tile):
+                if not world.is_boat_water(army.tile):
                     continue
                 counts["army_ticks_afloat"] += 1
                 counts["army_ticks_aboard"] += army.boat
-                if not world.is_open_water(before):
+                if not world.is_boat_water(before):
                     counts["embarkations"] += 1
                     # An army moves up to a few tiles a tick: it put out from the last land on its way.
                     counts["embarkations_from_port"] += any(
