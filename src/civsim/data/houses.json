@@ -1,5 +1,5 @@
 {
-  "_comment": "The royal houses, from the portrait boards in portraits_royalty/ (portraits cut by tools/cut_portraits.py into godot/assets/portraits/<key>/<id>.png). Houses that play rule a civ each; the others only marry in. Ages are those printed on the boards; where a board prints none (Silvermere and the two group boards) they are set here to fit each one's place in the family. Members with no age are dead before the game begins and are kept as history. 'born' names the house a spouse came from.",
+  "_comment": "The royal houses, from the portrait boards in art/portraits_royalty/ (portraits cut by tools/cut_portraits.py into godot/assets/portraits/<key>/<id>.png). Houses that play rule a civ each; the others only marry in. Ages are those printed on the boards; where a board prints none (Silvermere and the two group boards) they are set here to fit each one's place in the family. Members with no age are dead before the game begins and are kept as history. 'born' names the house a spouse came from.",
   "houses": {
     "valedorn": {"name": "Valedorn", "plays": true, "members": [
       {"id": "aldric", "name": "Aldric", "sex": "m", "dead": "the former patriarch", "ruled": true},

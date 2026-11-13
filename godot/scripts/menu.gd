@@ -190,7 +190,7 @@ func show_menu(lobby: Dictionary) -> void:
 	_style_button(look, Color(1, 1, 1, 0.1), Color(1, 1, 1, 0.2), 12)
 	look.pressed.connect(_open_preview)
 	last.add_child(look)
-	last.move_child(look, 1)
+	last.add_child(start)
 	_build_preview()
 
 	_set_mode(_mode)

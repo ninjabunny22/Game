@@ -1,13 +1,12 @@
 #!/bin/bash
-# Starts everything CivSim needs, in order, and opens the viewer:
-#   1. the Python simulation
+# Play CivSim: double-click this file in Finder. It starts everything the game needs, in order,
+# and opens it on the main menu:
+#   1. the Python simulation (setting up its environment the first time)
 #   2. the Godot viewer, once the simulation is accepting connections
-# Closing the Godot window stops the simulation.
+# Closing the game window stops the simulation.
 #
-# Double-click this file in Finder, or run it from a terminal:
-#   ./CivSim.command                  (extra arguments go to the sim, e.g. --seed 42 --tick-rate 4)
-#
-# If Godot is somewhere unusual, point to it:  GODOT=/path/to/Godot.app ./CivSim.command
+# From a terminal:   ./Play\ CivSim.command   (extra arguments go to the sim, e.g. --seed 42 --rule 0)
+# If Godot is somewhere unusual, point to it:  GODOT=/path/to/Godot.app ./Play\ CivSim.command
 
 set -u
 cd "$(dirname "$0")" || exit 1
@@ -65,12 +64,30 @@ echo
 # -- checks before starting anything ------------------------------------------
 
 GODOT_BIN="$(find_godot)"
-[ -n "$GODOT_BIN" ] || fail "Godot not found. Put Godot.app in /Applications, or set GODOT=/path/to/Godot.app."
-sim_listening && fail "Something is already listening on port $SIM_PORT. Is another copy of the sim running?"
+[ -n "$GODOT_BIN" ] || fail "Godot not found. Put Godot.app in this folder or in /Applications, or set GODOT=/path/to/Godot.app."
 
+# A simulation left running by an earlier session holds the port: stop it. Anything else there is
+# not ours to stop.
+if sim_listening; then
+    STALE="$(pgrep -f "civsim --port $SIM_PORT" | head -1)"
+    if [ -n "$STALE" ]; then
+        echo "Stopping a CivSim simulation left running from before..."
+        kill "$STALE" 2>/dev/null
+        for _ in $(seq 1 20); do sim_listening || break; sleep 0.25; done
+    fi
+    sim_listening && fail "Something else is using port $SIM_PORT. Close it and try again."
+fi
+
+# The Python environment: made on the first run, and repaired if a package has gone missing.
 if [ ! -x "$PYTHON" ]; then
-    echo "First run: setting up the Python environment..."
+    command -v python3 >/dev/null || fail "Python 3.11 or newer is needed: get it from python.org."
+    python3 -c 'import sys; sys.exit(sys.version_info < (3, 11))' \
+        || fail "Python 3.11 or newer is needed (found $(python3 --version 2>&1)): get it from python.org."
+    echo "First run: setting up the Python environment (a minute or so)..."
     python3 -m venv "$ROOT/.venv" || fail "Could not create the Python environment."
+fi
+if ! "$PYTHON" -c "import civsim, opensimplex, websockets" 2>/dev/null; then
+    echo "Installing the simulation's packages..."
     "$PYTHON" -m pip install -q -e "$ROOT" || fail "Could not install the simulation's dependencies."
 fi
 

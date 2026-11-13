@@ -1,7 +1,7 @@
 # CivSim: project guide
 
-Stable facts and rules. For where things stand now, read **CIVSIM_STATUS.md** first; for
-plans, **ROADMAP.md**; for how the code fits together, **ARCHITECTURE.md**; for player-facing
+Stable facts and rules. For where things stand now, read **docs/CIVSIM_STATUS.md** first; for
+plans, **docs/ROADMAP.md**; for how the code fits together, **docs/ARCHITECTURE.md**; for player-facing
 rules and every number, **README.md**.
 
 ## What CivSim is
@@ -21,7 +21,7 @@ A civilisation simulation on a generated map, with two ways to use it:
   protocol version shared by both ends (`bridge/protocol.py`, `godot/scripts/sim_client.gd`).
 - **Art:** KayKit Medieval Hexagon and Adventurers packs (CC0), our own models made by
   Blender scripts in `tools/blender/`, and two older custom models (villager, rider).
-- **Launcher:** `CivSim.command` starts the sim, then the viewer.
+- **Launcher:** `Play CivSim.command` (project root) starts the sim, then the viewer.
 
 ## Principles (do not reverse casually)
 
@@ -63,9 +63,9 @@ A civilisation simulation on a generated map, with two ways to use it:
 ## Keeping the documentation current
 
 After every substantial task:
-- update **CIVSIM_STATUS.md** (always);
-- update **ROADMAP.md** when priorities or plans change;
-- update **ARCHITECTURE.md** when the structure changes;
+- update **docs/CIVSIM_STATUS.md** (always);
+- update **docs/ROADMAP.md** when priorities or plans change;
+- update **docs/ARCHITECTURE.md** when the structure changes;
 - update **README.md** when rules or numbers the player sees change;
 - update this file only when permanent principles change.
 

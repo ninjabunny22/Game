@@ -308,11 +308,6 @@ func apply_territory(territory: String, civ_colors: Array) -> void:
 	_commit(colors)
 
 
-func toggle_region_borders() -> void:
-	if _region_lines != null:
-		_region_lines.visible = not _region_lines.visible
-
-
 func set_region_borders(on: bool) -> void:
 	if _region_lines != null:
 		_region_lines.visible = on

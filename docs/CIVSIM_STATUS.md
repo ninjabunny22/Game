@@ -1,6 +1,6 @@
 # CivSim status
 
-Last updated: 2026-11-13, branch `menu-and-civ-logic`, with the nine drawn maps. Read this
+Last updated: 2026-11-13, branch `main`, with the nine drawn maps. Read this
 first when resuming work.
 
 ## Stage
@@ -112,6 +112,12 @@ Plan (agreed 2026-11-13): war on the AI's own judgement with a home guard; fight
 - **Menu preview:** choosing a map or civ count swaps the backdrop for that map on day 0
   (`preview_map` command, paused); a Preview panel marks each civ's start; a game started with
   the seed left blank reuses the preview's seed.
+
+- **Project cleanup** (2026-11-13): the launcher is `Play CivSim.command` in the root (it
+  repairs a missing package, checks Python 3.11, and stops a simulation left running); the
+  working docs are in `docs/`; the portrait boards are with the other source art in
+  `art/portraits_royalty/`; the empty TODO.md stub, a dead HUD tech button, the unused
+  `toggle_region_borders` and an unused server field are gone. No change to play or visuals.
 
 ## Balance batch (2026-11-13)
 

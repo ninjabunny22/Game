@@ -1,6 +1,6 @@
 # CivSim architecture
 
-How the implemented code fits together. Rules and numbers live in README.md; this file is
+How the implemented code fits together. Rules and numbers live in the README (project root); this file is
 about structure and data flow.
 
 ## Three parts
@@ -115,7 +115,7 @@ content; code reads it through `economy/buildings.py`, `tech/tree.py` and `milit
   passes to the strategist. Princes can command armies (`Commander.person`; `warfare.py`
   reports their deaths and wounds back). Its events have kind `family`; the viewer gets
   `families` on init, on a day a family changes and every 30 days. Portraits are cut from the
-  boards in `portraits_royalty/` by `tools/cut_portraits.py` into `godot/assets/portraits`.
+  boards in `art/portraits_royalty/` by `tools/cut_portraits.py` into `godot/assets/portraits`.
 - **Civs born mid-game:** a rebellion (`Families._rebel`) calls `Simulation._spawn_rebel`, which
   appends a civ (id = its index; eight at most, one per name and colour), registers it with
   every keeper of a `civs` table (diplomacy via `add_civ`, natives, families, villages,

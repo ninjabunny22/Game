@@ -1,4 +1,4 @@
-"""Cuts the royal portraits out of the boards in portraits_royalty/ into one small picture per
+"""Cuts the royal portraits out of the boards in art/portraits_royalty/ into one small picture per
 character (and a crest per house), for the viewer's family panel and banners. Run from the
 repository root with a Python that has Pillow:
 
@@ -16,7 +16,7 @@ import sys
 from PIL import Image
 
 ROOT = os.path.join(os.path.dirname(__file__), "..")
-BOARDS = os.path.join(ROOT, "portraits_royalty")
+BOARDS = os.path.join(ROOT, "art", "portraits_royalty")
 OUT = os.path.join(ROOT, "godot", "assets", "portraits")
 SIZE = (200, 250)
 

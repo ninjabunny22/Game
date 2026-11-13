@@ -15,7 +15,7 @@ logs/
 /Godot.app/
 /*.glb
 
-# Source art packs as downloaded (fbx, obj and gltf of everything); the game copies what it uses into godot/assets
+# Source art kept beside the project: the packs as downloaded (fbx, obj and gltf of everything), the
+# older custom models and the royal portrait boards. The game copies what it uses into godot/assets
+# (the portraits by tools/cut_portraits.py).
 /art/
-# The royal portrait boards (tools/cut_portraits.py cuts what the game uses into godot/assets/portraits)
-/portraits_royalty/

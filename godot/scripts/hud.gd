@@ -52,7 +52,6 @@ const CHRONICLE_LIMIT := 400
 const TICKER_BRIGHT := 6.0  # seconds a new headline stays bright before it dims
 var _pause_button: Button
 var _tech_tree: PanelContainer  # tech_tree.gd: the tree as the civs climb it, while spectating
-var _tech_button: PanelContainer
 var _banners: VBoxContainer  # war_banner.gd: declarations of war, proclaimed mid-screen
 var _legend: RichTextLabel
 var _icons := {}  # icon name -> Texture2D
@@ -192,7 +191,6 @@ func _ready() -> void:
 		ruler_panel.position.y = below
 		_diplomacy_panel.position = Vector2(470, below)
 		_side.offset_top = below
-		_tech_button.offset_top = below
 		_drawer.offset_top = below
 	controls.resized.connect(place)
 
@@ -235,13 +233,6 @@ func _ready() -> void:
 	add_child(_family_tree)
 	_banners = WarBanner.new()
 	root.add_child(_banners)
-	_tech_button = _panel(root)
-	_tech_button.anchor_left = 1.0
-	_tech_button.anchor_right = 1.0
-	_tech_button.offset_left = -466
-	_tech_button.offset_right = -410
-	_tech_button.offset_top = 10
-	_icon_button(_tech_button, "tech", "Tech tree: what each civ knows and is learning  (T)", toggle_tech_tree)
 	# The cards scroll when there are more than fit above the minimap.
 	_cards_scroll = ScrollContainer.new()
 	_cards_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -662,7 +653,6 @@ func update(tick: int, data: Dictionary) -> void:
 	_refresh_chips()
 	_refresh_drawer()
 	# The tech tree is a spectator's view: a ruler sees only what his own civ knows.
-	_tech_button.visible = false  # watching, the tree opens from the drawer, T or its tab
 	if not _spectating:
 		_tech_tree.visible = false
 	_tech_tree.update(data)

@@ -3,8 +3,22 @@
 Two to five civilizations compete on one of nine hand-drawn maps. A Python simulation core runs the
 world; a Godot 4 project renders it in 3D over a local WebSocket.
 
-Project documentation: **CLAUDE.md** (guide and principles), **CIVSIM_STATUS.md** (where
-things stand), **ROADMAP.md** (plans), **ARCHITECTURE.md** (how it fits together). This README
+## Play
+
+**Double-click `Play CivSim.command`** in this folder. The first time, it sets up Python (a
+minute or so); then it opens the game on its main menu. Close the game window to quit.
+
+Needs: macOS, Python 3.11 or newer, and Godot 4.7 (`Godot.app` in this folder or in
+/Applications). macOS may ask once to allow the script: right-click it, choose Open.
+
+## The project
+
+Folders: `src/civsim` (the simulation, Python), `godot` (the viewer: scenes, scripts, assets),
+`tests` (pytest), `tools` (asset scripts: icons, portraits, Blender models), `docs` (status,
+roadmap, architecture), `art` (source art kept outside git), `logs` (the launcher's logs).
+
+Project documentation: **CLAUDE.md** (guide and principles), **docs/CIVSIM_STATUS.md** (where
+things stand), **docs/ROADMAP.md** (plans), **docs/ARCHITECTURE.md** (how it fits together). This README
 is the reference for the rules and numbers.
 
 Built so far: **phase 1** (map, civs, economy, rule-based AI, viewer),
@@ -15,10 +29,10 @@ villagers on the map).
 
 ## Run it
 
-Double-click `CivSim.command` in Finder (or run `./CivSim.command`). It starts
-the simulation and opens the Godot viewer once the simulation is ready. Closing
+`Play CivSim.command` (see **Play** above) starts the simulation and opens the Godot viewer
+once the simulation is ready. Closing
 the Godot window stops the simulation. Arguments are passed to the sim, for
-example `./CivSim.command --seed 42` or `./CivSim.command --rule 0` to play a
+example `./Play\ CivSim.command --seed 42` or `./Play\ CivSim.command --rule 0` to play a
 civ yourself. Logs go to `logs/`.
 
 To run the pieces by hand:
@@ -39,7 +53,7 @@ The civs are played by the built-in strategist (`strategy/utility.py`): at each 
 it weighs attacking, allying and trading with every neighbour from the civ's personality
 and the situation, and says why. `--brain rules` uses the simpler policy the tests run on.
 
-**Main menu.** Started with nothing said about the game (`./CivSim.command`), the
+**Main menu.** Started with nothing said about the game (`./Play\ CivSim.command`), the
 viewer opens on its main menu over a game playing itself. Choosing a map, or a number of civs,
 puts that map behind the menu on its first day; **Preview** steps the menu aside and shows the
 map in small with each civ's start marked, and the game then started (with the seed left blank)

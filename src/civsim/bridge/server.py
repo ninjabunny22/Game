@@ -39,7 +39,6 @@ class SimServer:
         self.ready = asyncio.Event()  # set once the socket is listening
         self._wake = asyncio.Event()  # a command changed pause/speed/steps
         self._pending_steps = 0
-        self._thinking: set[asyncio.Task] = set()
         self._waiting: list[int] = []  # civs whose late answer the clock is being held for
 
     async def run(self) -> None:
