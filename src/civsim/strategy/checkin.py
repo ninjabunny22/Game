@@ -66,12 +66,17 @@ def parse_stances(reply: object, context: dict, tick: int) -> tuple[dict[int, In
             intent.commitment = _number(entry.get("troop_commitment"), 0.5, 0.1, 1.0)
             intent.hold = entry.get("hold") is True
             intent.demand = entry.get("demand") is True
+            motive, about = entry.get("motive"), entry.get("about")
+            intent.motive = motive if isinstance(motive, str) and motive in MOTIVES else None
+            intent.about = about[:60] if isinstance(about, str) else None
         intent.pay = entry.get("pay_tribute") is True
         intents[neighbor["id"]] = intent
     reason = reply.get("reason")
     return intents, " ".join(reason.split())[:MAX_REASON_LENGTH] if isinstance(reason, str) else ""
 
 
+MOTIVES = {"weaker", "busy", "sick", "rival", "exposed", "prize", "victory", "bully", "grudge", "ally", "runaway",
+           "water", "restless", "betrayal", "resources", "lost_lands", "home", "land_hunger", "refused", "gate"}
 WATER_PRIORITY = 0.3  # urgency from which water is asked for ahead of anything else, and never given away
 WATER_URGENT = 0.7  # urgency from which every trade must be for water: as pressing as food
 

@@ -6,6 +6,7 @@ extends CanvasLayer
 signal command_requested(action: String, value: Variant)
 
 const TechTree := preload("res://scripts/tech_tree.gd")
+const WarBanner := preload("res://scripts/war_banner.gd")
 const LINK_LEGEND := "[color=#ff4033]━[/color] war   [color=#59a6ff]━[/color] alliance   [color=#59e666]━[/color] trade   [color=#aaaaaa]━[/color] neutral"
 
 const MAX_HEADLINES := 5
@@ -22,6 +23,7 @@ var _status: Label
 var _pause_button: Button
 var _tech_tree: PanelContainer  # tech_tree.gd: the tree as the civs climb it, while spectating
 var _tech_button: PanelContainer
+var _banners: VBoxContainer  # war_banner.gd: declarations of war, proclaimed mid-screen
 var _legend: RichTextLabel
 var _icons := {}  # icon name -> Texture2D
 var _log: RichTextLabel
@@ -177,6 +179,8 @@ func _ready() -> void:
 	_tech_tree.offset_right = -20
 	_tech_tree.offset_bottom = -20
 	add_child(_tech_tree)  # beside the overlay's root, so it can come in front of the minimap too
+	_banners = WarBanner.new()
+	root.add_child(_banners)
 	_tech_button = _panel(root)
 	_tech_button.anchor_left = 1.0
 	_tech_button.anchor_right = 1.0
@@ -529,6 +533,7 @@ func setup(init: Dictionary) -> void:
 	_log.text = ""
 	_ruler_signature = ""
 	_tech_tree.setup(init)
+	_banners.clear()
 
 
 func set_status(status: Dictionary) -> void:
@@ -571,10 +576,19 @@ func update(tick: int, data: Dictionary) -> void:
 		_diplomacy.text = _diplomacy_text_panel(data)
 
 	# Headlines get a line each; routine events are only counted.
+	_banners.tick(tick)
+	var ruled: Variant = data.get("ruler")
 	for event: Dictionary in data["events"]:
 		if event["kind"] in HEADLINE_KINDS:
 			var color: String = _civ_info[int(event["civ"])]["color"]
 			_log_lines.append("[color=#8a93a0]Day %d[/color]  [color=%s]%s[/color]" % [tick, color, event["text"]])
+			if event.has("proclamation"):
+				_log_lines.append("        [color=%s][i]“%s”[/i][/color]" % [color, event["proclamation"]])
+				# A banner while watching, and when you rule, for a war on or by your civ.
+				var mine := ruled == null or int(ruled["civ"]) in [int(event["civ"]), int(event.get("target", -1))]
+				if mine:
+					_banners.proclaim(tick, str(_civ_info[int(event["civ"])]["name"]), Color.html(color),
+						str(_civ_info[int(event["target"])]["name"]), str(event.get("war_name", "")), str(event["proclamation"]))
 		elif ROUTINE_LABELS.has(event["kind"]):
 			_routine.append([tick, event["kind"]])
 	if _log_lines.size() > MAX_HEADLINES:
@@ -671,6 +685,8 @@ func _refresh_castle() -> void:
 				if region.get("stronghold", false):
 					worth += "  [color=#d9a441](a former native stronghold)[/color]"
 				lines.append(worth)
+				for rich: Variant in region.get("rich", []):
+					lines.append("[color=#e8b84a]★ %s[/color] [color=#8a93a0](yields three times as much)[/color]" % str(rich))
 			if settlement.has("garrison"):
 				lines.append("[color=#8a93a0]Garrison:[/color] %d soldiers" % int(settlement["garrison"]))
 			else:

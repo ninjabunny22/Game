@@ -123,6 +123,19 @@ The overlay is built for watching:
 - **No peace lasts for ever.** The longer a civ has gone without a war the more it wants one,
   the warlike soonest, until even an equal will do; and a civ whose army is away or has just
   been beaten is attacked sooner. A game nobody has fought in does not end on score.
+- **Reasons for war.** Besides weakness, sickness, an exposed army, a grudge, an ally's war, a
+  runaway leader, a region worth having, the last push to victory and thirst, a civ goes to war
+  for: a **rich node** of something it is short of in a neighbour's hands; **land taken from
+  it** (most of all its old home); **no room to grow** (its people crowded and no free land in
+  reach); a **trade refused** for 100 days or more of something it lacks; and a **pass, neck or
+  crossing** of the neighbour's that opens into its land. Each is one weight in the
+  strategist's `Params`.
+- **War is proclaimed.** When a civ declares war, a banner stands in the middle of the screen for
+  15 days (or until its X is clicked) with what it proclaims, in its own voice and from the real
+  reason: "Ossyria shall be punished for taking our lands!", "The Great Iron Vein is ours by
+  right, and we will have it!" When the reason says little, their history speaks instead (land
+  lost, a betrayal, a grudge). The line also goes into the log (`diplomacy/proclamations.py`).
+  When you rule a civ, banners show only for wars on or by it.
 - **Ceding land.** A side at least two castles behind when peace is made gives up a region
   (never its home) instead of paying tribute.
 - **More war, sooner.** Civs reconsider every 10 days. Restlessness sets in after about 250
@@ -296,6 +309,11 @@ model the viewer uses and checks the animations, weapons and colours
   white dots, and each army with a general as a small square in its civ's colour, moving as
   it moves; an army inside a castle is not shown. The outline is what the camera sees; click
   anywhere on it to look there.
+- **Rich nodes.** About a third of the regions that start neutral hold a rich node: a deposit
+  that yields three times as much, with a name ("the Great Iron Vein", "the Golden Seam", "the
+  Black Earth", "the Silver Shoals"). No start region has one. They are drawn as a bigger,
+  glowing marker with the name over it from mid zoom, as a diamond on the minimap, and with a
+  star in the castle popup of their region; the AI values them, and fights for them.
 - **Gold mines** are fixed sites drawn on each map, mostly in the regions worth fighting for. Each pays 1 gold a day to whoever holds its region, once that civ knows
   Mining. Nothing can be built on a mine's tile. While an enemy holds a capital, rubble
   and scaffolding lie against its walls.

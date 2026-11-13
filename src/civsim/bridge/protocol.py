@@ -107,7 +107,8 @@ def init_message(sim: Simulation, lobby: bool = False) -> str:
                 for tile, size in sorted(world.rivers.items())
             ],
             "deposits": [
-                {"x": tile % world.width, "y": tile // world.width, "type": type_id}
+                {"x": tile % world.width, "y": tile // world.width, "type": type_id,
+                 **({"rich": world.rich[tile]} if tile in world.rich else {})}
                 for tile, type_id in sorted(world.deposits.items())
             ],
             # Old bridges: river tiles anyone crosses as if bridged.
@@ -136,7 +137,9 @@ def init_message(sim: Simulation, lobby: bool = False) -> str:
             {"id": region.id, "name": region.name, "capital": region.capital_name,
              "x": region.capital % world.width, "y": region.capital // world.width,
              # What holding it is worth (1 to 3), and whether its natives hold a stronghold.
-             "points": region.points, "stronghold": region.strength > 1, "tags": list(region.tags)}
+             "points": region.points, "stronghold": region.strength > 1, "tags": list(region.tags),
+             # Its rich nodes, by name (a deposit there yields three times as much).
+             "rich": [name for tile, name in sorted(world.rich.items()) if world.region_of[tile] == region.id]}
             for region in world.regions
         ],
         # Gold mines: fixed sites, each paying the owner of its region (see "regions" in each tick).

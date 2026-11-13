@@ -23,6 +23,7 @@ from ..economy.rules import (
 from ..map import BOAT_RANGE, WorldMap, load_faction
 from . import rules
 from .model import FRIENDLY, Deal, Intent, Relation, Stance, War
+from .proclamations import PLAIN, proclaim
 from .naming import alliance_name, war_name
 
 REACH_CACHE_TICKS = 10
@@ -50,6 +51,7 @@ class Diplomacy:
         self._reach_cache: dict[tuple[int, int], tuple[int, bool]] = {}
         self.player: int | None = None  # the civ a human rules, if any: it is never made peace for
         self.now = 0
+        self.refused_since: dict[tuple[int, int], tuple[int, str]] = {}  # (a, b) -> (tick, resource) b would not trade a
         self.wars_started = 0  # how many wars between civs there have been in the game
         self.caution: dict[tuple[int, int], float] = {}  # (civ, other) -> extra edge it wants before attacking it
         self.betrayed: set[tuple[int, int]] = set()  # (victim, betrayer): never forgotten
@@ -283,6 +285,8 @@ class Diplomacy:
             self.military.update(tick, events)
         if self.natives:
             self.natives.update(tick, events)
+        if tick % 10 == 0:
+            self._track_refusals(tick)
         self._issue_orders(tick)
 
     def home_guard(self, civ, exclude=()) -> float:
@@ -364,6 +368,7 @@ class Diplomacy:
                 self._start_war(declarer, target, tick, aggressors={civ.id for civ in hostile}, name=name)
                 self._log(tick, events, "war", [declarer, target],
                           f"{declarer.name} declares war on {target.name}: {name} begins")
+                events[-1].update(self._proclamation(declarer, target, name, tick))
                 self.remember(target.id, declarer.id, -1.0)  # an attack is not forgotten quickly
                 self.demands.pop((declarer.id, target.id), None)
                 for ally in self.allies(declarer.id):
@@ -466,6 +471,21 @@ class Diplomacy:
             relation.alliance_name = ""
 
     # -- trade ---------------------------------------------------------------
+
+    def _track_refusals(self, tick: int) -> None:
+        """Since when each civ at peace has wanted something from another that will not trade it:
+        (a, b) -> the tick a first asked b in vain. A deal, or no longer asking, clears it."""
+        for a in self.civs:
+            for b in self.others(a):
+                mine, theirs = self.intents[(a, b)], self.intents[(b, a)]
+                asking = (mine.stance in (Stance.TRADE, Stance.ALLY) and mine.want is not None
+                          and self.relation(a, b).status != "war" and self.civs[b].alive)
+                refused = asking and self.deal_between(a, b) is None and (
+                    theirs.stance not in (Stance.TRADE, Stance.ALLY) or theirs.give != mine.want)
+                if refused:
+                    self.refused_since.setdefault((a, b), (tick, mine.want))
+                else:
+                    self.refused_since.pop((a, b), None)
 
     def _try_deal(self, civ_a, civ_b, a_offer: Intent, b_offer: Intent, relation: Relation,
                   tick: int, events: list) -> None:
@@ -593,6 +613,9 @@ class Diplomacy:
                 continue
             self._transfer_tile(tile, captor, loser if owner >= 0 else None, tick, events, announce=False)
         region.owner = captor.id
+        captor.lost_regions.pop(region.id, None)  # won back
+        if loser is not None:
+            loser.lost_regions[region.id] = tick  # and not forgotten
         region.garrison = 0.0
         region.held_by, region.hold = None, 0
         captor.settlements.append(Settlement(region.capital_name, region.capital))
@@ -862,6 +885,26 @@ class Diplomacy:
                 allied = self.relation(deal.a, deal.b).status == "alliance"
                 self.civs[giver].exports[res] += rate
                 self.civs[receiver].imports[res] += rate * (1 + rules.ALLY_TRADE_BONUS if allied else 1)
+
+    def _proclamation(self, declarer, target, war: str, tick: int) -> dict:
+        """What the declarer proclaims (diplomacy/proclamations.py): from the strategist's motive,
+        unless that says little and their history says more. Goes with the declaration event
+        and into the history."""
+        intent = self.intents[(declarer.id, target.id)]
+        motive, about = intent.motive, intent.about
+        if motive in PLAIN:
+            lost = [self.world.regions[r].name for r in sorted(declarer.lost_regions)
+                    if self.world.regions[r].owner == target.id]
+            if lost:
+                motive, about = "lost_lands", lost[0]
+            elif (declarer.id, target.id) in self.betrayed:
+                motive, about = "faithless", None
+            elif self.standing.get((declarer.id, target.id), 0.0) <= -0.8:
+                motive, about = "grudge", None
+        line = proclaim(declarer.name, target.name, motive, about,
+                        random.Random(tick * 1009 + declarer.id * 31 + target.id))
+        self.history.append({"tick": tick, "civs": [declarer.id, target.id], "text": f"{declarer.name}: \"{line}\""})
+        return {"proclamation": line, "war_name": war, "target": target.id, "motive": motive}
 
     def _log(self, tick: int, events: list, kind: str, civs: list, text: str) -> None:
         self.history.append({"tick": tick, "civs": [civ.id for civ in civs], "text": text})

@@ -83,6 +83,14 @@ class Params:
     # civ this close itself pushes for the prizes that would finish it.
     NEAR_VICTORY: float = 0.75
     LAST_PUSH: float = 0.4
+    # More reasons for war (each added to the score of attacking that neighbour):
+    RESOURCE_WAR: float = 0.4  # it holds a rich node of something we are short of
+    LOST_LANDS: float = 0.3  # it holds land it took from us ...
+    LOST_HOME: float = 0.4  # ... and more if that is our old home
+    LAND_HUNGER: float = 0.2  # our people are crowded and no free land is left in reach
+    TRADE_REFUSED: float = 0.25  # it has refused us something we lack for this long ...
+    REFUSED_DAYS: int = 100  # ... days
+    GATE_THREAT: float = 0.2  # it holds a pass, neck or crossing that opens into our land
     HOLD_THE_LEADER: float = 0.6  # the edge at which a war on a near-winner is still fought on
     EASY: float = -0.3  # added to the worth of attacking a human ruler on the easy setting ...
     HARD: float = 0.2  # ... and on the hard one
@@ -103,6 +111,7 @@ class UtilityBrain:
 
     def __init__(self, **tweaks: float):
         """`tweaks` change any of the numbers in Params, for playing variants against each other."""
+        self._motive: tuple[str | None, str | None] = (None, None)  # what the last war scored was about
         unknown = set(tweaks) - {f.name for f in fields(Params)}
         if unknown:
             raise ValueError(f"unknown strategist parameters: {', '.join(sorted(unknown))}")
@@ -166,6 +175,8 @@ class UtilityBrain:
             attack, why_attack = self._attack(you, n, edge, forecast, military, thirst, supplier, can_declare,
                                               bool(my_wars), runaway, strategy, friends_wars, need,
                                               context.get("player"), context.get("difficulty"))
+            if self._motive[0]:  # what the war would be about, for its declaration
+                entry["motive"], entry["about"] = self._motive
             if plan.get("target") == n["name"] and attack > 0:
                 # See a war already being prepared through, unless the target has grown too strong.
                 attack = attack + p.PLAN_BONUS if forecast >= p.PLAN_ABANDON else 0.0
@@ -345,6 +356,7 @@ class UtilityBrain:
     def _attack(self, you, n, edge, forecast, military, thirst, supplier, can_declare, at_war, runaway, strategy,
                 friends_wars, need=0.0, player=None, difficulty="normal") -> tuple[float, str]:
         p = self.p
+        self._motive = (None, None)
         if not (can_declare and n["in_reach"]) or n["truce"] or you.get("sick"):
             return 0.0, ""  # nor does a civ that is itself sick start anything
         sick = bool(n.get("sick"))
@@ -361,38 +373,48 @@ class UtilityBrain:
                 # The two strongest working together: whoever strikes first takes it all.
                 if (military >= 1.0 and edge >= p.BETRAYAL_EDGE * p.RIVAL_BETRAYAL and not at_war
                         and not you["distrusted_ticks_left"] and n.get("standing", 0.0) < 0.5):
+                    self._motive = ("rival", None)
                     return 1.0 + (edge - p.BETRAYAL_EDGE * p.RIVAL_BETRAYAL) * military, \
                         f"only {n['name']} stands between us and first place"
             if sick and military >= p.BETRAYAL_MILITARY * ease and edge >= p.BETRAYAL_EDGE * ease and lone \
                     and not at_war and not you["distrusted_ticks_left"] and n.get("standing", 0.0) < 1.5:
+                self._motive = ("sick", None)
                 return 1.1 + (edge - p.BETRAYAL_EDGE * ease) * military, f"{n['name']} is sick and cannot defend itself"
             if (military < p.BETRAYAL_MILITARY or edge < p.BETRAYAL_EDGE or not lone or at_war
                     or strategy["kind"] == "survival" or you["distrusted_ticks_left"]
                     or n.get("standing", 0.0) >= 1.5):
                 return 0.0, ""
+            self._motive = ("betrayal", None)
             return 0.9 + (edge - p.BETRAYAL_EDGE) * military, f"{n['name']} trusts us and is weak"
         score, why = (forecast - 1.0) * 1.2 * military, f"{n['name']} is weaker"
+        motive, about = "weaker", None
         if n["at_war_with"]:
             score += 0.4
             why = f"{n['name']} is weaker and already fighting {n['at_war_with'][0]}"
+            motive, about = "busy", None
         if sick:
             score += 0.35
             why = f"{n['name']} is laid low by sickness"
+            motive, about = "sick", None
         if n.get("rival"):
             score += p.RIVAL_ATTACK
             why = f"only {n['name']} stands between us and first place"
+            motive, about = "rival", None
         if exposed and not sick:
             score += 0.3
             why = (f"{n['name']}'s army is away" if n.get("army_abroad") else f"{n['name']} has just lost a battle")
+            motive, about = "exposed", None
         if n["distrusted_ticks_left"]:
             score += 0.2  # nobody will come to its aid
         prize = n.get("prize")
         if prize and prize["value"] > p.PRIZE_FREE:
             score += min(p.PRIZE_MAX, p.PRIZE_WEIGHT * (prize["value"] - p.PRIZE_FREE))
             why = f"{n['name']} holds {prize['region']}, which we want for {prize['why']}"
+            motive, about = "prize", prize["region"]
         if prize and you.get("points", {}).get("share", 0.0) >= p.NEAR_VICTORY:
             score += p.LAST_PUSH
             why = f"{prize['region']} would bring the map within our grasp"
+            motive, about = "victory", prize["region"]
         # The long view: the civ it has set out to conquer is attacked sooner, and a civ set on
         # something else is slower to fight at all.
         if strategy["kind"] == "conquest":
@@ -405,6 +427,7 @@ class UtilityBrain:
         if ratio >= p.BULLY:
             score += min(p.BULLY_MAX, 0.5 * (ratio - 1.0))
             why = f"{n['name']} is small and ours for the taking"
+            motive, about = "bully", None
         # Memory: a grudge is a reason, and a proven friend is not attacked lightly.
         standing = n.get("standing", 0.0)
         if ratio >= p.OVERBEARING:
@@ -412,15 +435,46 @@ class UtilityBrain:
         score -= max(-0.6, min(0.6, 0.35 * standing))
         if standing <= -0.8:
             why = f"{n['name']} has wronged us and is weaker"
+            motive, about = "grudge", None
+        # More reasons: a rich node of what we lack, land it took from us, no room left to grow,
+        # a trade it keeps refusing, a pass of its that opens into our land.
+        wanted = [node for node in n.get("rich_nodes", []) if node["resource"] in you.get("short_of", [])]
+        if wanted:
+            score += p.RESOURCE_WAR
+            why = f"{n['name']} sits on {wanted[0]['name']} and we have no {wanted[0]['resource']}"
+            motive, about = "resources", wanted[0]["name"]
+        lost = n.get("holds_our_lost_lands") or []
+        if lost:
+            score += p.LOST_LANDS + (p.LOST_HOME if n.get("holds_our_home") else 0.0)
+            why = f"{lost[0]} was ours" if not n.get("holds_our_home") else f"{n['name']} holds our old home"
+            motive, about = ("home", lost[0]) if n.get("holds_our_home") else ("lost_lands", lost[0])
+        plain = motive in ("weaker", "busy", "bully", "restless", "exposed")  # says little: a broader reason may speak
+        if you.get("crowded"):
+            score += p.LAND_HUNGER
+            if plain:
+                why = f"we have no room to grow, and {n['name']} has land"
+                motive, about = "land_hunger", None
+        refused = n.get("refused_trade")
+        if refused and refused["days"] >= p.REFUSED_DAYS and refused["resource"] in you.get("short_of", []):
+            score += p.TRADE_REFUSED
+            why = f"{n['name']} will not sell us {refused['resource']}"
+            motive, about = "refused", refused["resource"]
+        if n.get("gate_into_our_land"):
+            score += p.GATE_THREAT
+            if plain or motive == "land_hunger":
+                why = f"{n['name']} holds {n['gate_into_our_land']}, the way into our land"
+                motive, about = "gate", n["gate_into_our_land"]
         # What past wars with this civ have taught: beaten once, it takes more to try again.
         caution = n.get("caution", 0.0)
         score -= p.CAUTION_WEIGHT * caution
         if n["name"] in friends_wars and forecast >= p.PARITY:
             score = max(score, 0.0) + 0.5
             why = f"{friends_wars[n['name']]} is fighting {n['name']} and we stand with our ally"
+            motive, about = "ally", friends_wars[n["name"]]
         if runaway == n["name"] and forecast >= p.PARITY:
             score = max(score, 0.0) + 0.4
             why = f"{n['name']} is running away with it"
+            motive, about = "runaway", None
         if at_war:
             score -= 1.0 if edge < 2.2 else 0.3  # a second front only against the helpless
         if n["your_current_stance"] == "aggression":
@@ -430,6 +484,7 @@ class UtilityBrain:
         if thirst >= WATER_URGENT and n["water_rich"] and not supplier:
             score += 0.8
             why = f"the wells are failing and {n['name']} has water"
+            motive, about = "water", None
         elif thirst >= WATER_PRIORITY and n["water_rich"]:
             score = min(score, 0.0)  # whoever has water is courted, not fought, while there is a choice
         # No peace lasts for ever: the longer a civ has gone without a war the more it wants
@@ -440,8 +495,10 @@ class UtilityBrain:
             score += min(p.RESTLESS_MAX, idle * p.RESTLESS_PER_TICK)
             if score >= p.ATTACK_THRESHOLD and forecast < p.PARITY:
                 why = f"the long peace has run its course and {n['name']} is no stronger than we are"
+                motive, about = "restless", None
         if forecast < (p.RESTLESS_PARITY if restless else p.PARITY) + need + caution:
             score = min(score, 0.0)  # never start a war it does not expect to win
+        self._motive = (motive, about)
         return score, why
 
     def _ally(self, n, edge, thirst, my_enemies, threats, runaway, friends=0) -> tuple[float, str]:

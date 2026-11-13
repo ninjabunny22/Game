@@ -86,6 +86,7 @@ def stance_context(sim, civ) -> dict:
             offer = {"gives": theirs.give, "wants": theirs.want}
         prize = _prize(sim, civ, other_id)
         guard, watched = diplomacy.home_threat(civ, exclude={other_id} | set(diplomacy.enemies(civ.id)))
+        claims = _claims(sim, civ, other_id)
         neighbors.append({
             "id": other_id,
             "name": other.name,
@@ -116,6 +117,10 @@ def stance_context(sim, civ) -> dict:
             # In a war on them: the soldiers that would have to stay at home to hold off whoever
             # else is in reach (the home guard), and who that is.
             "home_guard": math.ceil(guard),
+            # More reasons a war might be fought: its rich nodes, land it took from you (and
+            # whether that includes your old home), how long it has refused you a trade you
+            # asked for, and a pass, neck or crossing of its that opens into your land.
+            **claims,
             "watching": sim.civs[watched].name if watched is not None else None,
             # What anyone can see of their army: whether most of it is away from home, and how
             # long ago it was last beaten in the field (None if not lately).
@@ -194,6 +199,10 @@ def stance_context(sim, civ) -> dict:
             "surplus": surplus,
             "lacking": lacking,
             "water": _water_report(civ, mods),
+            # What it is short of (ore, stone, gold, food), and whether its people are crowded
+            # with no free land left within reach.
+            "short_of": _short_of(civ, mods),
+            "crowded": _crowded(sim, civ, mods),
         },
         "neighbors": neighbors,
         # The civ a human rules, if any, and how hard the others are to go on it.
@@ -212,6 +221,46 @@ def stance_context(sim, civ) -> dict:
 
 
 WATER_RICH_RATIO = 1.5  # supply at least this multiple of use counts as water to spare
+RICH_RESOURCE = {"iron": "ore", "gold": "gold", "stone": "stone", "fertile_soil": "food", "fish": "food", "game": "food"}
+CROWDED = 0.9  # people over housing from which a civ with no free land in reach is crowded
+FREE_LAND_RINGS = 2  # native land this many regions away or nearer still counts as room
+
+
+def _claims(sim, civ, other_id: int) -> dict:
+    world = sim.world
+    theirs = {r.id for r in world.regions if r.owner == other_id}
+    rich = [{"name": name, "resource": RICH_RESOURCE.get(world.deposits.get(tile, ""), "food"),
+             "region": world.regions[world.region_of[tile]].name}
+            for tile, name in sorted(world.rich.items()) if world.region_of[tile] in theirs]
+    lost = [world.regions[r].name for r in sorted(civ.lost_regions) if r in theirs]
+    refused = sim.diplomacy.refused_since.get((civ.id, other_id))
+    held = {r.id for r in world.regions if r.owner == civ.id}
+    touching = sim.military._touching
+    gate = next((world.regions[r].name for r in sorted(theirs)
+                 if set(world.regions[r].tags) & {"gate", "neck", "bridge"} and touching[r] & held), None)
+    return {"rich_nodes": rich, "holds_our_lost_lands": lost, "holds_our_home": civ.home_region in theirs,
+            "refused_trade": ({"resource": refused[1], "days": sim.tick - refused[0]} if refused else None),
+            "gate_into_our_land": gate}
+
+
+def _short_of(civ, mods) -> list[str]:
+    """Ore, stone and gold its land barely yields, and food when its stores are running down."""
+    from ..economy.rules import SETTLEMENT_YIELDS
+    capitals = len(civ.settlements)
+    short = [res for res in ("ore", "stone") if civ.capacity[res] - SETTLEMENT_YIELDS[res] * capitals < 4]
+    if civ.capacity["gold"] - SETTLEMENT_YIELDS["gold"] * capitals < 2:
+        short.append("gold")
+    if civ.resources["food"] < 0.2 * mods.storage["food"] and civ.income.get("food", 0.0) <= 0:
+        short.append("food")
+    return short
+
+
+def _crowded(sim, civ, mods) -> bool:
+    if civ.population < CROWDED * mods.housing:
+        return False
+    held = {r.id for r in sim.world.regions if r.owner == civ.id}
+    rings = sim.military._rings(held)
+    return not any(region.neutral and rings.get(region.id, 99) <= FREE_LAND_RINGS for region in sim.world.regions)
 
 
 def _prize(sim, civ, other_id: int) -> dict | None:

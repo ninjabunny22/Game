@@ -308,6 +308,7 @@ class Simulation:
                              key=lambda r: (self._capital_distance(home, r), r.id))
             taken.add(second.id)
             civ.settlements.append(Settlement(second.capital_name, second.capital))
+            civ.home_region = home.id
             for region in (home, second):
                 region.owner = civ.id
                 for tile in region.tiles:

@@ -86,6 +86,8 @@ class Civilization:
     soldier_target: float = 0.0
     military_need: float = 0.0  # 0 = at peace and unthreatened, 1 = at war
     march_target: int | None = None  # civ to take land toward, to bring it within reach
+    home_region: int = -1  # the region it started in, which it never forgets
+    lost_regions: dict[int, int] = field(default_factory=dict)  # region id -> tick it was taken from this civ
     # The capital its next harbour should face: the most valuable place it can only reach by
     # water (set by the AI before it picks a harbour's site; None: the nearest foreign capital).
     harbour_goal: int | None = None

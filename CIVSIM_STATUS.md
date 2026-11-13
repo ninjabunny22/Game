@@ -80,6 +80,13 @@ Plan (agreed 2026-11-13): war on the AI's own judgement with a home guard; fight
   (Highgate after day ~3,900, Five Gates after ~4,700); all three games ended on score.
 - **Fights you can follow** (boxes over battles and sieges, a battle alert), the **icon bar**,
   and the **tech tree** viewer, all while spectating.
+- **Rich nodes** (a deposit yielding 3x, named, in about a third of the regions that start
+  neutral; never in a start region) and **more reasons for war**: a rich node of something the
+  civ lacks, lost lands (most of all its old home), no room to grow, a refused trade, a gate
+  into its land. **War is proclaimed** in a banner mid-screen, in the declarer's voice, from the
+  real reason or their history. Three check games: wars were started for 5-8 different reasons
+  a game (grudges, bullying, gates, an ally's war, a runaway leader...); "no room to grow"
+  named most of Highgate's wars until it was made to give way to more specific reasons.
 
 ## Balance batch (2026-11-13)
 

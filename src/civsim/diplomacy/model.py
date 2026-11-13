@@ -27,6 +27,10 @@ class Intent:
     hold: bool = False  # aggression: muster for the war but do not declare it yet
     demand: bool = False  # aggression: demand tribute first; war follows a refusal
     pay: bool = False  # pay the tribute the other civ has demanded
+    # aggression: what the war is about (see diplomacy/proclamations.py) and what it names, if
+    # anything (a region, a rich node, a resource, an ally): the declaration is spoken from it.
+    motive: str | None = None
+    about: str | None = None
     tick: int = 0
 
 
