@@ -48,6 +48,17 @@ ICONS = {
                f'<path d="M19 4 L8 15" stroke="{STEEL}" stroke-width="2.4" stroke-linecap="round"/>'
                f'<path d="M13.5 17.5 L18.5 12.5 M5.5 12.5 L10.5 17.5" stroke="{GOLD}" stroke-width="2" stroke-linecap="round"/>'
                f'<path d="M17 16 L20 19 M7 16 L4 19" stroke="{WOOD}" stroke-width="2.4" stroke-linecap="round"/>'),
+    # A native stronghold: a shield with a band across it.
+    "shield": (f'<path d="M12 3 L20 6 V12 Q20 18 12 21.5 Q4 18 4 12 V6 Z" fill="{GREY}" stroke="{INK}" stroke-width="1.6"/>'
+               f'<path d="M4.6 10 H19.4 V13 H4.6 Z" fill="{WOOD}"/>'),
+    # Map layers: region borders (a dashed outline), the lines between castles, deposits (a gem).
+    "borders": (f'<path d="M4 6 L11 4 L20 7 L19 17 L12 20 L5 16 Z" fill="none" stroke="{INK}" stroke-width="2" '
+                f'stroke-dasharray="3 2" stroke-linejoin="round"/>'),
+    "lines": (f'<path d="M4 18 Q12 2 20 18" fill="none" stroke="{RED}" stroke-width="2.2" stroke-linecap="round"/>'
+              f'<path d="M4 18 Q12 9 20 18" fill="none" stroke="{BLUE}" stroke-width="2.2" stroke-linecap="round"/>'
+              f'<circle cx="4" cy="18" r="2" fill="{INK}"/><circle cx="20" cy="18" r="2" fill="{INK}"/>'),
+    "resources": (f'<path d="M7 5 H17 L21 10 L12 20 L3 10 Z" fill="{GOLD}"/>'
+                  f'<path d="M3 10 H21 M9 5 L12 10 L15 5 M12 10 L12 20" stroke="#8a6a1f" stroke-width="1.1" fill="none"/>'),
     "close": f'<path d="M6 6 L18 18 M18 6 L6 18" stroke="{INK}" stroke-width="2.4" stroke-linecap="round"/>',
 }
 

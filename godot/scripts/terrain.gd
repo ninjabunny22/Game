@@ -313,6 +313,11 @@ func toggle_region_borders() -> void:
 		_region_lines.visible = not _region_lines.visible
 
 
+func set_region_borders(on: bool) -> void:
+	if _region_lines != null:
+		_region_lines.visible = on
+
+
 func _world_height(x: int, y: int) -> float:
 	x = clampi(x, 0, map_width - 1)
 	y = clampi(y, 0, map_height - 1)

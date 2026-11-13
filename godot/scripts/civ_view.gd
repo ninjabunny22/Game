@@ -203,7 +203,14 @@ var _view_distance := 110.0  # how far the camera is, for what is sized to the s
 var _batches: Node3D  # batches.gd: every finished building of the pack's
 var _batched := {}  # building key -> true, for the ones drawn there
 var _marker_cache := {}
-var _rich_nodes: Array = []  # {"material", "label", "phase"} for each rich node, glowing
+var _rich_nodes: Array = []  # {"material", "label", "node", "phase"} for each rich node, glowing
+var _links_instance: MeshInstance3D  # the arcs between capitals
+var _deposit_instance: MultiMeshInstance3D  # every deposit's cube
+var _capitals: Array = []  # capital nodes, for fading the names of those far from the focus
+var _focus := Vector3.ZERO  # the point the camera looks at
+var _fade_wait := 0.0
+var show_lines := true  # map layers the viewer can turn off (beside the minimap)
+var show_resources := true
 var _glow := 0.0
 var _link_material: StandardMaterial3D
 
@@ -217,6 +224,7 @@ func setup(terrain: Node3D, init: Dictionary, civ_colors: Array, models: RefCoun
 	_batched.clear()
 	_marker_cache.clear()
 	_rich_nodes.clear()
+	_capitals.clear()
 	_batches = Batches.new()
 	add_child(_batches)
 	_link_labels.clear()
@@ -245,10 +253,10 @@ func setup(terrain: Node3D, init: Dictionary, civ_colors: Array, models: RefCoun
 	_link_material.cull_mode = BaseMaterial3D.CULL_DISABLED
 	_link_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	_links = ImmediateMesh.new()
-	var links_instance := MeshInstance3D.new()
-	links_instance.mesh = _links
-	links_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(links_instance)
+	_links_instance = MeshInstance3D.new()
+	_links_instance.mesh = _links
+	_links_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_links_instance)
 
 
 ## `regions` is the tick's list of who holds each region (owner null = the native faction).
@@ -265,10 +273,14 @@ func update(civs: Array, regions: Array) -> void:
 		seen[key] = true
 		if not _nodes.has(key):
 			var stronghold: bool = info.get("stronghold", false)
-			var caption := "%s\n%s%s" % [info["capital"], info["name"], " · stronghold" if stronghold else ""]
 			# A stronghold's walls stand as high as a great capital's.
-			_nodes[key] = _make_capital(_native_color, caption, int(info["x"]), int(info["y"]), stronghold,
+			_nodes[key] = _make_capital(_native_color, str(info["capital"]), int(info["x"]), int(info["y"]), stronghold,
 					NATIVE_STRONGHOLD if stronghold else NATIVE_CASTLE)
+			# Only the castle's name from afar; its region's name too, close in. A shield over a stronghold.
+			_nodes[key].set_meta("long", "%s\n%s" % [info["capital"], info["name"]])
+			if stronghold:
+				_add_shield(_nodes[key])
+			_show_capital_label(_nodes[key])
 			_terrain.set_clearing(key, _nodes[key].position, TOWN_FOOTPRINT * 0.5 + 0.15)
 	for civ: Dictionary in civs:
 		var civ_id := int(civ["id"])
@@ -342,13 +354,32 @@ func set_view_distance(distance: float) -> void:
 
 func set_detail(detail: int) -> void:
 	_detail = detail
-	for rich: Dictionary in _rich_nodes:
-		(rich["label"] as Label3D).visible = detail >= 1
+	_show_layers()
 	for node: Node3D in _nodes.values():
 		_show_capital_label(node)
 		_show_settled(node)
+
+
+## War and alliance arcs from mid zoom out; deposit cubes close in, rich nodes from mid zoom.
+func _show_layers() -> void:
+	if _links_instance != null:
+		_links_instance.visible = show_lines and _detail <= 1
 	for label: Label3D in _link_labels.values():
 		_show_link_label(label)
+	if _deposit_instance != null:
+		_deposit_instance.visible = show_resources and _detail >= 2
+	for rich: Dictionary in _rich_nodes:
+		(rich["label"] as Label3D).visible = show_resources and _detail >= 1
+		(rich["node"] as Node3D).visible = show_resources and _detail >= 1
+
+
+func set_layer(layer: String, on: bool) -> void:
+	match layer:
+		"lines":
+			show_lines = on
+		"resources":
+			show_resources = on
+	_show_layers()
 
 
 ## A rally is marked where it gathers, with the days left, and then on the city it marches on.
@@ -475,6 +506,52 @@ func _show_capital_label(node: Node3D) -> void:
 	var label: Label3D = node.get_meta("label")
 	var is_main: bool = node.get_meta("main")
 	label.visible = is_main or _detail >= 1
+	label.text = node.get_meta("long") if _detail >= 2 and node.has_meta("long") else node.get_meta("short")
+	if node.has_meta("shield"):
+		var shield: Sprite3D = node.get_meta("shield")
+		shield.visible = label.visible
+		shield.offset.y = 52.0 if _detail >= 2 else 37.0  # over one line of name, or two
+
+
+## A native stronghold: a small shield over its name instead of the word.
+func _add_shield(node: Node3D) -> void:
+	var label: Label3D = node.get_meta("label")
+	var shield := Sprite3D.new()
+	shield.texture = load("res://assets/icons/shield.svg")
+	shield.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	shield.fixed_size = true
+	shield.no_depth_test = true
+	shield.pixel_size = label.pixel_size * 1.5
+	shield.position = label.position
+	shield.offset = Vector2(0, 37)  # just above the name, the same on screen at every zoom
+	shield.render_priority = 1
+	node.add_child(shield)
+	node.set_meta("shield", shield)
+
+
+## What the camera looks at: names of castles far from it fade, so the nearest read best.
+func set_focus(point: Vector3) -> void:
+	_focus = point
+
+
+func _fade_names() -> void:
+	var reach := maxf(_view_distance, 20.0)
+	var kept: Array = []
+	for entry: Variant in _capitals:  # untyped: some may have been freed since
+		if not is_instance_valid(entry) or (entry as Node3D).is_queued_for_deletion():
+			continue
+		var node: Node3D = entry
+		kept.append(node)
+		var label: Label3D = node.get_meta("label")
+		var away := Vector2(node.position.x - _focus.x, node.position.z - _focus.z).length()
+		var alpha := 1.0 - clampf((away - 0.45 * reach) / (0.5 * reach), 0.0, 0.7)
+		if node.get_meta("main"):
+			alpha = maxf(alpha, 0.85)  # a civ's own capital stays readable
+		label.modulate.a = alpha
+		label.outline_modulate.a = alpha
+		if node.has_meta("shield"):
+			(node.get_meta("shield") as Sprite3D).modulate.a = alpha
+	_capitals = kept
 
 
 ## Buildings are always drawn one by one; a village's name appears closer in.
@@ -490,7 +567,7 @@ func _show_settled(node: Node3D) -> void:
 
 func _show_link_label(label: Label3D) -> void:
 	var is_war: bool = label.get_meta("war", false)
-	label.visible = is_war or _detail >= 1
+	label.visible = show_lines and _detail <= 1 and (is_war or _detail >= 1)
 
 
 ## Redraws the arcs between civ capitals. Every pair of living civs has one, coloured
@@ -837,8 +914,8 @@ func _make_capital(color: Color, caption: String, x: int, y: int, is_main: bool,
 
 	var label := Label3D.new()
 	label.text = caption
-	label.font_size = 64 if is_main else 44
-	label.outline_size = 16
+	label.font_size = 52 if is_main else 34
+	label.outline_size = 14
 	label.fixed_size = true
 	label.pixel_size = 0.00065
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
@@ -848,7 +925,9 @@ func _make_capital(color: Color, caption: String, x: int, y: int, is_main: bool,
 	root.add_child(label)
 	root.set_meta("label", label)
 	root.set_meta("main", is_main)
+	root.set_meta("short", caption)
 	_show_capital_label(root)
+	_capitals.append(root)
 
 	add_child(root)
 	return root
@@ -886,9 +965,9 @@ func _add_deposits(all_deposits: Array, deposit_types: Dictionary, regions: Arra
 		multimesh.set_instance_transform(i, Transform3D(tilt, origin + Vector3(-0.3, 0.2, -0.3)))
 		multimesh.set_instance_color(i, Color.html(deposit_types[deposit["type"]]["color"]))
 
-	var instance := MultiMeshInstance3D.new()
-	instance.multimesh = multimesh
-	add_child(instance)
+	_deposit_instance = MultiMeshInstance3D.new()
+	_deposit_instance.multimesh = multimesh
+	add_child(_deposit_instance)
 	for deposit: Dictionary in deposits:
 		if deposit.get("rich"):
 			_add_rich_node(deposit, Color.html(deposit_types[deposit["type"]]["color"]), deposit_types[deposit["type"]])
@@ -897,6 +976,10 @@ func _add_deposits(all_deposits: Array, deposit_types: Dictionary, regions: Arra
 ## Rich nodes glow, slowly and each on its own beat.
 func _process(delta: float) -> void:
 	_glow += delta
+	_fade_wait -= delta
+	if _fade_wait <= 0.0:
+		_fade_wait = 0.1
+		_fade_names()
 	for rich: Dictionary in _rich_nodes:
 		(rich["material"] as StandardMaterial3D).emission_energy_multiplier = 0.25 + 0.35 * (0.5 + 0.5 * sin(_glow * 1.6 + rich["phase"]))
 
@@ -926,8 +1009,8 @@ func _add_rich_node(deposit: Dictionary, color: Color, dtype: Dictionary) -> voi
 	label.position = origin + Vector3(0, 1.0, 0)
 	label.no_depth_test = true
 	add_child(label)
-	_rich_nodes.append({"material": material, "label": label, "phase": float(deposit["x"] * 7 + deposit["y"])})
-	label.visible = _detail >= 1
+	_rich_nodes.append({"material": material, "label": label, "node": node, "phase": float(deposit["x"] * 7 + deposit["y"])})
+	_show_layers()
 
 
 func _flat_material(color: Color) -> StandardMaterial3D:

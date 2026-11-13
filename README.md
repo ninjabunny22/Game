@@ -87,12 +87,17 @@ The overlay is built for watching:
   fades after a few seconds. Click it, or press `L`, for the chronicle: every headline so far,
   newest first, filtered by civ if you like, with the last 100 days' routine changes counted
   at the end. When you rule a civ, the old event log stays in its place.
-- **Fights you can follow** (while watching, not when you rule a civ). Over every battle,
-  siege or assault on a native capital on screen floats a box: a headline ("General Varen of
+- **A calm map.** Castle names are small and fade with distance from where the camera looks
+  (each civ's own capital stays readable); a native stronghold has a shield over its name, and
+  close in a castle also names its region. War, alliance and trade arcs show from mid zoom
+  out, deposit cubes only close in, rich nodes from mid zoom. Three toggles over the minimap
+  hide region borders (`B`), the arcs, or deposits and rich nodes.
+- **Fights you can follow** (while watching, not when you rule a civ). Over the battle,
+  siege or assault on a native capital nearest the middle of the screen floats a box: a headline ("General Varen of
   Zhanlu assaults Dunlinby with 122 soldiers"), a bar per side (soldiers left of what it
   brought, today's losses), for a siege the breach and then the 60-day hold, and the last
-  notes of the fight, a line a day. From afar a fight is a crossed-swords marker; click it to
-  open its box. When fights are going on and none is on screen, a crossed-swords button at
+  notes of the fight, a line a day. Other fights, and every fight from afar, are crossed-swords
+  markers; click one to open its box instead. When fights are going on and none is on screen, a crossed-swords button at
   the top says how many; click it to go to the largest, again for the next. A finished
   fight's box stays a few days with how it ended.
 - **Tech tree** (while watching; a drawer's Tech tab, or `T`): one column per

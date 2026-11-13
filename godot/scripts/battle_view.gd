@@ -12,7 +12,7 @@ extends Control
 signal jump_requested(x: float, y: float)  # the alert was clicked: look at this fight
 
 const BOX_WIDTH := 300.0
-const MAX_BOXES := 4  # at most this many boxes at once: those nearest the screen's centre
+const MAX_BOXES := 1  # one full box at a time, the fight nearest the screen's centre; the others are markers
 const LIFT := 1.6  # how high over the fight its box floats, in world units
 const MARKER := 13.0  # half the crossed-swords marker's size, in pixels
 const NATIVE := Color(0.61, 0.56, 0.48)
@@ -121,6 +121,9 @@ func _draw() -> void:
 		var live := _engagements.filter(func(f: Dictionary) -> bool: return not f.get("over", false))
 		_alert.text = " %d" % live.size()
 	shown.sort_custom(func(a: Array, b: Array) -> bool:
+		var opened_a: bool = _opened.has(a[0]["id"])
+		if opened_a != _opened.has(b[0]["id"]):
+			return opened_a  # one clicked open comes first
 		return (a[1] as Vector2).distance_squared_to(centre) < (b[1] as Vector2).distance_squared_to(centre))
 	var boxes := 0
 	for pair: Array in shown:

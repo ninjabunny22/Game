@@ -91,9 +91,10 @@ Plan (agreed 2026-11-13): war on the AI's own judgement with a home guard; fight
   1–2 done: one bar across the top with a scoreboard chip per civ, and one drawer per civ
   (Overview, Army, Diplomacy, Tech tabs; Follow; Rule it) in place of the civ cards, the
   "Rule a civ" panel and the diplomacy panel. 3 done: a fading ticker with the newest
-  headline, and a chronicle (`L`) with every headline, filtered by civ. Next, 4: a calmer
-  map (smaller labels, lines and deposit cubes by zoom, one fight box at a time, layer toggles
-  by the minimap). Note: `check_assets.gd` does not load `hud.gd`; check it with
+  headline, and a chronicle (`L`) with every headline, filtered by civ. 4 done: a calmer
+  map (smaller labels fading with distance, a shield for strongholds, arcs and deposit cubes
+  by zoom, one fight box at a time, layer toggles over the minimap). Next: the same pass for
+  ruler mode, if wanted. Note: `check_assets.gd` does not load `hud.gd`; check it with
   `--check-only --script res://scripts/hud.gd`.
 
 ## Balance batch (2026-11-13)

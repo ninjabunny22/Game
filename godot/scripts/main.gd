@@ -30,6 +30,10 @@ var _hud := Hud.new()
 var _menu := Menu.new()
 var _minimap := Minimap.new()
 var _battles := BattleView.new()
+var _layers := HBoxContainer.new()  # map layer toggles over the minimap: borders, lines, resources
+var _layer_buttons := {}  # layer -> Button
+const LAYERS := [["borders", "Region borders  (B)"], ["lines", "War, alliance and trade lines"],
+	["resources", "Deposits and rich nodes"]]
 var _follow_civ := -1  # the civ the camera keeps to (its drawer's Follow button), or -1  # fight boxes and the battle alert, while spectating
 var _auto_started := false
 var _starting := ""  # the mode of the game just asked for from the menu: "watch" or "rule"
@@ -59,6 +63,8 @@ func _ready() -> void:
 	add_child(_hud)
 	_hud.add_child(_minimap)  # shown and hidden with the rest of the overlay
 	_hud.add_child(_battles)
+	_hud.add_child(_layers)
+	_build_layers()
 	_battles.jump_requested.connect(_on_minimap_jump)
 	_hud.follow_requested.connect(func(civ_id: int) -> void: _follow_civ = civ_id)
 	_minimap.jump_requested.connect(_on_minimap_jump)
@@ -92,6 +98,34 @@ func _castle_anchor(tile: Vector2i) -> Vector3:
 	if tile.x < 0:
 		return Vector3.INF
 	return _terrain.tile_position(tile.x, tile.y) + Vector3(0, 1.4, 0)
+
+
+## Three small toggles over the minimap's top right corner, all on to start with.
+func _build_layers() -> void:
+	_layers.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	_layers.offset_right = -10.0
+	_layers.offset_left = -130.0
+	_layers.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_layers.alignment = BoxContainer.ALIGNMENT_END
+	_layers.add_theme_constant_override("separation", 4)
+	for layer: Array in LAYERS:
+		var button := Button.new()
+		button.toggle_mode = true
+		button.button_pressed = true
+		button.focus_mode = Control.FOCUS_NONE
+		button.icon = load("res://assets/icons/%s.svg" % layer[0])
+		button.expand_icon = true
+		button.custom_minimum_size = Vector2(34, 34)
+		button.tooltip_text = "Show or hide: " + layer[1]
+		var name: String = layer[0]
+		button.toggled.connect(func(on: bool) -> void:
+			button.modulate.a = 1.0 if on else 0.45
+			if name == "borders":
+				_terrain.set_region_borders(on)
+			else:
+				_civ_view.set_layer(name, on))
+		_layers.add_child(button)
+		_layer_buttons[name] = button
 
 
 ## A click on the minimap brings the camera over that place, as close as it was.
@@ -144,7 +178,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		KEY_TAB:
 			_hud.toggle_diplomacy()
 		KEY_B:
-			_terrain.toggle_region_borders()
+			_layer_buttons["borders"].button_pressed = not _layer_buttons["borders"].button_pressed
 		KEY_H:
 			_hud.toggle_help()
 		KEY_T:
@@ -189,6 +223,7 @@ func _process(delta: float) -> void:
 		get_tree().quit()
 	var distance: float = _camera.distance()
 	_civ_view.set_view_distance(distance)
+	_civ_view.set_focus(_camera.position)
 	var detail := 0 if distance > FAR_VIEW else (1 if distance > NEAR_VIEW else 2)
 	if detail != _detail:
 		_detail = detail
@@ -237,7 +272,9 @@ func _on_init(data: Dictionary) -> void:
 	_hud.setup(data)
 	_minimap.setup(data, _civ_colors)
 	_battles.setup(_terrain, _civ_colors)
-	_hud.reserve_bottom_right(_minimap.custom_minimum_size.y)
+	_layers.offset_bottom = -(_minimap.custom_minimum_size.y + 14.0)
+	_layers.offset_top = _layers.offset_bottom - 34.0
+	_hud.reserve_bottom_right(_minimap.custom_minimum_size.y + 44.0)
 	_camera.focus(_terrain.center(), maxf(_terrain.map_width, _terrain.map_height) * 1.15)
 	# CIVSIM_VIEW="x,y,distance" starts the camera on a tile instead of the whole map.
 	var view := OS.get_environment("CIVSIM_VIEW").split_floats(",", false)
