@@ -28,15 +28,16 @@ func _process(_delta: float) -> void:
 
 ## A declaration: who declares, on whom, the war's name and the proclamation.
 ## The names come already in their civs' colours (hud.gd), as BBCode.
-func proclaim(day: int, declarer: String, target: String, color: Color, war_name: String, line: String) -> void:
+func proclaim(day: int, declarer: String, target: String, color: Color, war_name: String, line: String,
+		action := Callable()) -> void:
 	announce(day, "[b]%s[/b] declares war on [b]%s[/b]" % [declarer, target],
-		color, line, "%s begins" % war_name, "res://assets/icons/battle.svg")
+		color, line, "%s begins" % war_name, "res://assets/icons/battle.svg", "", false, action)
 
 
 ## Any proclamation: a title, the words in quotes, a footer, an icon, and a portrait beside
 ## the words if there is one (greyed for the dead).
 func announce(day: int, title_text: String, color: Color, line: String, footer: String, icon: String,
-		portrait: String = "", grey := false) -> void:
+		portrait: String = "", grey := false, action := Callable()) -> void:
 	var panel := PanelContainer.new()
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color(0.07, 0.05, 0.05, 0.72)  # slightly see-through
@@ -93,6 +94,13 @@ func announce(day: int, title_text: String, color: Color, line: String, footer: 
 	body.add_child(words)
 	var name_label := _rich("[center]%s  ·  day %d[/center]" % [footer, day], 14, Color(0.75, 0.7, 0.62))
 	column.add_child(name_label)
+	if action.is_valid():  # clicking the banner (not its X) goes to what it tells of
+		panel.mouse_filter = Control.MOUSE_FILTER_STOP
+		panel.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		panel.tooltip_text = "Click to go there"
+		panel.gui_input.connect(func(event: InputEvent) -> void:
+			if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+				action.call())
 	add_child(panel)
 	move_child(panel, 0)  # the newest on top
 	move_to_front()  # over the cards and the other panels

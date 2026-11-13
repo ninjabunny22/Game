@@ -54,6 +54,7 @@ GOAL_EFFECTS = {  # what each focus is after in the tech tree
 }
 LOOKAHEAD = 0.25  # how much what a tech leads to counts beside what it gives now
 MIN_SCORE = 0.12  # below this nothing is worth doing; just stockpile
+UPGRADE_PREFERENCE = 0.98  # an upgrade is chosen when a new one has no room (it is tried just after)
 GOAL_STICKINESS = 1.2  # bonus for the goal already being saved for, to avoid flip-flopping
 COUNT_FALLOFF = 0.35  # each existing copy of a building makes another less attractive ...
 FALLOFF_POWER = 0.6  # ... but gently: rising costs and upkeep are what really limit a civ
@@ -258,10 +259,16 @@ class CivAI:
                 continue
             if bdef.need_resource and civ.capacity[bdef.need_resource] <= 0:
                 continue
+            if bdef.region_cap is not None:  # one with levels counts as that many copies
+                count = sum(b.level for b in civ.buildings if b.type == bdef.id)
             cost = bdef.cost_for(count)
             if not self._feasible(civ, cost, mods) or not self._sustainable(civ, bdef, mods):
                 continue
-            options.append((self._building_score(civ, bdef, needs, count), "build", bdef.id, cost))
+            score = self._building_score(civ, bdef, needs, count)
+            options.append((score, "build", bdef.id, cost))
+            if bdef.max_level > 1 and self._to_upgrade(civ, bdef) is not None:
+                # With the regions full of it, the same is had by upgrading one already standing.
+                options.append((score * UPGRADE_PREFERENCE, "upgrade", bdef.id, cost))
 
         if civ.build_order is not None:
             # A ruler's order goes ahead of everything the civ would choose for itself.
@@ -287,6 +294,19 @@ class CivAI:
         for score, kind, target, cost in options:
             if score < MIN_SCORE:
                 break
+            if kind == "upgrade":
+                building = self._to_upgrade(civ, self.building_defs[target])
+                if building is None:
+                    continue
+                civ.goal = Goal("upgrade", target, cost)
+                if civ.can_afford(cost):
+                    civ.pay(cost)
+                    building.level += 1
+                    events.append({"civ": civ.id, "kind": "building",
+                                   "text": f"{civ.name} raises its {self.building_defs[target].name.lower()} "
+                                           f"to level {building.level}"})
+                    civ.goal = None
+                return
             if kind == "build":
                 ground = ground or survey_ground(civ, self.world)
                 if target == "harbour" and self.geography is not None:
@@ -304,6 +324,11 @@ class CivAI:
                         civ.build_order = None  # done as ordered
                     civ.goal = None
             return
+
+    def _to_upgrade(self, civ: Civilization, bdef: BuildingDef):
+        """The finished building of this kind with the lowest level below its top, if any."""
+        candidates = [b for b in civ.buildings if b.type == bdef.id and b.complete and b.level < bdef.max_level]
+        return min(candidates, key=lambda b: (b.level, b.tile)) if candidates else None
 
     def _building_score(self, civ: Civilization, bdef: BuildingDef, needs: dict, count: int) -> float:
         """How much the civ wants a copy of this building when it already has `count`."""

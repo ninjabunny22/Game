@@ -55,6 +55,7 @@ class Diplomacy:
         self.wars_started = 0  # how many wars between civs there have been in the game
         self.caution: dict[tuple[int, int], float] = {}  # (civ, other) -> extra edge it wants before attacking it
         self.betrayed: set[tuple[int, int]] = set()  # (victim, betrayer): never forgotten
+        self.feuds: set[frozenset] = set()  # pairs of realms that will never ally: one executed the other's blood
         self.demands: dict[tuple[int, int], int] = {}  # (demander, target) -> tick the demand was made
         self.tribute_paid: dict[tuple[int, int], int] = {}  # (payer, asker) -> tick tribute was last paid
         self._ills = random.Random(7 + sum(civ.capital.tile for civ in civs))  # its own dice: outbreaks never disturb the game's
@@ -396,6 +397,7 @@ class Diplomacy:
                     civ.diplomacy_points = max(0.0, civ.diplomacy_points - rules.ALLIANCE_UPKEEP)
         elif (to_b.stance is Stance.ALLY and to_a.stance is Stance.ALLY
               and not self.distrusted(a, tick) and not self.distrusted(b, tick)  # nobody allies with a betrayer
+              and frozenset((a, b)) not in self.feuds  # nor with the realm that put its own blood to death
               and min(civ_a.diplomacy_points, civ_b.diplomacy_points) >= rules.ALLIANCE_COST):
             for civ in (civ_a, civ_b):
                 civ.diplomacy_points -= rules.ALLIANCE_COST
@@ -708,11 +710,16 @@ class Diplomacy:
             self.remember(loser.id, captor.id, -0.5)
             self.learn(loser.id, captor.id, rules.LESSON_LOST)
             self.learn(captor.id, loser.id, rules.LESSON_WON)
+        x, y = world.xy(region.capital)  # where it happened, for a click on the headline
+        events[-1].update(x=x, y=y)
         if loser is None:
             return
         military = getattr(self, "military", None)
         if military is not None:
             military.capital_fell(captor, loser, region.capital, tick, events)
+        families = getattr(self, "families", None)
+        if families is not None:
+            families.castle_fell(loser, captor, region.capital, was_main, tick, events)
         loser.settlements = [s for s in loser.settlements if s.tile != region.capital]
         recompute_capacity(loser, world)
         if not loser.settlements:

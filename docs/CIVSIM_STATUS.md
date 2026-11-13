@@ -131,6 +131,22 @@ Plan (agreed 2026-11-13): war on the AI's own judgement with a home guard; fight
   fold open to compare the sides; capped above the minimap. Chips tighten when rebels make
   more than five civs.
 
+- **To-do phase 1** (2026-11-13): ruling houses named after their civs; 150 generals' names in
+  five flavours by civ (`NAME_FLAVOURS`); a chronicle button; native campaigns in the
+  chronicle (sets out, turns back; beaten off and taken were there); the tech tree's hover
+  card with exact bonuses from each tech's effects and the civs in colour.
+
+- **To-do phases 2-6** (2026-11-13): a castle breached is taken that day (`CAPITAL_HOLD` 0);
+  generals relieve besieged castles (their own or a nearby ally's), join a losing fight nearby
+  and join their side's sieges; an Alliances list under the wars; the strategist leans the
+  chasing pack together against a runaway (`RUNAWAY_ALLY`, `COMMON_FOE`, `CRUSH_EDGE`) and
+  takes neutral land sooner at peace (`PEACE_EXPANSION`); events carry their place and are
+  clickable (chronicle, banners), with a Routine view; generals are no longer princes, the
+  ruler's children govern, governors are captured or escape, captives are ransomed, rescued
+  or exchanged, or executed (a blood feud: `Diplomacy.feuds`); eight traits for everyone;
+  houses start with more living members; a neater family tree; armies face their foe, with
+  generals behind the front; a cap per region on every building, with levels (villages to 5).
+
 ## Balance batch (2026-11-13)
 
 5 games per civ for every map and civ count (`civsim.balance`, 90% intervals). A slot is

@@ -36,6 +36,11 @@ class Params:
     RIVAL_ATTACK: float = 0.3  # how much more a war with the other of the two strongest is worth
     RIVAL_ALLY: float = 0.5  # ... and how much less an alliance with it
     RIVAL_BETRAYAL: float = 0.8  # ... and the share of the usual edge at which that ally is turned on
+    # While one civ runs away with the game the others lean together (a likelihood, not a rule):
+    RUNAWAY_ALLY: float = 0.8  # how much more an alliance with another of the chasing pack is worth
+    COMMON_FOE: float = 0.25  # how much less a war on another of the pack is worth ...
+    CRUSH_EDGE: float = 2.0  # ... unless we are this much stronger: a weak one may still be swallowed
+    PEACE_EXPANSION: float = 1.35  # at war with nobody, taking the open land nearby weighs this much more
     BULLY: float = 1.4  # from this many times a neighbour's size a civ wants the war for its own sake ...
     BULLY_MAX: float = 0.8  # ... more the bigger the gap, up to this
     OVERBEARING: float = 1.6  # ... and from this, no past friendship stands in the way
@@ -293,7 +298,9 @@ class UtilityBrain:
         options: dict[str, tuple[float, str | None]] = {
             "science": (0.9 * weights.get("science", 1.0), None),
             "prosperity": (0.85 * weights.get("wealth", 1.0), None),
-            "expansion": (0.9 * weights.get("expansion", 1.0) if context.get("neutral_regions", 0) > 0 else 0.0, None),
+            "expansion": (0.9 * weights.get("expansion", 1.0)
+                          * (p.PEACE_EXPANSION if not any(n["relation"] == "war" for n in neighbors) else 1.0)
+                          if context.get("neutral_regions", 0) > 0 else 0.0, None),
         }
         # Conquest needs someone it can reach and beat; an old grudge points the way.
         prey = [n for n in neighbors if n["in_reach"] and n["relation"] != "alliance" and edges[n["id"]] >= 1.15]
@@ -401,6 +408,8 @@ class UtilityBrain:
             score += p.RIVAL_ATTACK
             why = f"only {n['name']} stands between us and first place"
             motive, about = "rival", None
+        if runaway and runaway != n["name"] and edge < p.CRUSH_EDGE:
+            score -= p.COMMON_FOE  # we both have a bigger enemy; a much weaker one may still be taken
         if exposed and not sick:
             score += 0.3
             why = (f"{n['name']}'s army is away" if n.get("army_abroad") else f"{n['name']} has just lost a battle")
@@ -533,7 +542,7 @@ class UtilityBrain:
             score += 0.6
             why = f"threatened by {sorted(threats - {n['name']})[0]}"
         if runaway and runaway != n["name"] and edge <= 2.0:
-            score += 0.5  # the small stand together against a giant
+            score += p.RUNAWAY_ALLY  # the small stand together against a giant
             why = f"{runaway} is running away with it"
         if thirst >= WATER_URGENT and n["water_rich"]:
             score += 0.6

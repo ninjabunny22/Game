@@ -28,6 +28,9 @@ class BuildingDef:
     need_resource: str | None = None
     requires_tech: str | None = None
     max_count: int | None = None
+    # Outside the walls: at most this many of it in one region (a house is a village site) ...
+    region_cap: int | None = None
+    max_level: int = 1  # ... each upgraded up to this level instead of built again; effects count once per level
     size: int = 1  # tiles a side of the square it stands on
     color: str = "#ffffff"
     height: float = 0.5
@@ -85,6 +88,12 @@ def placement_problem(civ, world: WorldMap, bdef: BuildingDef, tile: int, withou
     tiles at once.
     """
     gone = without if isinstance(without, list) else [without]
+    if bdef.region_cap is not None and world.region_of[tile] >= 0:
+        region = world.region_of[tile]
+        here = sum(1 for b in civ.buildings if b.type == bdef.id and world.region_of[b.tile] == region
+                   and not any(b is g for g in gone))
+        if here >= bdef.region_cap:
+            return f"the region holds all the {bdef.name.lower()}s it can: upgrade one instead"
     if bdef.id == "stables" and (tile in world.capital_tiles or any(s.tile == tile for s in civ.settlements)):
         return "stables need room for the horses: never on a capital's tile"
     ground = footprint(world, bdef.id, tile)
@@ -214,8 +223,17 @@ def find_site(civ, world: WorldMap, bdef: BuildingDef, ground: tuple | None = No
     harbours = [world.xy(b.tile) for b in civ.buildings if b.type == bdef.id]
     goal = getattr(civ, "harbour_goal", None) if bdef.placement == "coast" else None
     goal_water = water_bodies(world, world.regions[world.region_of[goal]].tiles) if goal is not None else set()
+    full: set[int] = set()  # regions already holding all of this kind they can (region_cap)
+    if bdef.region_cap is not None:
+        held: dict[int, int] = {}
+        for b in civ.buildings:
+            if b.type == bdef.id:
+                held[world.region_of[b.tile]] = held.get(world.region_of[b.tile], 0) + 1
+        full = {region for region, n in held.items() if n >= bdef.region_cap}
     best, best_score = None, -math.inf
     for tile in sorted(free):
+        if world.region_of[tile] in full:
+            continue
         ground = footprint(world, bdef.id, tile) if bdef.size > 1 else (tile,)
         if ground is None or any(part not in free for part in ground):
             continue

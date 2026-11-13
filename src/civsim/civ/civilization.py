@@ -19,6 +19,7 @@ class Building:
     complete: bool = False
     active: bool = True  # False while its upkeep goes unpaid
     unpaid_ticks: int = 0  # consecutive ticks it has been inactive
+    level: int = 1  # upgraded in place (economy/buildings.py: max_level); its effects count once per level
     id: int = 0  # given when the building is first seen by the simulation; a tile can hold several
     village: int | None = None  # the village or town it belongs to
 

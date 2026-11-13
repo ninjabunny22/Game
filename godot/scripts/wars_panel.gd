@@ -17,6 +17,9 @@ var _scroll: ScrollContainer
 var _list: VBoxContainer
 var _rows := {}  # "a:b" -> {"root", "details", "values": {stat: [label a, label b]}}
 var _open := {}  # "a:b" -> true while folded open
+var _allies_title: Label
+var _allies: VBoxContainer  # one row per alliance: its members' shields and names
+var _allies_signature := ""
 var _collapsed := false
 var bottom_reserve := 0.0  # the height kept free at the bottom right (the minimap and its toggles), from hud.gd
 
@@ -58,10 +61,22 @@ func _ready() -> void:
 	_scroll = ScrollContainer.new()
 	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	column.add_child(_scroll)
+	var inside := VBoxContainer.new()
+	inside.add_theme_constant_override("separation", 8)
+	inside.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_scroll.add_child(inside)
 	_list = VBoxContainer.new()
 	_list.add_theme_constant_override("separation", 6)
 	_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_scroll.add_child(_list)
+	inside.add_child(_list)
+	# Who stands with whom: every alliance (allies of allies together), in the civs' colours.
+	_allies_title = Label.new()
+	_allies_title.add_theme_font_size_override("font_size", 14)
+	_allies_title.add_theme_color_override("font_color", FAINT)
+	inside.add_child(_allies_title)
+	_allies = VBoxContainer.new()
+	_allies.add_theme_constant_override("separation", 4)
+	inside.add_child(_allies)
 	visible = false
 
 
@@ -119,7 +134,46 @@ func update(data: Dictionary, info: Dictionary) -> void:
 			_rows.erase(key)
 			_open.erase(key)
 	_title.text = "Ongoing Wars (%d)" % _rows.size()
+	_show_alliances(allied, info, civs)
 	_fit.call_deferred()  # once the rows of wars just ended are really gone
+
+
+## The alliances as groups (an ally of an ally stands in the same group), one row each.
+func _show_alliances(allied: Dictionary, info: Dictionary, civs: Dictionary) -> void:
+	var group := {}  # civ id -> group id
+	for pair: String in allied:
+		var a := int(pair.split(":")[0])
+		var b := int(pair.split(":")[1])
+		if not (info.has(a) and info.has(b) and civs.has(a) and civs.has(b)):
+			continue
+		var ga: int = group.get(a, a)
+		var gb: int = group.get(b, b)
+		for civ_id: int in group.keys():  # merge b's group into a's
+			if group[civ_id] == gb:
+				group[civ_id] = ga
+		group[a] = ga
+		group[b] = ga
+	var groups := {}
+	for civ_id: int in group:
+		if not groups.has(group[civ_id]):
+			groups[group[civ_id]] = []
+		groups[group[civ_id]].append(civ_id)
+	var signature := str(groups)
+	_allies_title.text = "Alliances (%d)" % groups.size() if not groups.is_empty() else "No alliances"
+	if signature == _allies_signature:
+		return
+	_allies_signature = signature
+	for child: Node in _allies.get_children():
+		child.queue_free()
+	for key: int in groups:
+		var members: Array = groups[key]
+		members.sort()
+		var line := HBoxContainer.new()
+		line.add_theme_constant_override("separation", 4)
+		for civ_id: int in members:
+			line.add_child(_icon("res://assets/icons/shield.svg", 18, Color.html(info[civ_id]["color"]).lightened(0.15)))
+		line.add_child(_names(members, info, false, 14))
+		_allies.add_child(line)
 
 
 ## One side of the war of `civ_id` against `enemy`: the civ and its allies also at war with
@@ -147,7 +201,7 @@ func clear() -> void:
 ## The list as tall as its rows, up to MAX_HEIGHT; folded away when collapsed or empty.
 func _fit() -> void:
 	_fold.text = "+" if _collapsed else "−"
-	_scroll.visible = not _collapsed and not _rows.is_empty()
+	_scroll.visible = not _collapsed
 	for key: String in _rows:
 		(_rows[key]["details"] as Control).visible = _open.has(key)
 	# Never down over the minimap: the list gets the room left above it, at most MAX_HEIGHT.

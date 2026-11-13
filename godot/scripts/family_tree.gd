@@ -1,20 +1,28 @@
 extends PanelContainer
-## A royal house as a tree: one row per generation, the oldest at the top, each member with
-## their portrait (the dead greyed), a line joining husband and wife and lines down from
-## parents to their children. Opened from the Family tab of a civ's drawer; it only draws
-## what the simulation sent (civ/family.py).
+## A royal house as a tree. Each generation is a row, labelled at the left (relative to the
+## ruler: elders, the ruler's generation, children, grandchildren); a married couple stands
+## side by side joined by a line; children stand centred under their parents, joined by
+## straight lines. Each member has their portrait (greyed if dead), name and age, their traits
+## as small tags; the ruler wears a crown and the heir a paler one. One member can be picked
+## out (a clicked event). It only draws what the simulation sent (civ/family.py).
 
-const CARD := Vector2(92, 142)  # one member: the portrait and two lines under it
-const FACE := Vector2(64, 80)
-const GAP := 18.0
-const ROW := 168.0
+const CARD := Vector2(108, 168)  # one member: portrait, name, age, tags
+const FACE := Vector2(72, 90)
+const GAP := 16.0  # between families in a row
+const COUPLE_GAP := 10.0  # between husband and wife
+const ROW := 214.0
+const LABEL_WIDTH := 150.0
+const GREY := Color(0.55, 0.55, 0.55)
+const TRAIT_COLORS := {"brave": "#e8b84a", "sickly": "#9ab07a", "learned": "#7ab0e0", "cruel": "#e07a6a",
+	"ambitious": "#d98a5a", "usurper": "#e05a4a", "pious": "#d8d0a8", "shrewd": "#e8b84a", "kind": "#8fd18f",
+	"proud": "#c98fd1"}
 
 var _title: Label
-var _scroll: ScrollContainer
 var _canvas: Control
-var _cards := {}  # member id -> its Control on the canvas
+var _cards := {}  # member id -> its card on the canvas
 var _members := {}  # member id -> member dict
 var _color := Color.WHITE
+var _rows: Array = []  # [y, label] of each generation, for the labels drawn at the left
 
 
 func _ready() -> void:
@@ -46,15 +54,16 @@ func _ready() -> void:
 	close.tooltip_text = "Close  (Esc)"
 	close.pressed.connect(func() -> void: visible = false)
 	header.add_child(close)
-	_scroll = ScrollContainer.new()
-	_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	column.add_child(_scroll)
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	column.add_child(scroll)
 	_canvas = Control.new()
 	_canvas.draw.connect(_draw_lines)
-	_scroll.add_child(_canvas)
+	scroll.add_child(_canvas)
 
 
-func show_house(house: Dictionary, color: Color) -> void:
+## Show a house; `pick` is a member to single out (from a clicked event), or -1.
+func show_house(house: Dictionary, color: Color, pick := -1) -> void:
 	_color = color
 	_title.text = "House %s%s: family tree" % [house["house"],
 		" (%s)" % house["branch"] if str(house.get("branch", "")) != "" else ""]
@@ -64,146 +73,231 @@ func show_house(house: Dictionary, color: Color) -> void:
 	_members.clear()
 	for member: Dictionary in house["members"]:
 		_members[int(member["id"])] = member
-	var rows := _generations()
-	var width := 0.0
-	for g in rows.size():
-		var x := GAP
-		for member_id: int in rows[g]:
-			var card := _card(_members[member_id], str(house.get("crest", "")))
-			card.position = Vector2(x, GAP + g * ROW)
-			_canvas.add_child(card)
-			_cards[member_id] = card
-			x += CARD.x + GAP
-		width = maxf(width, x)
-	_canvas.custom_minimum_size = Vector2(width, GAP + rows.size() * ROW)
+	var width := _layout(str(house.get("crest", "")), pick)
+	_canvas.custom_minimum_size = Vector2(width, GAP + _rows.size() * ROW)
 	_canvas.queue_redraw()
 	visible = true
 	move_to_front()
 
 
-## Rows of member ids, oldest generation first: children a row below their parents, a spouse
-## beside their partner, brothers and sisters together in order of birth.
-func _generations() -> Array:
-	var level := {}
-	var changed := true
-	for member_id: int in _members:
-		level[member_id] = 0
-	while changed:  # a child sits below the lower of its parents
-		changed = false
-		for member_id: int in _members:
-			for parent: Variant in _members[member_id].get("parents", []):
-				if _members.has(int(parent)) and level[member_id] <= level[int(parent)]:
-					level[member_id] = level[int(parent)] + 1
-					changed = true
-	for member_id: int in _members:  # one married in sits with their partner
-		var spouse: Variant = _members[member_id].get("spouse")
-		var has_parents: bool = _members[member_id].get("parents", []).any(func(p: Variant) -> bool: return _members.has(int(p)))
-		if spouse != null and _members.has(int(spouse)) and not has_parents:
-			level[member_id] = level[int(spouse)]
+## Generations by descent; the families (a member, their spouse, their children) laid out
+## from the eldest down, each family's children centred under it. Returns the width used.
+func _layout(crest: String, pick: int) -> float:
+	var level := _levels()
+	var ruler_level := 0
 	var deepest := 0
-	for member_id: int in level:
-		deepest = maxi(deepest, level[member_id])
-	var rows := []
-	var placed := {}  # member id -> its order, for the row below
+	for id: int in level:
+		deepest = maxi(deepest, level[id])
+		if _members[id]["ruler"]:
+			ruler_level = level[id]
+	var names := {-2: "Grandparents", -1: "Elders", 0: "The ruler's", 1: "Children", 2: "Grandchildren",
+		3: "Great-grandchildren"}
+	_rows.clear()
 	for g in deepest + 1:
-		var row: Array = []
-		var here: Array = level.keys().filter(func(m: int) -> bool: return level[m] == g)
-		here.sort_custom(func(a: int, b: int) -> bool:
-			var pa := _parent_order(a, placed)
-			var pb := _parent_order(b, placed)
-			if pa != pb:
-				return pa < pb
-			return int(_members[a].get("age", 0) if _members[a].get("age") != null else 0) > \
-				int(_members[b].get("age", 0) if _members[b].get("age") != null else 0))
-		for member_id: int in here:
-			if member_id in row:
-				continue
-			row.append(member_id)
-			var spouse: Variant = _members[member_id].get("spouse")
-			if spouse != null and here.has(int(spouse)) and not int(spouse) in row:
-				row.append(int(spouse))
-		for i in row.size():
-			placed[row[i]] = i
-		rows.append(row)
-	return rows
+		_rows.append([GAP + g * ROW, str(names.get(g - ruler_level, "Generation %d" % (g + 1)))])
+	var placed := {}
+	var x := LABEL_WIDTH + GAP
+	var roots: Array = _members.keys().filter(func(id: int) -> bool: return level[id] == 0 and not _is_married_in(id))
+	roots.sort_custom(func(a: int, b: int) -> bool: return _age(a) > _age(b))
+	for root: int in roots:
+		if not placed.has(root):
+			x = _place_family(root, level, x, placed, crest, pick) + GAP
+	for id: int in _members:  # anyone not reached (their family gone from the house): at the end of their row
+		if not placed.has(id):
+			_put(id, Vector2(x, GAP + level[id] * ROW), crest, pick, placed)
+			x += CARD.x + GAP
+	return x
 
 
-func _parent_order(member_id: int, placed: Dictionary) -> int:
-	var best := 1000
-	for parent: Variant in _members[member_id].get("parents", []):
-		if placed.has(int(parent)):
-			best = mini(best, int(placed[int(parent)]))
-	return best
+## `id`, their spouse beside them and their children's families under them, from `x`.
+## Returns the right edge of the family.
+func _place_family(id: int, level: Dictionary, x: float, placed: Dictionary, crest: String, pick: int) -> float:
+	placed[id] = true  # claimed now, so no family reaches back to it
+	var spouse := _spouse_in_house(id)
+	var with_spouse := spouse >= 0 and not placed.has(spouse)
+	if with_spouse:
+		placed[spouse] = true
+	var couple_width := CARD.x + ((COUPLE_GAP + CARD.x) if with_spouse else 0.0)
+	var right := x
+	var child_x := x
+	var any_kids := false
+	for kid: int in _children(id):
+		if placed.has(kid):
+			continue
+		any_kids = true
+		right = _place_family(kid, level, child_x, placed, crest, pick)
+		child_x = right + GAP
+	var start := x + maxf(0.0, ((right - x) - couple_width) * 0.5) if any_kids else x  # centred over its children
+	var y: float = GAP + level[id] * ROW
+	_put(id, Vector2(start, y), crest, pick, placed)
+	if with_spouse:
+		_put(spouse, Vector2(start + CARD.x + COUPLE_GAP, y), crest, pick, placed)
+	return maxf(start + couple_width, right)
 
 
-func _card(member: Dictionary, crest: String) -> Control:
-	var card := VBoxContainer.new()
+func _put(id: int, at: Vector2, crest: String, pick: int, placed: Dictionary) -> void:
+	var card := _card(_members[id], crest, id == pick)
+	card.position = at
+	_canvas.add_child(card)
+	_cards[id] = card
+	placed[id] = true
+
+
+func _levels() -> Dictionary:
+	var level := {}
+	for id: int in _members:
+		level[id] = 0
+	var changed := true
+	while changed:  # a child is a row below the lower of its parents
+		changed = false
+		for id: int in _members:
+			for parent: Variant in _members[id].get("parents", []):
+				if _members.has(int(parent)) and level[id] <= level[int(parent)]:
+					level[id] = level[int(parent)] + 1
+					changed = true
+	for id: int in _members:  # one married in stands in their partner's row
+		if _is_married_in(id):
+			level[id] = level[_spouse_in_house(id)]
+	return level
+
+
+func _has_parents(id: int) -> bool:
+	return _members[id].get("parents", []).any(func(p: Variant) -> bool: return _members.has(int(p)))
+
+
+func _is_married_in(id: int) -> bool:
+	var spouse := _spouse_in_house(id)
+	return not _has_parents(id) and spouse >= 0 and _has_parents(spouse)
+
+
+func _spouse_in_house(id: int) -> int:
+	var spouse: Variant = _members[id].get("spouse")
+	return int(spouse) if spouse != null and _members.has(int(spouse)) else -1
+
+
+## Children of `id` (or of their spouse) in the house, eldest first.
+func _children(id: int) -> Array:
+	var spouse := _spouse_in_house(id)
+	var kids: Array = _members.keys().filter(func(k: int) -> bool:
+		var parents: Array = _members[k].get("parents", []).map(func(p: Variant) -> int: return int(p))
+		return parents.has(id) or (spouse >= 0 and parents.has(spouse)))
+	kids.sort_custom(func(a: int, b: int) -> bool: return _age(a) > _age(b))
+	return kids
+
+
+func _age(id: int) -> int:
+	var age: Variant = _members[id].get("age")
+	return int(age) if age != null else 200  # the long dead first
+
+
+func _card(member: Dictionary, crest: String, picked: bool) -> Control:
+	var alive: bool = member["alive"]
+	var card := PanelContainer.new()
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(1, 1, 1, 0.045 if alive else 0.02)
+	style.set_corner_radius_all(8)
+	style.set_content_margin_all(4)
+	style.set_border_width_all(2 if picked else 1)
+	style.border_color = Color(0.95, 0.8, 0.35) if picked else Color(1, 1, 1, 0.08 if alive else 0.04)
+	card.add_theme_stylebox_override("panel", style)
 	card.custom_minimum_size = CARD
 	card.size = CARD
-	card.add_theme_constant_override("separation", 2)
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 1)
+	card.add_child(column)
+	var top := Control.new()
+	top.custom_minimum_size = FACE
+	top.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	top.clip_contents = false
+	column.add_child(top)
 	var face := TextureRect.new()
 	var picture := str(member.get("portrait", ""))
 	if picture == "" or not ResourceLoader.exists(picture):
 		picture = crest
 	if picture != "" and ResourceLoader.exists(picture):
 		face.texture = load(picture)
-	face.custom_minimum_size = FACE
-	face.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	face.expand_mode = TextureRect.EXPAND_IGNORE_SIZE  # before the size, or the picture's own size wins
 	face.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	face.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	if not member["alive"]:
-		face.modulate = Color(0.55, 0.55, 0.55)
-	card.add_child(face)
-	var words := Label.new()
-	var note := ""
-	if member["ruler"]:
-		note = "  ·  rules"
-	elif member["heir"]:
-		note = "  ·  heir"
-	var age_text := ""
+	face.custom_minimum_size = FACE
+	face.size = FACE
+	if not alive:
+		face.modulate = GREY
+	top.add_child(face)
+	if alive and (member["ruler"] or member["heir"]):  # a crown for the ruler, a paler one for the heir
+		var mark := TextureRect.new()
+		mark.texture = load("res://assets/icons/crown.svg")
+		mark.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		mark.size = Vector2(22, 22)
+		mark.position = Vector2(FACE.x - 16, -8)
+		mark.modulate = Color.WHITE if member["ruler"] else Color(0.7, 0.8, 1.0, 0.8)
+		top.add_child(mark)
+	var words := RichTextLabel.new()
+	words.bbcode_enabled = true
+	words.fit_content = true
+	words.scroll_active = false
+	words.custom_minimum_size = Vector2(CARD.x - 8, 0)
+	words.add_theme_font_size_override("normal_font_size", 11)
+	words.add_theme_color_override("default_color", Color(0.95, 0.9, 0.8) if alive else GREY)
+	var age := ""
 	if member.get("age") != null:
-		age_text = ("%d" if member["alive"] else "died at %d") % int(member["age"])
-	elif not member["alive"]:
-		age_text = "died"
-	words.text = "%s %s\n%s%s" % [member["title"], member["name"], age_text, note]
-	words.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	words.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	words.custom_minimum_size = Vector2(CARD.x, 0)
-	words.add_theme_font_size_override("font_size", 11)
-	words.add_theme_color_override("font_color", Color(0.95, 0.9, 0.8) if member["alive"] else Color(0.6, 0.6, 0.6))
-	card.add_child(words)
+		age = ("%d" % int(member["age"])) if alive else ("died at %d" % int(member["age"]))
+	elif not alive:
+		age = "died"
+	var role := ""
+	if alive and member["ruler"]:
+		role = "  [color=#e8b84a]rules[/color]"
+	elif alive and member["heir"]:
+		role = "  [color=#a9c4ff]heir[/color]"
+	var tags: Array[String] = []
+	for quality: Variant in member.get("traits", []):
+		tags.append("[color=%s]%s[/color]" % [TRAIT_COLORS.get(str(quality), "#c9b48a") if alive else "#777777", quality])
+	words.text = "[center]%s %s\n%s%s\n%s[/center]" % [member["title"], member["name"], age, role, " · ".join(tags)]
+	column.add_child(words)
 	card.tooltip_text = "%s %s%s" % [member["title"], member["name"],
-		"\n" + str(member["cause"]) if not member["alive"] and str(member.get("cause", "")) != "" else ""]
+		"\n" + str(member["cause"]) if not alive and str(member.get("cause", "")) != "" else ""]
 	return card
 
 
-## Husband and wife joined side by side; from between them (or from a lone parent) a line
-## down to each child.
+## Generation labels at the left; a line joining husband and wife; from between them (or under
+## a lone parent) a straight line down to a bar, and from the bar down to each child.
 func _draw_lines() -> void:
-	var ink := Color(_color.lightened(0.3), 0.85)
-	for member_id: int in _cards:
-		var spouse: Variant = _members[member_id].get("spouse")
-		if spouse != null and _cards.has(int(spouse)) and member_id < int(spouse):
-			var a: Control = _cards[member_id]
-			var b: Control = _cards[int(spouse)]
-			if is_equal_approx(a.position.y, b.position.y):
-				var y := a.position.y + FACE.y * 0.5
-				_canvas.draw_line(Vector2(minf(a.position.x, b.position.x) + CARD.x * 0.5 + FACE.x * 0.5, y),
-					Vector2(maxf(a.position.x, b.position.x) + CARD.x * 0.5 - FACE.x * 0.5, y), ink, 2.0)
-	for member_id: int in _cards:
-		var parents: Array = _members[member_id].get("parents", []).filter(func(p: Variant) -> bool: return _cards.has(int(p)))
-		if parents.is_empty():
+	var font := get_theme_default_font()
+	for row: Array in _rows:
+		_canvas.draw_string(font, Vector2(8, float(row[0]) + FACE.y * 0.5), str(row[1]), HORIZONTAL_ALIGNMENT_LEFT,
+			LABEL_WIDTH - 12, 12, Color(0.7, 0.72, 0.78))
+	var ink := Color(_color.lightened(0.35), 0.9)
+	for id: int in _cards:
+		var spouse := _spouse_in_house(id)
+		if spouse > id and _cards.has(spouse):
+			var a: Control = _cards[id]
+			var b: Control = _cards[spouse]
+			var y := a.position.y + FACE.y * 0.5
+			_canvas.draw_line(Vector2(minf(a.position.x, b.position.x) + CARD.x, y),
+				Vector2(maxf(a.position.x, b.position.x), y), ink, 2.0)
+	var done := {}
+	for id: int in _cards:
+		if done.has(id):
 			continue
-		var from := Vector2.ZERO
-		if parents.size() >= 2:  # from the line between husband and wife
-			for parent: Variant in parents:
-				var card: Control = _cards[int(parent)]
-				from += card.position + Vector2(CARD.x * 0.5, FACE.y * 0.5)
-			from /= parents.size()
-		else:  # from under a lone parent's name
-			var card: Control = _cards[int(parents[0])]
-			from = card.position + Vector2(CARD.x * 0.5, CARD.y - 4.0)
-		var child: Control = _cards[member_id]
-		var to := child.position + Vector2(CARD.x * 0.5, 0)
-		var mid := (from.y + to.y) * 0.5 + 10.0
-		_canvas.draw_polyline(PackedVector2Array([from, Vector2(from.x, mid), Vector2(to.x, mid), to]), ink, 1.5)
+		var kids: Array = _children(id).filter(func(k: int) -> bool: return _cards.has(k))
+		var spouse := _spouse_in_house(id)
+		done[id] = true
+		if spouse >= 0:
+			done[spouse] = true
+		if kids.is_empty():
+			continue
+		var card: Control = _cards[id]
+		var from := card.position + Vector2(CARD.x * 0.5, CARD.y)
+		if spouse >= 0 and _cards.has(spouse):  # from the middle of the couple's line
+			var other: Control = _cards[spouse]
+			from = Vector2((minf(card.position.x, other.position.x) + CARD.x + maxf(card.position.x, other.position.x)) * 0.5,
+				card.position.y + FACE.y * 0.5)
+		var bar_y := card.position.y + CARD.y + (ROW - CARD.y) * 0.5
+		var left := from.x
+		var right := from.x
+		for kid: int in kids:
+			var top := (_cards[kid] as Control).position + Vector2(CARD.x * 0.5, 0)
+			left = minf(left, top.x)
+			right = maxf(right, top.x)
+			_canvas.draw_line(Vector2(top.x, bar_y), top, ink, 1.5)
+		_canvas.draw_line(from, Vector2(from.x, bar_y), ink, 1.5)
+		_canvas.draw_line(Vector2(left, bar_y), Vector2(right, bar_y), ink, 1.5)

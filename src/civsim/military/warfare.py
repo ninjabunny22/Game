@@ -38,7 +38,7 @@ from ..economy.rules import HEAL_TICKS, INFIRMARY_BEDS, MIN_POPULATION
 from ..map import WorldMap, find_path, region_neighbours
 from ..map.pathfinding import move_cost
 from .army import LEADERLESS_CAPACITY, XP_PER_LEVEL_STEP, Army, Captive, Commander, Rally
-from ..civ.family import BRAVE_LEVELS, GENERAL_DEFECTS, PRINCE_RANSOM
+from ..civ.family import GENERAL_DEFECTS
 from .engagements import Engagements
 from .units import BASE_UNIT, MAX_TIER, UNIT_TYPES, tier_strength, unit_strength
 
@@ -89,6 +89,7 @@ BATTLE_INTENSITY = 2.5
 ROUT_RATIO = 0.5  # an army breaks when its strength falls below this share of its opponent's
 RALLY_TICKS = 30  # rest at the capital after a rout before marching again
 REPLACEMENT_TICKS = 30
+HELP_RANGE = 24  # tiles: how far a general marches to help an ally's castle or a losing fight
 
 # Pursuit: the winner of a battle chases the routed army if it can keep up.
 PURSUIT_DAYS = 8  # how long a chase lasts at most
@@ -142,6 +143,25 @@ COMMANDER_NAMES = (
     "Kira", "Leoric", "Mirza", "Nadia", "Osric", "Petra", "Quill", "Rurik", "Sabine", "Tariq",
     "Ulla", "Varen", "Wendel", "Xanthe", "Yusuf", "Zora",
 )
+# Generals' names in the flavour of the civ they serve (by the civ's name); a civ not listed
+# draws from COMMANDER_NAMES.
+LATIN = ("Aelius", "Bruna", "Cassius", "Decima", "Flavia", "Gaius", "Hadrian", "Julia", "Livius", "Marcella",
+         "Nerva", "Octavia", "Publius", "Quintus", "Rufina", "Septimus", "Tullia", "Valeria", "Vitus", "Aurelian",
+         "Claudia", "Drusus", "Fabia", "Galba", "Lucilla", "Marius", "Severa", "Tiberius", "Varro", "Corvina")
+EASTERN = ("Ammon", "Baalit", "Dagan", "Ebla", "Hadad", "Ishtara", "Kemosh", "Labash", "Melqart", "Nabu",
+           "Ninsun", "Orontes", "Reshef", "Shamash", "Tanit", "Zimri", "Ashur", "Belit", "Damu", "Enlila",
+           "Gilgam", "Hanno", "Iltani", "Kudur", "Mardu", "Nergal", "Sargon", "Tiamat", "Ubar", "Yarim")
+NORSE = ("Arnulf", "Brynja", "Dagny", "Egil", "Freydis", "Gunnar", "Halla", "Ingvar", "Jorunn", "Ketil",
+         "Leif", "Magnhild", "Njal", "Orm", "Ragna", "Sigurd", "Thora", "Ulfar", "Vigdis", "Yngvar",
+         "Astrid", "Bjorn", "Eirik", "Gudrun", "Hrolf", "Ivar", "Sigrid", "Torvald", "Halvard", "Solveig")
+HAN = ("Bao", "Chen", "Dai", "Feng", "Gao", "Han", "Jin", "Kang", "Lan", "Li Mu", "Ming", "Ning", "Qin", "Rong",
+       "Shu", "Tian", "Wei", "Xiao", "Yan", "Zhao", "Hua", "Jun", "Lei", "Mei", "Pei", "Shen", "Ting", "Wen",
+       "Xu", "Yun")
+STEPPE = ("Arash", "Bahram", "Cyra", "Dara", "Esfan", "Farrukh", "Gulnar", "Hormoz", "Javid", "Kaveh",
+          "Laleh", "Mehran", "Nasrin", "Omid", "Parisa", "Rostam", "Shirin", "Timur", "Yasmin", "Zarin",
+          "Arsalan", "Behrouz", "Daryush", "Golnar", "Kourosh", "Mitra", "Payam", "Sohrab", "Tahmina", "Vahid")
+NAME_FLAVOURS = {"Aurelia": LATIN, "Valmere": LATIN, "Kheshet": EASTERN, "Ossyria": EASTERN, "Norvald": NORSE,
+                 "Zhanlu": HAN, "Tamari": STEPPE, "Iskandar": STEPPE}
 
 
 class Military:
@@ -196,7 +216,7 @@ class Military:
             self._organise(civ, tick)
             self._support(civ, tick, events)
             self._hold_castles(civ, tick, events)
-            self._campaign(civ, tick)
+            self._campaign(civ, tick, events)
             self._station(civ)
             self._hold_captives(civ, tick, events)
         self._rallies(tick, events)
@@ -470,49 +490,28 @@ class Military:
 
     def _new_commander(self, civ, levels: int) -> Commander:
         self._named += 1
-        name = COMMANDER_NAMES[self._names.randrange(len(COMMANDER_NAMES))]
-        commander = Commander(f"{name} of {civ.name}" if self._named <= len(COMMANDER_NAMES) else f"{name} {self._named}")
+        pool = NAME_FLAVOURS.get(civ.name, COMMANDER_NAMES)
+        name = pool[self._names.randrange(len(pool))]
+        taken = {c.name for other in self.civs.values() for c in other.commanders} | {
+            a.commander.name for other in self.civs.values() for a in other.armies if a.commander}
+        title = f"{name} of {civ.name}"
+        if title in taken:  # the same name already serves: the second of it
+            title = f"{name} the Younger of {civ.name}" if f"{name} the Younger of {civ.name}" not in taken \
+                else f"{name} {self._named} of {civ.name}"
+        commander = Commander(title)
         commander.experience = XP_PER_LEVEL_STEP * levels ** 2
-        # Now and then a prince of the ruling house takes the command instead.
-        prince = self.families.free_prince(civ.id, self.diplomacy.now) if self.families is not None else None
-        if prince is not None:
-            commander.name = self.families.full_name(prince)
-            commander.person = prince.id
-            prince.commanding = True
-            if "brave" in prince.traits:  # a brave prince is worth a seasoned general
-                commander.experience = max(commander.experience, XP_PER_LEVEL_STEP * BRAVE_LEVELS ** 2)
         return commander
-
-    def army_of(self, person: int) -> Army | None:
-        """The army a prince leads, if he leads one."""
-        for civ in self.civs.values():
-            for army in civ.armies:
-                if army.commander is not None and army.commander.person == person:
-                    return army
-        return None
 
     def gap(self, a: int, b: int) -> int:
         return self._gap(a, b)
 
-    def rebel_forces(self, king, rebel, tile: int, person: int, share: float, rng) -> float:
-        """The soldiers who go over to a rebel: his own army whole, `share` of every other army
-        of the king (they gather in the castle he seized), the general holding that castle and
-        perhaps one or two idle ones. Returns how many soldiers went over."""
+    def rebel_forces(self, king, rebel, tile: int, share: float, rng) -> float:
+        """The soldiers who go over to a rebel: `share` of every army of the king (they gather in
+        the castle the rebel seized), the general holding that castle and perhaps one or two idle
+        ones. Returns how many soldiers went over."""
         garrison = Army(self.next_id(), rebel.id, tile, "garrison")
         moved = 0.0
         for army in list(king.armies):
-            if army.commander is not None and army.commander.person == person:
-                king.armies.remove(army)
-                for key in [k for k in self._battles if army.id in k]:
-                    self._battles.pop(key, None)
-                self._rally.pop(army.id, None)
-                self._stay.pop(army.id, None)
-                army.civ, army.target_civ, army.target_region = rebel.id, king.id, None
-                army.state, army.path, army.rally, army.pursuing, army.refit = "idle", [], None, None, False
-                army.duty, army.post, army.siege_progress = "defend", None, 0.0
-                rebel.armies.append(army)
-                moved += army.size
-                continue
             if army.boat or army.size <= 0:
                 continue
             tier = army.tier
@@ -526,7 +525,7 @@ class Military:
             king.commanders.remove(commander)  # the castle's own general goes with it
             commander.post = tile
             rebel.commanders.append(commander)
-        idle = [c for c in king.commanders if c.person is None and c.post is None]
+        idle = [c for c in king.commanders if c.post is None]
         for commander in idle[:2]:
             if rng.random() < GENERAL_DEFECTS:
                 king.commanders.remove(commander)
@@ -534,17 +533,6 @@ class Military:
         if not rebel.commanders and not any(a.commander for a in rebel.armies):
             rebel.commanders.append(self._new_commander(rebel, 1))
         return moved
-    def lose_prince(self, person: int, tick: int) -> None:
-        """A prince in command (or held captive) has died: his army is leaderless until a new
-        commander comes."""
-        for civ in self.civs.values():
-            civ.commanders = [c for c in civ.commanders if c.person != person]
-            civ.captives = [c for c in civ.captives if c.commander.person != person]
-            for army in civ.armies:
-                if army.commander is not None and army.commander.person == person:
-                    army.commander = None
-                    army.leaderless_until = tick + REPLACEMENT_TICKS
-
     # -- capitals --------------------------------------------------------------
 
     def _at_home(self, civ, tile: int) -> bool:
@@ -590,21 +578,12 @@ class Military:
         """Roll a beaten commander's fate. Returns what befell him, or "" if he escaped; a captured
         commander is handed to the victor here, and the caller removes him from where he was."""
         roll = self.rng.random()
-        prince = self.families.people.get(commander.person) if self.families and commander.person else None
         if roll < COMMANDER_DEATH_CHANCE:
-            if prince is not None:
-                prince.commanding = False
-                self.families.die(prince, tick, self.families.later, "battle")
             return "is killed"
         if roll >= COMMANDER_DEATH_CHANCE + CAPTURE_CHANCE:
-            if prince is not None:
-                self.families.wound(prince.id, tick)
             return ""
         commander.post = None
-        if prince is not None:
-            self.families.captured(prince.id, winning.id, tick)
-        switch = self.rng.random() < SWITCH_SIDES_CHANCE
-        if switch and prince is None and self.roster(winning) < ROSTER_CAP:  # a prince never turns
+        if self.rng.random() < SWITCH_SIDES_CHANCE and self.roster(winning) < ROSTER_CAP:
             winning.commanders.append(commander)
             return "is captured and changes sides"
         winning.captives.append(Captive(commander, losing.id, tick))
@@ -660,7 +639,8 @@ class Military:
             enemy = self.civs[army.target_civ]
             war = self.diplomacy.relation(civ.id, enemy.id).war
             rested = tick >= self._rally.get(army.id, 0)
-            besieger = self._besieger(civ, enemy) if war else None
+            besieger = (self._besieger(civ, enemy) or self._ally_besieged(civ, enemy, army)) if war else None
+            losing = self._losing_fight(civ, enemy, army) if war else None
             guarded = army.duty == "attack" and any(
                 a.duty == "defend" and a.target_civ == enemy.id and a.size >= MIN_FIELD_ARMY
                 and a.state not in ("retreating", "returning") for a in civ.armies)
@@ -670,8 +650,13 @@ class Military:
                 goal = intruder.tile if intruder else capital
                 army.state = "marching" if intruder and rested and army.size >= MIN_FIELD_ARMY else "idle"
             elif besieger is not None and rested and army.size >= MIN_FIELD_ARMY and not guarded:
-                # One of our capitals is held: nothing matters more than driving them out.
+                # One of our castles (or a nearby ally's) is besieged: nothing matters more than
+                # driving them off.
                 goal = besieger.tile
+                army.state = "marching"
+            elif losing is not None and rested and army.size >= MIN_FIELD_ARMY and not guarded:
+                # Our side (or an ally) is losing a fight nearby: go to its aid.
+                goal = losing.tile
                 army.state = "marching"
             elif war and civ.id in war.aggressors and rested and (army.refit or self._worn_down(civ, army)):
                 # Too few left to go on, and more waiting at home: back to fill the ranks.
@@ -953,9 +938,12 @@ class Military:
         self.diplomacy._log(tick, events, "war", [leader], f"{leader.name}'s rally {outcome}")
 
     def _allied_targets(self, civ, enemy) -> set[int]:
-        """The enemy capitals that allies of `civ`, also at war with it, are marching on or besieging."""
+        """The enemy capitals that allies of `civ`, also at war with it, or its own other armies
+        are marching on or besieging: another column joins them there, at the walls."""
         capitals = {s.tile for s in enemy.settlements}
-        found: set[int] = set()
+        found: set[int] = {other.path[-1] for other in civ.armies
+                           if other.role == "field" and other.target_civ == enemy.id and other.path
+                           and other.path[-1] in capitals and other.state == "besieging"}
         for ally in self.diplomacy.allies(civ.id):
             if self.diplomacy.relation(ally, enemy.id).status != "war":
                 continue
@@ -1372,7 +1360,7 @@ class Military:
                                  "general": {"name": posted.name, "level": posted.level} if posted else None}],
                                siege={"breach": round(min(1.0, army.siege_progress / max(price, 1e-9)), 3)
                                       if held == 0 else 1.0,
-                                      "held": held, "needed": rules.CAPITAL_HOLD})
+                                      "held": held, "needed": max(1, rules.CAPITAL_HOLD)})
 
     def _broken(self, army: Army, tick: int) -> bool:
         """An army beaten in battle cannot fight again until it has rallied: a garrison where it
@@ -1445,7 +1433,8 @@ class Military:
             winner.state = "marching"
         self._battles.pop((loser.id, winner.id), None)
         self._battles.pop((winner.id, loser.id), None)
-        events.append({"civ": winning.id, "kind": "war",
+        x, y = self.world.xy(loser.tile)
+        events.append({"civ": winning.id, "kind": "war", "x": x, "y": y,
                        "text": f"{winning.name}'s army{led} routs {losing.name}'s {near}{fate}"})
         self.engagements.end(self._battle_key(loser, winner), tick,
                              f"{losing.name}'s army breaks and runs{fate}")
@@ -1560,8 +1549,7 @@ class Military:
     # -- captured commanders -------------------------------------------------
 
     def ransom(self, commander: Commander) -> int:
-        price = RANSOM_BASE + RANSOM_PER_LEVEL * commander.level
-        return price * PRINCE_RANSOM if commander.person is not None else price
+        return RANSOM_BASE + RANSOM_PER_LEVEL * commander.level
 
     def _hold_captives(self, civ, tick: int, events: list) -> None:
         """A captive is bought back by his own side when it can afford him, and goes free
@@ -1578,20 +1566,14 @@ class Military:
                 civ.resources["gold"] += price
                 civ.captives.remove(captive)
                 home.commanders.append(captive.commander)
-                if captive.commander.person is not None and self.families is not None:
-                    self.families.freed(captive.commander.person, civ, price, tick, events)
-                else:
-                    events.append({"civ": home.id, "kind": "war",
-                                   "text": f"{home.name} ransoms {name} from {civ.name} for {price} gold"})
+                events.append({"civ": home.id, "kind": "war",
+                               "text": f"{home.name} ransoms {name} from {civ.name} for {price} gold"})
                 continue
             if self.diplomacy.relation(civ.id, home.id).status != "war":
                 civ.captives.remove(captive)
                 home.commanders.append(captive.commander)
-                if captive.commander.person is not None and self.families is not None:
-                    self.families.freed(captive.commander.person, civ, None, tick, events)
-                else:
-                    events.append({"civ": home.id, "kind": "war",
-                                   "text": f"{civ.name} releases {name} to {home.name} now that they are at peace"})
+                events.append({"civ": home.id, "kind": "war",
+                               "text": f"{civ.name} releases {name} to {home.name} now that they are at peace"})
 
     def _enlist(self, civ, captive: Captive, text: str, events: list) -> None:
         civ.captives.remove(captive)
@@ -1602,7 +1584,7 @@ class Military:
 
     # -- campaigns against the native faction --------------------------------
 
-    def _campaign(self, civ, tick: int) -> None:
+    def _campaign(self, civ, tick: int, events: list) -> None:
         """A civ takes the nearest native capital by force when it can field about twice the
         garrison's strength: the only way to gain land besides war. No declaration, no
         strategist: this is plain policy. A war elsewhere does not stop it; an enemy near one
@@ -1615,6 +1597,10 @@ class Military:
             region = world.regions[expedition.target_region]
             if (endangered or not region.neutral) and expedition.state not in ("returning", "retreating"):
                 expedition.state, expedition.path = "returning", []  # needed at home, or someone got there first
+                why = "needed at home" if endangered else "another has taken it"
+                x, y = world.xy(region.capital)
+                events.append({"civ": civ.id, "kind": "region", "x": x, "y": y,
+                               "text": f"{civ.name}'s army turns back from {region.capital_name}: {why}"})
             if expedition.state in ("returning", "retreating"):
                 civ.campaign_muster = 0.0
             return
@@ -1648,6 +1634,11 @@ class Military:
                     commander=self._appoint(civ), state="marching")
         army.add(civ.garrison.take(min(spare, self.capacity(army))), civ.garrison.tier)
         civ.armies.append(army)
+        led = f" under {army.commander.name}" if army.commander else ""
+        x, y = self.world.xy(target.capital)
+        events.append({"civ": civ.id, "kind": "region", "x": x, "y": y,
+                       "text": f"{civ.name} sends {round(army.size * HEADCOUNT)} soldiers{led} to take "
+                               f"{target.capital_name} from {self.diplomacy.faction}"})
 
     def _campaign_soldiers(self, civ, region) -> float:
         """Soldiers it takes to storm a native capital: twice its defence, with a share of the
@@ -1765,7 +1756,8 @@ class Military:
                 self._gain(army, XP_FOUGHT)
             army.state, army.engaged_since = "retreating", None
             civ.campaign_cooldown = tick + CAMPAIGN_RETRY
-            events.append({"civ": civ.id, "kind": "region",
+            x, y = self.world.xy(region.capital)
+            events.append({"civ": civ.id, "kind": "region", "x": x, "y": y,
                            "text": f"{civ.name}'s attack on {region.capital_name} is beaten off by {self.diplomacy.faction}"})
             self.engagements.end(f"storm:{region.id}:{army.id}", tick, f"{civ.name}'s attack is beaten off")
 
@@ -1824,8 +1816,8 @@ class Military:
         self._record_siege(civ, enemy, army, target, region, price, tick)
         if army.siege_progress < price:
             return
-        if region is not None:
-            # A capital does not fall the moment it is breached: the army has to hold it.
+        if region is not None and rules.CAPITAL_HOLD > 0:
+            # With a hold, a capital does not fall the moment it is breached: the army has to hold it.
             if region.held_by is None:
                 region.held_by, region.hold = civ.id, 0
                 self.engagements.note(f"siege:{target}:{civ.id}", tick, "the walls are breached")
@@ -1898,8 +1890,50 @@ class Military:
                                     f"{owner.name} relieves {region.capital_name}: {occupier.name}'s hold on it is broken")
                 self.diplomacy.remember(owner.id, occupier.id, -0.2)
 
+    def facing(self, army: Army) -> int | None:
+        """The tile an army faces: the walls it besieges, the army it fights, else its next step."""
+        if army.state == "fighting":
+            for first, second in self._battles:
+                if army.id in (first, second):
+                    other = second if army.id == first else first
+                    for civ in self.civs.values():
+                        for foe in civ.armies:
+                            if foe.id == other:
+                                return foe.tile
+        return army.path[0] if army.path else None
+
+    def _ally_besieged(self, civ, enemy, army: Army) -> Army | None:
+        """An enemy army besieging the castle of an ally near this army, if any."""
+        found = []
+        for ally in self.diplomacy.allies(civ.id):
+            friend = self.civs[ally]
+            if not friend.alive or self.diplomacy.relation(ally, enemy.id).status != "war":
+                continue
+            besieger = self._besieger(friend, enemy)
+            if besieger is not None and self._gap(army.tile, besieger.tile) <= HELP_RANGE:
+                found.append(besieger)
+        return min(found, key=lambda a: (self._gap(army.tile, a.tile), a.id)) if found else None
+
+    def _losing_fight(self, civ, enemy, army: Army) -> Army | None:
+        """The enemy army beating one of ours or an ally's in a battle near this army, if any."""
+        friends = {civ.id, *self.diplomacy.allies(civ.id)}
+        armies = {a.id: a for other in self.civs.values() for a in other.armies}
+        for first, second in self._battles:
+            if army.id in (first, second) or first not in armies or second not in armies:
+                continue
+            for ours, theirs in ((armies[first], armies[second]), (armies[second], armies[first])):
+                if (ours.civ in friends and theirs.civ == enemy.id and ours.size < theirs.size
+                        and self._gap(army.tile, theirs.tile) <= HELP_RANGE):
+                    return theirs
+        return None
+
     def _besieger(self, civ, enemy) -> Army | None:
-        """The enemy army holding one of the civ's capitals, if any: the one nearest to falling first."""
+        """The enemy army besieging (or, with a hold, holding) one of the civ's castles, if any: the
+        one nearest to breaking in first."""
+        castles = {s.tile for s in civ.settlements}
+        sieging = [a for a in enemy.armies if a.state == "besieging" and a.path and a.path[0] in castles]
+        if sieging:
+            return max(sieging, key=lambda a: (a.siege_progress, -a.id))
         held = [r for r in self.world.regions if r.owner == civ.id and r.held_by == enemy.id]
         for region in sorted(held, key=lambda r: (-r.hold, r.id)):
             army = self._holder(region)

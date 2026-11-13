@@ -21,7 +21,6 @@ class Commander:
     battles: int = 0
     wins: int = 0
     post: int | None = None  # tile of the capital a reserve commander is stationed at
-    person: int | None = None  # a prince of the ruling house (civ/family.py), if he is one
 
     @property
     def level(self) -> int:

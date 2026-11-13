@@ -74,8 +74,16 @@ func _init() -> void:
 	# Civ 1 holds a capital at (20, 20); civ 0's army besieges it from (18, 20).
 	_units.update_capitals([{"id": 1, "settlements": [{"x": 20, "y": 20}], "commanders_in_reserve": []}])
 	var general := {"name": "Aldric", "level": 3, "battles": 4, "wins": 3}
+	var siege := _army(1, 0, 18, 20, "besieging", general, false)
+	siege["facing"] = [20, 20]  # the walls it besieges
+	# A field battle: two armies facing each other across a tile, their generals behind the front.
+	var blue := _army(5, 0, 24, 12, "fighting", {"name": "Hakon", "level": 2, "battles": 3, "wins": 2}, false)
+	blue["facing"] = [26, 12]
+	var red := _army(6, 1, 26, 12, "fighting", {"name": "Zora", "level": 2, "battles": 3, "wins": 1}, false,
+		{"spearman": 120, "swordsman": 60}, "spearman")
+	red["facing"] = [24, 12]
 	_armies = [
-		_army(1, 0, 18, 20, "besieging", general, false),
+		siege, blue, red,
 		_army(2, 0, 30, 20, "marching", {"name": "Edda", "level": 2, "battles": 1, "wins": 1}, true),
 		_army(3, 0, 14, 20, "marching", {"name": "Farid", "level": 1, "battles": 0, "wins": 0}, false,
 			{"cavalry": 160, "swordsman": 40}, "cavalry"),
@@ -152,6 +160,12 @@ func _process(_delta: float) -> bool:
 	elif _frames == 124:
 		_save("fishing_boats_rowing_b")
 		print("boats above water: ok" if _lowest >= SEA_LEVEL else "A BOAT SANK BELOW THE WATER: %.4f" % _lowest)
+		_camera.look_at_from_position(Vector3(25, 2.2, 15.2), Vector3(25, 0.3, 12))
+	elif _frames == 150:
+		_save("battle")  # the two armies face each other, ranks in front, generals behind
+		_camera.look_at_from_position(Vector3(17.2, 1.6, 22.6), Vector3(19, 0.3, 20))
+	elif _frames == 160:
+		_save("siege_close")  # the besiegers face the walls
 		return true
 	return false
 

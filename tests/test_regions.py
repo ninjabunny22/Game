@@ -154,7 +154,7 @@ def test_a_strong_civ_takes_a_neighbouring_native_capital_by_force(sim):
     need = 2 * sim.natives.defence(region)
 
     sim.military._sync(civ)
-    sim.military._campaign(civ, sim.tick)
+    sim.military._campaign(civ, sim.tick, [])
     assert civ.campaign_muster > 0, "it starts raising troops"
     assert not [a for a in civ.armies if a.target_region is not None], "but does not march under strength"
 
@@ -186,7 +186,7 @@ def test_an_expedition_only_marches_at_about_twice_the_garrison(sim):
         civ.soldiers = soldiers
         civ.unpaid = civ.unsupplied = False
         sim.military._sync(civ)
-        sim.military._campaign(civ, sim.tick)
+        sim.military._campaign(civ, sim.tick, [])
         assert bool([a for a in civ.armies if a.target_region is not None]) is marches
 
 
@@ -209,7 +209,7 @@ def test_a_failed_attack_is_beaten_off_and_not_repeated_at_once(sim):
     assert any("beaten off by the Hinterfolk" in e["text"] for e in events)
     assert civ.campaign_cooldown > 100
     assert region.garrison < 30.0, "the garrison took losses too"
-    sim.military._campaign(civ, 50)
+    sim.military._campaign(civ, 50, [])
     assert civ.campaign_muster == 0
 
 
@@ -222,12 +222,12 @@ def test_an_expedition_carries_on_through_a_distant_war_but_comes_home_to_defend
     relation = sim.diplomacy.relation(civ.id, enemy.id)
     sim.diplomacy._start_war(enemy, civ, 1, aggressors={enemy.id})
     assert relation.war
-    sim.military._campaign(civ, 2)
+    sim.military._campaign(civ, 2, [])
     assert army.state == "marching", "a war far away does not stop it"
     # An enemy army at the gates of one of its castles does.
     raider = Army(502, enemy.id, civ.capital.tile, "field", units={"spearman": 40.0}, target_civ=civ.id, state="marching")
     enemy.armies.append(raider)
-    sim.military._campaign(civ, 3)
+    sim.military._campaign(civ, 3, [])
     assert army.state == "returning"
 
 

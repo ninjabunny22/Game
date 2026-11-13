@@ -6,6 +6,7 @@ extends CanvasLayer
 
 signal command_requested(action: String, value: Variant)
 signal follow_requested(civ_id: int)  # keep the camera on this civ's largest army or capital; -1 to stop
+signal jump_requested(x: float, y: float)  # a clicked event: bring the camera to this tile
 
 const TechTree := preload("res://scripts/tech_tree.gd")
 const WarBanner := preload("res://scripts/war_banner.gd")
@@ -18,9 +19,9 @@ const LINK_LEGEND := "[color=#ff4033]━[/color] war   [color=#59a6ff]━[/color
 const MAX_HEADLINES := 5
 const ROUTINE_WINDOW := 100  # days over which routine events are counted for the summary line
 # Events worth a line of their own. Everything else is only counted.
-const HEADLINE_KINDS := ["war", "diplomacy", "region", "era", "family"]
+const HEADLINE_KINDS := ["war", "diplomacy", "region", "era", "family", "rally"]
 const ROUTINE_LABELS := {"capture": "buildings captured", "village": "village changes", "tech": "discoveries",
-	"trade": "trade changes"}
+	"trade": "trade changes", "building": "buildings finished", "demolition": "buildings pulled down"}
 const MAX_TECHS_LISTED := 6  # the most recent ones; the full list no longer fits a card
 const RESOURCE_LABELS := {"food": "Food", "wood": "Wood", "stone": "Stone", "ore": "Ore", "gold": "Gold", "water": "Water"}
 const STANCE_COLORS := {"trade": "#7ccf7c", "ally": "#6fb7ff", "ignore": "#8a93a0", "aggression": "#e07a6a"}
@@ -48,9 +49,10 @@ var _ticker_age := 0.0
 var _chronicle: PanelContainer
 var _chronicle_text: RichTextLabel
 var _chronicle_filter: OptionButton
-var _chronicle_entries: Array = []  # [civ ids involved, bbcode line]
+var _chronicle_entries: Array = []  # [civ ids involved, bbcode line, the event, routine?]
+var _chronicle_routine: CheckBox  # the routine events listed too
 var _routine_footer := ""
-const CHRONICLE_LIMIT := 400
+const CHRONICLE_LIMIT := 1200
 const TICKER_BRIGHT := 6.0  # seconds a new headline stays bright before it dims
 var _pause_button: Button
 var _tech_tree: PanelContainer  # tech_tree.gd: the tree as the civs climb it, while spectating
@@ -149,6 +151,7 @@ func _ready() -> void:
 	help.visible = false  # H or the ? button shows the keys
 	column.add_child(help)
 	_help = help
+	_icon_button(buttons, "chronicle", "The chronicle: every headline so far  (L)", toggle_chronicle)
 	_icon_button(buttons, "help", "Keys and controls  (H)", toggle_help)
 	_icon_button(buttons, "menu", "Back to the menu", func() -> void: command_requested.emit("end_game", {}))
 	var legend := RichTextLabel.new()
@@ -708,11 +711,13 @@ func update(tick: int, data: Dictionary) -> void:
 				if mine:
 					_banners.proclaim(tick, _tint(str(_civ_info[int(event["civ"])]["name"])),
 						_tint(str(_civ_info[int(event["target"])]["name"])), Color.html(color),
-						_tint(str(event.get("war_name", ""))), _tint(str(event["proclamation"])))
-			_chronicle_entries.append([involved, line])
+						_tint(str(event.get("war_name", ""))), _tint(str(event["proclamation"])), event_clicked.bind(event))
+			_chronicle_entries.append([involved, line, event, false])
 			_show_on_ticker(line)
 		elif ROUTINE_LABELS.has(event["kind"]):
 			_routine.append([tick, event["kind"]])
+			var plain := "[color=#8a93a0]Day %d  %s[/color]" % [tick, _tint(str(event["text"]))]
+			_chronicle_entries.append([[int(event["civ"])], plain, event, true])
 	if _log_lines.size() > MAX_HEADLINES:
 		_log_lines = _log_lines.slice(_log_lines.size() - MAX_HEADLINES)
 	while not _routine.is_empty() and int(_routine[0][0]) <= tick - ROUTINE_WINDOW:
@@ -899,6 +904,12 @@ func _build_ticker(root: Control) -> void:
 	_chronicle_filter.tooltip_text = "Only the headlines about one civ"
 	_chronicle_filter.item_selected.connect(func(_index: int) -> void: _refresh_chronicle())
 	header.add_child(_chronicle_filter)
+	_chronicle_routine = CheckBox.new()
+	_chronicle_routine.text = "Routine"
+	_chronicle_routine.focus_mode = Control.FOCUS_NONE
+	_chronicle_routine.tooltip_text = "List the routine events too: buildings, villages, discoveries, trade"
+	_chronicle_routine.toggled.connect(func(_on: bool) -> void: _refresh_chronicle())
+	header.add_child(_chronicle_routine)
 	_icon_button(header, "close", "Close  (Esc)", toggle_chronicle).custom_minimum_size = Vector2(32, 30)
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -909,7 +920,12 @@ func _build_ticker(root: Control) -> void:
 	_chronicle_text.fit_content = true
 	_chronicle_text.scroll_active = false
 	_chronicle_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_chronicle_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_chronicle_text.mouse_filter = Control.MOUSE_FILTER_PASS  # its lines are links: click one to go to it
+	_chronicle_text.meta_underlined = false
+	_chronicle_text.meta_clicked.connect(func(meta: Variant) -> void:
+		var index := int(str(meta))
+		if index >= 0 and index < _chronicle_entries.size():
+			event_clicked(_chronicle_entries[index][2]))
 	_chronicle_text.add_theme_font_size_override("normal_font_size", 13)
 	scroll.add_child(_chronicle_text)
 
@@ -932,10 +948,11 @@ func toggle_chronicle() -> void:
 func _refresh_chronicle() -> void:
 	var only := _chronicle_filter.get_selected_id() if _chronicle_filter.selected >= 0 else -1
 	var lines: Array[String] = []
+	var routine := _chronicle_routine.button_pressed
 	for i in range(_chronicle_entries.size() - 1, -1, -1):
 		var entry: Array = _chronicle_entries[i]
-		if only < 0 or only in entry[0]:
-			lines.append(entry[1])
+		if (only < 0 or only in entry[0]) and (routine or not entry[3]):
+			lines.append("[url=%d]%s[/url]" % [i, entry[1]])
 	if lines.is_empty():
 		lines.append("[color=#8a93a0]Nothing yet.[/color]")
 	_chronicle_text.text = "\n".join(lines) + "\n\n" + _routine_footer
@@ -1144,7 +1161,8 @@ func _personality(civ_id: int) -> String:
 
 const FAMILY_COLUMNS := 4
 const TRAIT_COLORS := {"brave": "#e8b84a", "sickly": "#9ab07a", "learned": "#7ab0e0", "cruel": "#e07a6a",
-	"ambitious": "#d98a5a", "usurper": "#e05a4a"}
+	"ambitious": "#d98a5a", "usurper": "#e05a4a", "pious": "#d8d0a8", "shrewd": "#e8b84a", "kind": "#8fd18f",
+	"proud": "#c98fd1"}
 
 ## The drawer's Family tab: a portrait for each living member (the ruler first, the heir
 ## marked), then the dead in grey with when and how they died.
@@ -1191,8 +1209,6 @@ func _portrait_table(members: Array, crest: String, dead: bool) -> String:
 				notes.append("[color=#c9a23a]ill[/color]")
 			if int(member["wounds"]) > 0:
 				notes.append("[color=#d98a5a]wounded[/color]")
-			if member["commanding"]:
-				notes.append("commands")
 			if str(member.get("governs", "")) != "":
 				notes.append("rules %s" % member["governs"])
 				if str(member.get("governor_bonus", "")) != "":
@@ -1228,23 +1244,46 @@ func _tint(text: String) -> String:
 	return text
 
 
+## A clicked event (a chronicle line or a banner): a family event opens the house's tree with
+## the person picked out; anything with a place brings the camera there; a war, to the
+## attacked civ's capital.
+func event_clicked(event: Dictionary) -> void:
+	var family: Dictionary = event.get("family", {})
+	if not family.is_empty():
+		var person := int(family.get("person", -1))
+		for civ_id: int in _families:
+			for member: Dictionary in _families[civ_id]["members"]:
+				if int(member["id"]) == person:
+					_family_tree.show_house(_families[civ_id], Color.html(_civ_info[civ_id]["color"]), person)
+					return
+	if event.has("x") and event.has("y"):
+		jump_requested.emit(float(event["x"]), float(event["y"]))
+		return
+	var where := int(event.get("target", event.get("civ", -1)))
+	if _latest.has(where) and not _latest[where]["settlements"].is_empty():
+		var home: Dictionary = _latest[where]["settlements"][0]
+		jump_requested.emit(float(home["x"]), float(home["y"]))
+
+
 ## A death, a murder, a succession or a marriage between ruling houses: a banner like a war's.
 func _announce_family(tick: int, event: Dictionary, family: Dictionary, color: String) -> void:
 	var kind := str(family["type"])
 	var icon: String = "res://assets/icons/%s.svg" % {"assassination": "dagger", "marriage": "rings",
 		"rebellion": "dagger", "execution": "dagger", "usurpation": "dagger", "claim": "battle",
-		"pledge": "rings", "betrayal": "dagger", "captured": "dagger"}.get(kind, "crown")
+		"pledge": "rings", "betrayal": "dagger", "captured": "dagger",
+		"exchange": "rings", "rescue": "crown"}.get(kind, "crown")
 	var title: String = {"death": "A death in the house", "succession": "The crown passes",
 		"assassination": "Murder!", "marriage": "A royal wedding", "rebellion": "Rebellion!",
-		"execution": "A traitor's end", "usurpation": "The crown is seized", "claim": "A claim to a throne",
+		"execution": "An execution", "usurpation": "The crown is seized", "claim": "A claim to a throne",
 		"ransom": "A prince comes home", "pledge": "An oath to the rebel", "betrayal": "Betrayed!",
-		"captured": "The rebel is taken"}.get(kind, "News of the court")
+		"captured": "Taken prisoner", "exchange": "An exchange of prisoners",
+		"rescue": "Set free"}.get(kind, "News of the court")
 	var portrait := str(family.get("portrait", ""))
 	if portrait == "":
 		portrait = str(family.get("crest", ""))
 	_banners.announce(tick, "[b]%s[/b]  %s" % [_tint(str(_civ_info[int(event["civ"])]["name"])), title],
 		Color.html(color), _tint(str(family.get("line", ""))), _tint(str(event["text"])), icon, portrait,
-		bool(family.get("dead", false)))
+		bool(family.get("dead", false)), event_clicked.bind(event))
 
 
 func toggle_card(civ_id: int) -> void:

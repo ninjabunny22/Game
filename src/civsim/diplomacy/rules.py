@@ -95,7 +95,9 @@ MUSTER = 0.3  # share of full mobilisation raised while a war is only threatened
 
 # Regions and the native faction
 CAPITAL_DEFENSE = 3.0  # a region capital costs this many times its terrain to capture
-CAPITAL_HOLD = 60  # ticks an army that has broken into a civ's capital must hold it before the region falls
+# Ticks an army that has broken into a civ's castle must hold it before the region falls;
+# 0: a castle breached is a castle taken, and its region falls that day.
+CAPITAL_HOLD = 0
 NATIVE_GARRISON = 6.0  # defenders of a neutral capital at the start, in soldier-equivalents ...
 NATIVE_GROWTH = 0.012  # ... growing by this much per tick ...
 NATIVE_GARRISON_MAX = 60.0  # ... up to this: weaker than a civ's army at any stage, but never trivial

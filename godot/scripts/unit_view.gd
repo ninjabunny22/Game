@@ -40,6 +40,7 @@ const MOUNTED_GENERAL_HEIGHT := 0.98
 const SOLDIERS_PER_FIGURE := 48  # an army shows one more figure in its ranks for every so many soldiers
 const MAX_RANKS := 8  # ... up to this many behind whoever leads it
 const RANK_SPACING := 0.34
+const FRONT_STEP := 0.6  # how far the ranks step forward in a fight, past the general at their back
 const STRIKES := ["attack", "shoot"]  # what a model's fighting animation may be called
 const BOAT_LENGTH := 0.95
 # A villager's fishing boat: its length in tiles (half an army's ship), where its rowlocks are (in the model's own units, as tools/blender/make_models.py draws it) and how it rows.
@@ -106,6 +107,11 @@ func update(armies: Array, villagers: Array) -> void:
 		var entry: Dictionary = _armies[id]
 		entry["field"] = army["role"] == "field"
 		entry["state"] = str(army["state"])
+		var facing: Variant = army.get("facing")
+		if facing != null:
+			entry["face"] = _terrain.tile_position(int(facing[0]), int(facing[1]))
+		else:
+			entry.erase("face")
 		entry["afloat"] = bool(army.get("boat", false))
 		entry["in_castle"] = bool(army.get("in_castle", false))
 		if entry["afloat"] and not entry.has("boat"):
@@ -245,10 +251,19 @@ func _process(delta: float) -> void:
 				if Vector2(offset.x, offset.z).length() > 0.05:
 					node.rotation.y = atan2(offset.x, offset.z)
 				node.position = node.position.move_toward(target, MOVE_SPEED * delta)
+			if is_same(group, _armies) and not moving and entry.has("face"):
+				# Standing to fight: the army turns to the walls or the enemy it faces.
+				var toward: Vector3 = entry["face"] - node.position
+				if Vector2(toward.x, toward.z).length() > 0.05:
+					node.rotation.y = lerp_angle(node.rotation.y, atan2(toward.x, toward.z), minf(1.0, 6.0 * delta))
 			# The right animation for the moment.
 			if is_same(group, _armies):
 				var state: String = entry.get("state", "idle")
+				var fighting: bool = state in AT_ARMS
 				for figure: Node3D in entry["figures"]:
+					if figure.has_meta("rank_z"):  # in a fight the ranks step past their general, who leads from behind the front
+						var z: float = float(figure.get_meta("rank_z")) + (FRONT_STEP if fighting else 0.0)
+						figure.position.z = move_toward(figure.position.z, z, delta)
 					var action := "walk" if moving else "idle"
 					if moving and offset.length() > 1.5 and _characters.can_play(figure, "trot"):
 						action = "trot"  # a mounted figure with ground to make up
@@ -358,6 +373,7 @@ func _make_army(civ: int, army: Dictionary, look: String) -> Dictionary:
 	for i in ranks.size():
 		var soldier: Node3D = _soldier(ranks[i], color)
 		soldier.position = Vector3((i % 3 - 1) * RANK_SPACING, 0, -(i / 3 + 1) * RANK_SPACING)
+		soldier.set_meta("rank_z", soldier.position.z)
 		troop.add_child(soldier)
 		figures.append(soldier)
 	root.add_child(troop)

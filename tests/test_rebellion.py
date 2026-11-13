@@ -10,7 +10,6 @@ from civsim.bridge.protocol import tick_message
 from civsim.civ import family
 from civsim.civ.family import YEAR, Families
 from civsim.config import game_config
-from civsim.military.army import Commander
 from civsim.simulation import Simulation
 from civsim.strategy import RuleBrain
 
@@ -142,12 +141,6 @@ def test_traits_change_play():
     assert mods.science_mult == family.LEARNED
     sickly = [p for p in families.people.values() if "sickly" in p.traits]
     assert all(p.health >= 0.7 * family.SICKLY - 1e-9 for p in sickly)
-
-
-def test_a_prince_costs_more_to_ransom():
-    sim = Simulation(game_config("medium", 4, 3))
-    general, prince = Commander("Varen"), Commander("Prince Cedric", person=1)
-    assert sim.military.ransom(prince) == family.PRINCE_RANSOM * sim.military.ransom(general)
 
 
 def _rebellion_with_a_patron(betray: bool):

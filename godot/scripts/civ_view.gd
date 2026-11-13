@@ -19,6 +19,9 @@ const PLINTH_HEIGHT := 0.12
 ##   size:   how much of the tile it covers
 ##   tinted: the model has parts in the faction colour (otherwise it flies the owner's flag)
 ##   marker: it shares its model with another type, so it carries a pennant in its own colour
+## Where the houses of a village stand on its tile, by level (one more at each).
+const HOUSE_CLUSTER := [Vector3(0, 0, 0), Vector3(0.32, 0, 0.22), Vector3(-0.32, 0, 0.2), Vector3(0.24, 0, -0.32),
+	Vector3(-0.26, 0, -0.3)]
 const BUILDING_MODELS := {
 	"house": {"model": "building_home_A_green", "alt": "building_home_B_green", "size": 0.78, "tinted": true},
 	"farm": {"model": "building_grain", "size": 0.95},
@@ -305,7 +308,8 @@ func update(civs: Array, regions: Array) -> void:
 			capital_tiles["%d:%d" % [int(settlement["x"]), int(settlement["y"])]] = CAPITAL_FOOTPRINT if index == 0 else TOWN_FOOTPRINT
 			index += 1
 		for building: Dictionary in civ["buildings"]:
-			var key := "b:%d:%d" % [civ_id, int(building["id"])]
+			# Its level is in the key: an upgraded building is drawn again, bigger.
+			var key := "b:%d:%d:%d" % [civ_id, int(building["id"]), int(building.get("level", 1))]
 			seen[key] = true
 			# A finished building of the pack's is drawn in the batches, not as a node of its own.
 			if building["complete"] and _batchable(str(building["type"])):
@@ -795,8 +799,19 @@ func _batch_building(key: String, civ_id: int, building: Dictionary) -> void:
 		name = spec["alt"]
 	var material: Material = _models.tinted_material(color) if spec.get("tinted", false) else _models.base_material()
 	var lift := Transform3D(Basis(), Vector3(0, float(spec.get("lift", 0.0)) * tiles, 0))
-	for part: Array in _models.parts(name, float(spec["size"]) * tiles):
-		_batches.add(key, part[0], material, placed * lift * (part[1] as Transform3D))
+	# A village (a house) grows by its level into a cluster of houses; anything else grows larger.
+	var level := int(building.get("level", 1))
+	var copies: Array = [Vector3.ZERO]
+	var grow := 1.0
+	if type == "house" and level > 1:
+		copies = HOUSE_CLUSTER.slice(0, level)
+		grow = 0.7
+	elif level > 1:
+		grow = 1.0 + 0.15 * (level - 1)
+	for offset: Vector3 in copies:
+		var at := Transform3D(Basis(Vector3.UP, offset.length() * 2.0), offset)  # each house turned its own way
+		for part: Array in _models.parts(name, float(spec["size"]) * tiles * grow):
+			_batches.add(key, part[0], material, placed * at * lift * (part[1] as Transform3D))
 	for prop: Array in spec.get("props", []):
 		var beside := Transform3D(Basis(), (prop[2] as Vector3) * tiles)
 		for part: Array in _models.parts(prop[0], float(prop[1]) * tiles):

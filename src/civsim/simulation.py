@@ -165,7 +165,7 @@ class Simulation:
         self.modifiers[rebel.id] = compute_modifiers(rebel, self.building_defs, self.tech_tree)
         self.diplomacy.secede(rebel, king, region, tick)  # (seizing stores weighs its strength)
         self.modifiers[rebel.id] = compute_modifiers(rebel, self.building_defs, self.tech_tree)
-        self.military.rebel_forces(king, rebel, region.capital, person.id, share, self.families.rng)
+        self.military.rebel_forces(king, rebel, region.capital, share, self.families.rng)
         self.diplomacy.rebellion_war(rebel, king, person.name, tick, events)
         return rebel
 

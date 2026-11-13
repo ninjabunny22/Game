@@ -106,14 +106,20 @@ The overlay is built for watching:
   its capital); **Rule it** takes control. Click the chip again, its X or `Esc` to close.
 - **Ongoing wars** (while watching): a panel under the civ chips at the top right, its heading
   counting the wars going on. Each war is a row, both civs' shields and names in their colours
-  facing each other across crossed swords; allies fighting the same enemy share one row
+  facing each other across crossed swords; allies fighting the same enemy share one row; under the wars, the alliances, each as a row
+  of its members (allies of allies together)
   ("Ossyria + Zhanlu ⚔ Kheshet"), their figures added. Click a row to compare the two sides
   (military strength, armies in the field, regions held), live. Rows come and go with the wars; the − in
   the heading folds the panel away. It steps aside while a civ's drawer is open.
+- **Clickable events:** a line in the chronicle, or a banner, takes you to what it tells of: a
+  family event opens that house's tree with the person picked out (greyed if dead); a battle,
+  capture or campaign moves the camera there; a war, to the attacked civ's capital. The
+  chronicle's "Routine" box lists the routine events (buildings, villages, discoveries,
+  trade) as well.
 - **The ticker and the chronicle** (while watching): the newest headline (wars, peace,
   castles taken, alliances, eras, with a war's proclamation) shows at the bottom left and
   fades after a few seconds. Click it, or press `L`, for the chronicle: every headline so far,
-  newest first, filtered by civ if you like, with the last 100 days' routine changes counted
+  newest first, filtered by civ if you like (or the scroll button in the bar), with the last 100 days' routine changes counted
   at the end. When you rule a civ, the old event log stays in its place.
 - **A calm map.** Castle names are small and fade with distance from where the camera looks
   (each civ's own capital stays readable); a native stronghold has a shield over its name, and
@@ -123,20 +129,20 @@ The overlay is built for watching:
 - **Fights you can follow** (while watching, not when you rule a civ). Over the battle,
   siege or assault on a native capital nearest the middle of the screen floats a box: a headline ("General Varen of
   Zhanlu assaults Dunlinby with 122 soldiers"), a bar per side (soldiers left of what it
-  brought, today's losses), for a siege the breach and then the 60-day hold, and the last
+  brought, today's losses), for a siege how far the breach has come, and the last
   notes of the fight, a line a day. Other fights, and every fight from afar, are crossed-swords
   markers; click one to open its box instead. When fights are going on and none is on screen, a crossed-swords button at
   the top says how many; click it to go to the largest, again for the next. A finished
   fight's box stays a few days with how it ended.
-- **Tech tree** (while watching; a drawer's Tech tab, or `T`): one column per
+- **Tech tree** (while watching; a drawer's Tech tab, or `T`; hover a tech for its exact bonuses,
+  its cost, and the civs that know it in their colours): one column per
   era, a dot in each civ's colour on every tech it knows, and a frame and progress bar on what
   each is learning now. Resting the mouse on a tech says what it does, its cost and who knows
   it; with a civ's drawer open, the tree shows that civ's path.
 - **Text size.** The whole overlay is drawn 35% larger than Godot's default;
   `[` and `]` make it smaller or larger while watching.
-- **Sieges.** A civ's capital does not fall the moment an army breaks in: the army
-  has to hold it for 60 days. The map shows who holds it and how far along they are,
-  and the defender's armies drop everything to drive them out.
+- **Sieges.** A castle breached is a castle taken: the day an army breaks in, the castle and
+  its whole region are its. The defender's armies march to break a siege before then.
 - **Peace on terms.** A side ahead in a war (at least one more castle taken) is paid a quarter of
   the loser's stores when it ends, and a winner whose advance has stalled accepts an offer
   of tribute rather than fight on.
@@ -164,7 +170,8 @@ The overlay is built for watching:
   takes which slot, and who the civs are.
 - **Royal houses.** Each civ is ruled by a house from the portrait boards (Valedorn, Ashbourne,
   Thornwick, Frostmere, Greythorne, Silvermere; others only marry in), with the ages printed on
-  the boards.
+  the boards. A ruling house is known by its realm's name ("House Ossyria", "King Edric
+  Ossyria"); a rebel's house by the rebel realm's.
   - **Ageing:** a child is a year older every 120 days until 18 (so heirs grow up within a
     game); after that everyone is one year older every 365 days, exactly.
   - **Natural death:** on each birthday a character faces a check whose chance rises with
@@ -179,11 +186,25 @@ The overlay is built for watching:
   - **Marriages and births:** unmarried adults marry (sometimes into another ruling house,
     which warms their realms to each other), and couples have children; a child shows a
     child's face until 16, then the same face grown up.
-  - **Princes in war:** princes can command armies, and fall, be wounded or be taken in battle.
+  - **Generals are not family:** armies are led by generals from the general system; the
+    ruler's children govern castles instead.
+  - **More of the family at the start:** the ruler's grown children and brothers and sisters
+    begin married, with children of their own, so each tree starts with two or three
+    living generations.
+  - **Traits:** everyone has one of brave, sickly, learned, cruel, pious, shrewd, kind or proud.
+    Sickly raises the risk of death; a pious member plots far less and a proud one more; a cruel
+    ruler is thought worse of each year, a kind one better; as governors each brings a bonus.
+  - **Captives:** when a castle falls, its governor is taken prisoner, or escapes home (about one
+    in three). A captive comes home when their realm pays a ransom (400 gold), takes the
+    captor's capital, or exchanges them for one of the captor's own blood it holds.
+  - **Executions:** a captor may put a royal captive to death instead (likelier for a cruel ruler,
+    or in a bitter war). The victim's realm will never ally with it again; every other realm
+    thinks worse of it, except those that hate the victim's realm, which think better of it.
   - **Governors:** every castle but the capital is ruled for the crown by a grown member of
     the house (the ruler's children first); click a castle to see who rules it. Each governor
-    brings a bonus of their own, from their nature: a brave one +20% defence of their castle,
-    a learned one +5% research, a cruel one +5% army strength; otherwise by personality
+    brings a bonus of their own, from their nature: brave +20% defence of their castle, proud
+    +10% of it, learned +5% research, cruel +5% army strength, pious +5% growth, shrewd +8%
+    gold, kind +5% food; otherwise (sickly) by personality
     (Expansionist +2% under arms, Builder +8% building speed, Scholar +4% research, Merchant
     +8% gold, Agrarian +6% food). A governor who rebels seizes the castle they rule.
   - **Succession:** when a ruler dies, the eldest son (then daughter) and their line follow,
@@ -764,8 +785,8 @@ its soldiers) between them, each under a commander.
 - **Taking ground.** Open enemy land changes hands only with its castle. An aggressor's
   army marches through it to the nearest capital its enemy holds and lays siege there, by
   the phase 3 capture rule against the local militia and the garrison; a capital costs
-  three times its terrain to break into, the army must then hold it for 60 days, and when
-  it falls the whole region goes with it: every tile, building, store and villager. A civ that loses its
+  three times its terrain to break into, and the day it is breached
+  it falls, and the whole region goes with it: every tile, building, store and villager. A civ that loses its
   own capital pays half its stock as tribute, moves its court to another
   capital it holds, and gets a 300-tick truce. A civ with no capital left is
   destroyed and what remains of it goes to its conqueror.
@@ -861,6 +882,13 @@ those on a captured tile change sides and wait for their new owner's orders.
   something already built, or beside a castle, to breaking new ground;
   buildings placed by yield weigh that against the yield. With no room left it
   clears whatever stands on the least useful square the new building would fit.
+- **A cap per region, and levels.** A region holds at most 3 villages (a village is a `house`
+  site), 3 farms, 2 lumber camps, 2 quarries, 2 mines and one of every other building. Once
+  the regions are full, a civ upgrades what stands instead of building more: a village up to
+  level 5 (each level houses as many as a house did; it is drawn as one more house in its
+  cluster), everything else up to level 3 (drawn larger). A building's effects count once per
+  level (`region_cap`, `max_level` in `data/buildings.json`). More land is the only way to more
+  room, one more reason to fight over regions.
 - **Villages.** Every capital a civ holds is the centre of its own town. A
   building joins the nearest village or town of its civ within 4 tiles that
   still has room (a town holds 60 buildings, a village 40); if there is none

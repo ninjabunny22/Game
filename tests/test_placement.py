@@ -96,7 +96,10 @@ def test_nothing_is_built_where_a_castle_stands(sim):
         assert placement_problem(civ, world, house, tile) is not None
     civ.buildings = []
     for _ in range(30):
-        place(civ, world, house, find_site(civ, world, house))
+        site = find_site(civ, world, house)
+        if site is None:  # every region holds all the villages it can
+            break
+        place(civ, world, house, site)
     assert not any(castle_ground(world, b.tile) for b in civ.buildings)
 
 

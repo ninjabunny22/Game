@@ -68,6 +68,7 @@ func _ready() -> void:
 	_build_layers()
 	_battles.jump_requested.connect(_on_minimap_jump)
 	_hud.follow_requested.connect(func(civ_id: int) -> void: _follow_civ = civ_id)
+	_hud.jump_requested.connect(_on_minimap_jump)
 	_minimap.jump_requested.connect(_on_minimap_jump)
 	add_child(_menu)
 	_menu.start_requested.connect(_on_start_requested)

@@ -83,7 +83,8 @@ def compute_modifiers(civ, building_defs, tech_tree) -> Modifiers:
     mods = Modifiers()
     for building in civ.buildings:
         if building.complete and building.active:
-            mods.apply(building_defs[building.type].effects)
+            for _ in range(building.level):  # an upgraded building counts once per level
+                mods.apply(building_defs[building.type].effects)
     for tech_id in civ.known_techs:
         mods.apply(tech_tree.techs[tech_id].effects)
     _apply_water_access(civ, mods)

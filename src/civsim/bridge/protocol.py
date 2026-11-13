@@ -155,7 +155,7 @@ def init_message(sim: Simulation, lobby: bool = False) -> str:
             "eras": sim.tech_tree.eras,
             "techs": [
                 {"id": tech.id, "name": tech.name, "era": tech.era, "prereqs": list(tech.prereqs),
-                 "cost": tech.cost, "description": tech.description}
+                 "cost": tech.cost, "description": tech.description, "effects": tech.effects}
                 for tech in sim.tech_tree.techs.values()
             ],
         },
@@ -224,7 +224,7 @@ def _settlement(sim: Simulation, civ, settlement, watcher) -> dict:
     entry["wounded"] = heads(civ.wounded / max(1, len(civ.settlements)))
     region = world.regions[world.capital_tiles[settlement.tile]] if settlement.tile in world.capital_tiles else None
     entry["held_by"] = region.held_by if region is not None else None
-    entry["hold"] = round(region.hold / rules.CAPITAL_HOLD, 3) if region is not None else 0.0
+    entry["hold"] = round(region.hold / max(1, rules.CAPITAL_HOLD), 3) if region is not None else 0.0
     return entry
 
 
@@ -275,7 +275,7 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
             "buildings": [
                 {"id": b.id, "type": b.type, "x": b.tile % world.width, "y": b.tile // world.width,
                  "village": b.village,
-                 "progress": round(b.progress, 2), "complete": b.complete, "active": b.active}
+                 "progress": round(b.progress, 2), "complete": b.complete, "active": b.active, "level": b.level}
                 for b in civ.buildings
             ],
             # Villages and towns: named groups of buildings. "capital" marks the town around
@@ -342,6 +342,8 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
             armies.append({
                 "id": army.id, "civ": civ.id, "x": army.tile % world.width, "y": army.tile // world.width,
                 "role": army.role, "state": army.state, "target_civ": army.target_civ,
+                # The tile it faces (the walls it besieges, the army it fights, its next step), or null.
+                "facing": (lambda t: None if t is None else [t % world.width, t // world.width])(sim.military.facing(army)),
                 # duty: "attack" (out after the enemy's capitals), "defend" (a home force on its own
                 # land) or "reinforce" (standing in an ally's capital). refit: going home to fill its ranks.
                 "duty": army.duty,
@@ -416,7 +418,7 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
         "regions": [
             # held_by: the civ whose army has broken into the capital, hold: how far (0 to 1) it is to taking it.
             {"id": region.id, "owner": region.owner, "garrison": heads(region.garrison),
-             "held_by": region.held_by, "hold": round(region.hold / rules.CAPITAL_HOLD, 3)}
+             "held_by": region.held_by, "hold": round(region.hold / max(1, rules.CAPITAL_HOLD), 3)}
             for region in world.regions
         ],
         # Rallies gathering or on the march: who leads, where it gathers, what it is for, how long

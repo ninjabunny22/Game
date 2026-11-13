@@ -19,6 +19,8 @@ var _techs: Array = []  # tech dictionaries from the init message
 var _by_id := {}  # tech id -> its dictionary
 var _rects := {}  # tech id -> Rect2 inside the canvas, set by _layout
 var _civs := {}  # civ id -> {"color", "name"}
+var _hover: PanelContainer
+var _hover_text: RichTextLabel
 var _known := {}  # civ id -> {tech id: true}
 var _research := {}  # civ id -> {"id", "progress"} or absent
 var _picked := -1  # the civ whose path is shown, or -1
@@ -52,12 +54,37 @@ func _ready() -> void:
 	_canvas.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_canvas.custom_minimum_size = Vector2(320, 220)
 	_canvas.mouse_filter = Control.MOUSE_FILTER_PASS
-	_canvas.tooltip_text = " "  # tooltips on: the text comes from _tooltip_at
 	_canvas.draw.connect(_draw_tree)
 	_canvas.resized.connect(_layout)
 	column.add_child(_canvas)
-	_canvas.gui_input.connect(func(_event: InputEvent) -> void:
-		_canvas.tooltip_text = _tooltip_at(_canvas.get_local_mouse_position()))
+	_canvas.gui_input.connect(func(event: InputEvent) -> void:
+		if event is InputEventMouseMotion:
+			_show_hover(_canvas.get_local_mouse_position()))
+	_canvas.mouse_exited.connect(func() -> void: _hover.visible = false)
+	# The hover card: what the tech under the mouse does, exactly, and who has it.
+	_hover = PanelContainer.new()
+	var card := StyleBoxFlat.new()
+	card.bg_color = Color(0.05, 0.06, 0.08, 0.96)
+	card.set_corner_radius_all(8)
+	card.set_content_margin_all(10)
+	card.set_border_width_all(1)
+	card.border_color = Color(1, 1, 1, 0.15)
+	_hover.add_theme_stylebox_override("panel", card)
+	_hover.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hover.visible = false
+	_hover_text = RichTextLabel.new()
+	_hover_text.bbcode_enabled = true
+	_hover_text.fit_content = true
+	_hover_text.scroll_active = false
+	_hover_text.custom_minimum_size = Vector2(300, 0)
+	_hover_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hover_text.add_theme_font_size_override("normal_font_size", 13)
+	_hover_text.add_theme_font_size_override("bold_font_size", 15)
+	_hover.add_child(_hover_text)
+	var layer := Control.new()  # free of the panel's layout, so the card goes where the mouse is
+	layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(layer)
+	layer.add_child(_hover)
 	visible = false
 
 
@@ -206,24 +233,84 @@ func _path(civ_id: int) -> Dictionary:
 	return path
 
 
+func _show_hover(at: Vector2) -> void:
+	var text := _tooltip_at(at)
+	_hover.visible = text != ""
+	if text == "":
+		return
+	_hover_text.text = text
+	_hover.reset_size()
+	var spot := _canvas.get_global_mouse_position() + Vector2(18, 18)
+	var room := get_global_rect().end - _hover.size - Vector2(8, 8)
+	_hover.global_position = Vector2(minf(spot.x, room.x), minf(spot.y, room.y))  # kept inside the tree
+
+
+## What a tech does, in numbers (from its effects), what it costs, and who has it, each civ in its colour.
 func _tooltip_at(at: Vector2) -> String:
 	for tech_id: String in _rects:
 		if (_rects[tech_id] as Rect2).has_point(at):
 			var tech: Dictionary = _by_id[tech_id]
-			var lines: Array[String] = [str(tech["name"]), str(tech.get("description", ""))]
+			var lines: Array[String] = ["[b]%s[/b]" % tech["name"], "[color=#b8bec8]%s[/color]" % tech.get("description", "")]
+			var bonuses := _effects_text(tech.get("effects", {}))
+			if not bonuses.is_empty():
+				lines.append("[color=#8fd18f]" + "\n".join(bonuses) + "[/color]")
 			var cost: Dictionary = tech.get("cost", {})
 			if not cost.is_empty():
 				var parts: Array[String] = []
 				for res: String in cost:
 					parts.append("%d %s" % [int(cost[res]), res])
-				lines.append("Costs " + ", ".join(parts))
+				lines.append("[color=#8a93a0]Costs %s[/color]" % ", ".join(parts))
 			var who: Array[String] = []
 			for civ_id: int in _civs:
 				if _known.get(civ_id, {}).has(tech_id):
-					who.append(str(_civs[civ_id]["name"]))
+					who.append(_named(civ_id))
 			lines.append("Known to " + (", ".join(who) if not who.is_empty() else "nobody yet"))
 			for civ_id: int in _research:
 				if _research[civ_id]["id"] == tech_id:
-					lines.append("%s is learning it (%d%%)" % [_civs[civ_id]["name"], int(float(_research[civ_id]["progress"]) * 100.0)])
+					lines.append("%s is learning it (%d%%)" % [_named(civ_id), int(float(_research[civ_id]["progress"]) * 100.0)])
 			return "\n".join(lines)
 	return ""
+
+
+func _named(civ_id: int) -> String:
+	return "[color=#%s]%s[/color]" % [(_civs[civ_id]["color"] as Color).lightened(0.3).to_html(false), _civs[civ_id]["name"]]
+
+
+## A tech's effects in words and numbers: "+25% all yields", "+1 building slot".
+const PERCENT := {"growth": "growth", "science_mult": "research", "military": "army strength",
+	"build_speed": "building speed", "defense": "defence at home", "water_mult": "water", "commander_xp": "generals' experience",
+	"capture_speed": "capture speed", "casualties": "battle losses", "mobilization": "of the people under arms",
+	"soldier_cost": "soldiers' cost", "deal_fee": "trade fees", "demolition_refund": "back on demolition",
+	"water_use": "water drunk", "purification": "water from each coast tile"}
+const PLAIN := {"storage": "storage of every resource", "beds": "hospital beds per castle", "housing": "housing",
+	"bridges": "rivers crossed freely", "boats": "boats: lakes and the sea crossed", "tier": "troop tier",
+	"build_slots": "building slot", "commander_start": "level for new generals", "officer_appointment": "officers can be appointed",
+	"boat_range": "tiles of open water for boats", "villager_speed": "villager speed", "home_speed": "army speed at home",
+	"reinforce": "speed home to refit"}
+
+func _effects_text(effects: Dictionary) -> Array[String]:
+	var out: Array[String] = []
+	for key: String in effects:
+		var value: Variant = effects[key]
+		if value is Dictionary:
+			for res: String in value:
+				var amount := float(value[res])
+				var what := "all yields" if res == "all" else res
+				match key:
+					"yield_mult":
+						out.append("%s%d%% %s" % ["+" if amount >= 0 else "", roundi(amount * 100), what])
+					"income":
+						out.append("+%s %s a day" % [str(snappedf(amount, 0.1)), what])
+					"store":
+						out.append("+%d %s storage" % [roundi(amount), what])
+					_:
+						out.append("%s %s: %s" % [key, what, str(amount)])
+		elif PERCENT.has(key):
+			var amount := float(value)
+			out.append("%s%d%% %s" % ["+" if amount >= 0 else "", roundi(amount * 100), PERCENT[key]])
+		elif PLAIN.has(key):
+			var amount := float(value)
+			out.append("%s%s %s" % ["+" if amount >= 0 else "", str(snappedf(amount, 0.1)).trim_suffix(".0"), PLAIN[key]])
+		else:
+			out.append("%s: %s" % [key, str(value)])
+	return out

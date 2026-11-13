@@ -5,7 +5,6 @@ import pytest
 
 from civsim.civ import Building
 from civsim.config import SimConfig
-from civsim.diplomacy import rules
 from civsim.economy import produce, training_rate
 from civsim.economy import rules as economy
 from civsim.military import Army
@@ -162,7 +161,6 @@ def test_allies_make_for_the_same_capital_and_shorten_each_others_sieges(sim):
     assert military._allied_targets(a, b) == {target}
 
     region = world.regions[world.capital_tiles[target]]
-    region.held_by, region.hold = c.id, 10
     beside = next(t for t in world.neighbors(target) if not world.is_water(t))
     mine = Army(military.next_id(), a.id, beside, "field", target_civ=b.id, units={"spearman": 5000.0},
                 state="marching", path=[target], siege_progress=1000.0, path_tick=10**9)
@@ -170,10 +168,8 @@ def test_allies_make_for_the_same_capital_and_shorten_each_others_sieges(sim):
     a.soldiers += 5000
     for civ in (a, b):
         military._sync(civ)
-    for tick in range(10, 20):
-        military._besiege(a, mine, tick, [])
-    assert region.held_by == c.id and region.hold == 15, "half a day's hold for every day the ally stands in the breach"
-    assert region.hold < rules.CAPITAL_HOLD and region.owner == b.id
+    military._besiege(a, mine, 10, [])
+    assert region.owner == a.id, "a castle breached is a castle taken, the same day"
     assert warfare.JOINT_PULL > 0
 
 

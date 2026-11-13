@@ -70,6 +70,10 @@ ICONS = {
     "rings": (f'<circle cx="9" cy="13" r="5.2" fill="none" stroke="{GOLD}" stroke-width="2"/>'
               f'<circle cx="15" cy="13" r="5.2" fill="none" stroke="{GOLD}" stroke-width="2"/>'
               f'<path d="M15 5 L16.5 6.8 L15 8.6 L13.5 6.8 Z" fill="{BLUE}"/>'),
+    # The chronicle: an open scroll with lines of writing.
+    "chronicle": (f'<path d="M5 5 H17 Q19 5 19 7 V19 H7 Q5 19 5 17 Z" fill="{INK}"/>'
+                  f'<path d="M8 9 H16 M8 12 H16 M8 15 H13" stroke="#3a3530" stroke-width="1.4" stroke-linecap="round"/>'
+                  f'<circle cx="19" cy="19" r="2" fill="{WOOD}"/><circle cx="5" cy="5" r="2" fill="{WOOD}"/>'),
     "close": f'<path d="M6 6 L18 18 M18 6 L6 18" stroke="{INK}" stroke-width="2.4" stroke-linecap="round"/>',
 }
 
