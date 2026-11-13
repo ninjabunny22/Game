@@ -1,6 +1,6 @@
 # CivSim status
 
-Last updated: 2026-11-12, branch `menu-and-civ-logic`, with the nine drawn maps. Read this
+Last updated: 2026-11-13, branch `menu-and-civ-logic`, with the nine drawn maps. Read this
 first when resuming work.
 
 ## Stage
@@ -60,14 +60,35 @@ style). Balance and timing have not had their dedicated pass yet.
 
 ## In progress
 
-Finishing the to-do list (see ROADMAP "Immediate priorities"):
-- done: victory by region points (80% and half the regions), the strategist playing to it,
-  rallies called when an ally can reach the gathering city, the timing table;
-- league tuning for entertaining games: 10 rounds kept PREP_MIN 29, WALLS_FREE 3.45 and
-  PLAN_ABANDON 0.765 (watchability 0.873 → 0.921 over 6 games);
-- next: the balance batch on all nine maps (approved), then fixes for the slots it flags;
-- after that: the rest of the stabilisation review (the unused models are gone and the root
-  is tidied).
+The to-do list is finished (victory by points, the strategist playing to it, rallies, the
+timing table, league tuning, the balance batch). Next is the stabilisation review's bug pass;
+its first round fixed two crashes from malformed commands.
+
+## Balance batch (2026-11-13)
+
+5 games per civ for every map and civ count (`civsim.balance`, 90% intervals). A slot is
+flagged when its win rate is off by more than 15 points and outside its interval; with about
+70 slots, a few flags are expected by chance.
+
+| Map | Civs: wins per slot |
+|---|---|
+| Gilded Isle | 2: 4/6 · 3: 3/4/8 · 4: 6/4/7/3 |
+| Confluence | 2: 5/5 · 3: 6/5/4 |
+| Highgate | 2: 5/5 · 4: NE 4, NW 6, SE 8, SW 2 (SW falls most; an earlier run had NW 10) |
+| Tidewalk Isles | 2: 6/4 · 3: 6/3/6 · 4: Corrie 9, Dunlin 1 (flagged) · 5: 6/5/3/5/6 |
+| Emberwaste | 2: 6/4 · 3: S4 9 of 15 (flagged: beside the empty slots) · 4: 8/3/7/2 · 5: 7/3/5/3/7 |
+| The Divide | 2: 5/5 · 4: 4/5/5/6 · 5: 5/5/4/7/4 |
+| Five Gates | 2: 6/4 · 3: W4 1 of 15 (flagged) · 4: 6/6/5/3 · 5: W1 1 of 25 (flagged) |
+| Long March | 2: 6/4 · 4: 4/6/4/6 |
+| Narrow Sea | 2: 7/3 · 3: 6/6/3 · 4 (with the Skerry): 5/4/5/6 |
+
+- **Changed from it:** the Narrow Sea's Skerry became the east's Neck (a fortress with a mine
+  on causeways; before, the two western civs won 17 of 20 four-civ games); more iron in its
+  south; the Long March offers 2 or 4 civs (the Middle won 11 of 15 and 11 of 25 with 3 and 5);
+  the Narrow Sea offers 2–4 (a fifth civ in the Neck won 10 of 25 on both maps).
+- **Leans left to watch:** Tidewalk with 4 (Dunlin weak, from which way its causeways turn),
+  Highgate with 4 (SW, cause unknown), Five Gates (different wedges flagged at 3 and 5 civs
+  though the wedges measure alike: probably chance), Emberwaste with 3 (S4's room).
 
 `KayKit_ResourceBits_1.0_FREE` is unused and now kept with the other raw packs in `art/kaykit/`;
 the old custom .glb files that lay at the root are in `art/legacy_models/` (both ignored by git).
@@ -80,7 +101,6 @@ the old custom .glb files that lay at the root are in `art/legacy_models/` (both
 - **Labels crowd** from afar where a rally, a siege and a city meet.
 - **The follow camera** (`CIVSIM_FOLLOW`) doesn't always centre on the army it picks.
 - **Trees** in forests can still partly hide figures at close zoom.
-- **Rallies are rare** (0–3 called a game).
 - **Timing:** not yet tuned as a whole (see ROADMAP).
 - **Water crossings are mid-game:** armies need a harbour, and harbours need Navigation
   (era 4), so island prizes fall late or not at all (in the first Gilded Isle check game the
@@ -96,7 +116,7 @@ the old custom .glb files that lay at the root are in `art/legacy_models/` (both
 
 ## Tests
 
-- Python: about **500 pass** (about 8 minutes). No known failures.
+- Python: **517 pass** (about 8½ minutes). No known failures.
 - Viewer asset check: `assets ok`.
 - Timing check (one game per size, utility brain, points victory, new rally rule):
   - Confluence (3 civs): domination on day 3,189 of 6,000, first war day 471, 9 wars, 4 rallies;
@@ -108,6 +128,9 @@ the old custom .glb files that lay at the root are in `art/legacy_models/` (both
 
 | Commit | Change |
 |---|---|
+| `874dde0` | Malformed commands refused instead of crashing |
+| `c22bcbc` | The Narrow Sea's Skerry crossing; Narrow Sea 2–4 civs |
+| `457c9dc`, `1de0466`, `9f27b23`, `9fe4b7b`, `dbe180b` | Balance fixes from the batch; eight-way movement |
 | `826555f` | Victory by region points; the strategist plays to the race |
 | `42ff52f` | About 30% faster simulation, identical games |
 | `cc239e8` | Nobody walks on water (bridges only) or over mountains (passes only) |
@@ -122,5 +145,6 @@ the old custom .glb files that lay at the root are in `art/legacy_models/` (both
 
 ## Immediate next steps
 
-1. The balance batch on all nine maps; fix or drop the start setups it flags.
-2. The rest of the stabilisation review: a pass for bugs.
+1. The rest of the stabilisation review: the bug pass (two crashes fixed so far), tests.
+2. Re-measure the leans above with fresh seeds (`civsim.balance --first-seed`) before changing
+   those maps.

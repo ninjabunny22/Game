@@ -65,7 +65,7 @@ about structure and data flow.
 | `strategy/` | what each region is worth to each civ (`geography.py`), the context shown to a strategist (`context.py`), validating replies (`checkin.py`), brains (`utility.py`, `brain.py`) | reads everything; writes only through replies |
 | `ruler.py` | a human ruler's orders and proposals; overrides the strategist for that civ | simulation |
 | `bridge/` | server and wire format | simulation |
-| `config.py` | game setup, the list of maps, difficulty | none |
+| `config.py` | game setup, the list of maps and the civ counts each takes (`civ_counts`), difficulty | none |
 | `survey.py`, `league.py` | measurement tools: full games, strategist comparison | simulation |
 | `mapmaker.py`, `fairness.py` | build, check, save and draw the drawn maps; compare their start slots by geography | map, strategy.geography |
 
@@ -98,6 +98,13 @@ content; code reads it through `economy/buildings.py`, `tech/tree.py` and `milit
   campaigns against the natives (`_campaign_target`), war targets (`_plan`), harbour sites
   (`civ.harbour_goal` → `find_site`) and the strategist's context (`prize`, `prizes`), so all
   of them want the same places for the same reasons.
+- **Movement, one rule:** `WorldMap.walkable` says where feet can go (not peaks, not
+  mountain outside a pass, not water unless a bridge spans it); `crossing_cost` prices a step
+  and `pathfinding.move_cost` adds diagonals (√2, no cutting corners). Armies, villagers and
+  route searches all go through them. Passes are carved when a map is built
+  (`map/passes.carve_passes`); bridges come from a design's `causeways`.
+- **Victory by points:** `Simulation.points_held` and `domination_target` (80% of the map's
+  region points and half its regions); `score()` counts the same points.
 - **Research** changes the modifiers, such as troop tier, soldier cost and hospital beds,
   which every system reads.
 

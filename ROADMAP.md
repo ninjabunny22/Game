@@ -11,13 +11,11 @@ state is in CIVSIM_STATUS.md.
 
 ## Immediate priorities (agreed)
 
-0. **The nine drawn maps: finish judging them.** They are built and playable (see
-   CIVSIM_STATUS.md). Still to do:
-   - **balance batch** (`civsim.balance`), about 70 games per map (approved); then adjust the
-     maps whose slots it flags;
-   - ~~victory by region points~~ done: 80% of the map's points and at least half the regions;
-   - decide whether to keep the uneven setups the fairness report flags (Highgate with 3,
-     the rings of five with 3 or 4, The Divide with 3 or 5, the Narrow Sea's Neck slot).
+0. ~~**The nine drawn maps: judge them by play.**~~ Done: the balance batch (5 games per civ,
+   every map and civ count) is in CIVSIM_STATUS.md; victory is by region points (80% and half
+   the regions). Fixed from it: eight-way movement, centrality, Gilded Isle's 4-civ homes,
+   The Divide's mines, the Long March's corners, the Narrow Sea's Skerry; dropped: the Long
+   March with 3 or 5 civs, the Narrow Sea with 5. Left as leans to watch (see STATUS).
 1. **Timing pass.** The durations are in one table (README "Timing"). Measured with the new
    victory rule: first wars on days 400–471, games running to 53–100% of the last day. Rallies
    were never called (an ally had to be near the caller's capital); now they are, when an ally
