@@ -79,3 +79,6 @@ state is in CIVSIM_STATUS.md.
 - **Next up (asked for 2026-11-13):** name each ruling house after the civ it rules ("House
   Ossyria", "House Iskandar") instead of its board name (Valedorn, Silvermere...), and a rebel's
   house after the civ it founds. Portraits stay the same; only the displayed house name changes.
+- **To do (asked for 2026-11-13): siege and war animations.** How generals and soldiers look
+  and where they face in battles and sieges. First fix them all in a custom test scene (like
+  the picture scenes in `godot/tests/`), then check them in real games.
