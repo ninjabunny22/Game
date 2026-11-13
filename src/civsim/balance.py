@@ -10,6 +10,7 @@ first and when. Games run to a victory or the last day.
 """
 
 import argparse
+import json
 import math
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
@@ -17,6 +18,7 @@ from concurrent.futures import ProcessPoolExecutor
 from .config import MAPS, game_config
 
 SNAPSHOTS = (1000, 3000)
+FALLS_MORE = 0.25  # a slot eliminated this much more often than the map's average is marked
 
 
 def _size_of(map_id: str) -> str:
@@ -80,8 +82,11 @@ def summarise(map_id: str, civs: int, games: list[dict]) -> list[str]:
         flag = ""
         if abs(wins / n - expected) > 0.15 and not lo <= expected <= hi:
             flag = "win rate"
-        if fallen / n > 0.4:
-            flag = (flag + ", " if flag else "") + "often falls"
+        # In a game one civ wins, most of the others often fall: a slot is marked only if it falls
+        # clearly more often than the map's slots do on average.
+        mean_fallen = sum(len(g["dead"]) for g in games) / n / max(1, len(slots))
+        if fallen / n > mean_fallen + FALLS_MORE:
+            flag = (flag + ", " if flag else "") + "falls more often"
         lines.append(f"  {slot:<12}{wins:>6}{f'{lo:.0%}-{hi:.0%}':>16}{mean(1000):>7.1f}{mean(3000):>7.1f}{end:>6.1f}"
                      f"{fallen:>8}  {flag}")
     taken = defaultdict(list)
@@ -108,10 +113,14 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--games", type=int, default=10)
     parser.add_argument("--first-seed", type=int, default=1)
     parser.add_argument("--jobs", type=int, default=4)
+    parser.add_argument("--save", metavar="FILE", help="also write every game's result here, as JSON")
     args = parser.parse_args(argv)
     seeds = range(args.first_seed, args.first_seed + args.games)
     with ProcessPoolExecutor(args.jobs) as pool:
         games = list(pool.map(play, [args.map] * args.games, [args.civs] * args.games, seeds))
+    if args.save:
+        with open(args.save, "w") as f:
+            json.dump(games, f)
     print("\n".join(summarise(args.map, args.civs, games)))
 
 

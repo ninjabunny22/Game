@@ -24,3 +24,15 @@ def test_the_summary_flags_a_slot_that_always_wins():
     lines = summarise("somewhere", 2, games)
     assert any(line.strip().startswith("A") and "win rate" in line for line in lines)
     assert any("prize Keep: taken in 20/20" in line for line in lines)
+
+
+def test_falling_is_judged_against_the_maps_other_slots():
+    base = {"kind": "domination", "day": 3000, "first_war": 500, "snaps": {}, "prizes": {}}
+    games = []
+    for s in range(20):
+        dead = ["B", "C"] if s % 2 else ["C", "D"]  # in every game two of four fall; C always
+        games.append(dict(base, seed=s, winner="A" if s % 2 else "B",
+                          end={"A": 6, "B": 2, "C": 0, "D": 1}, dead=dead))
+    lines = summarise("somewhere", 4, games)
+    flagged = {line.split()[0] for line in lines if "falls more often" in line}
+    assert flagged == {"C"}

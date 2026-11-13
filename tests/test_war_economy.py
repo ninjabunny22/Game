@@ -332,3 +332,18 @@ def test_a_civ_calls_a_rally_when_an_ally_could_reach_where_it_would_gather(alli
     military._rallies(20, events)
     assert military.rally_led_by(a.id) is not None or military.rally_led_by(c.id) is not None
     assert any("calls a rally" in e["text"] for e in events)
+
+
+def test_a_rally_whose_army_is_gone_breaks_up_without_trouble(allies):
+    sim, a, b, c, armies = allies
+    military = sim.military
+    rally = military.start_rally(a, b.id, 10, [])
+    military.join_rally(c, rally, 11, [])
+    for army in armies.values():
+        army.tile, army.path = rally.city, []
+    military._rallies(rally.departs, [])
+    head = military._find_army(rally.army)
+    a.armies.remove(head)  # destroyed on the march
+    events = []
+    military._rallies(rally.departs + 1, events)
+    assert rally not in military.rallies and any("breaks up" in e["text"] for e in events)

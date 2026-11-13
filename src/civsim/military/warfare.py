@@ -851,7 +851,7 @@ class Military:
                 owner.soldiers += count
                 owner.population += count
                 home = theirs if theirs is not None else owner.garrison
-                if home is not None:
+                if home is not None and back:  # nothing comes back from a rally whose army is gone
                     home.add(back, head.tier)
                 if theirs is not None and head is not None:
                     theirs.tile, theirs.state, theirs.path = head.tile, "returning", []
