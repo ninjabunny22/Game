@@ -37,11 +37,11 @@
 		{
 			"bufferView":0,
 			"componentType":5126,
-			"count":1416,
+			"count":1415,
 			"max":[
 				0.44999998807907104,
 				2.1100001335144043,
-				1.2145967483520508
+				1.3517794609069824
 			],
 			"min":[
 				-0.44999998807907104,
@@ -53,51 +53,51 @@
 		{
 			"bufferView":1,
 			"componentType":5126,
-			"count":1416,
+			"count":1415,
 			"type":"VEC3"
 		},
 		{
 			"bufferView":2,
 			"componentType":5126,
-			"count":1416,
+			"count":1415,
 			"type":"VEC2"
 		},
 		{
 			"bufferView":3,
 			"componentType":5123,
-			"count":2184,
+			"count":2181,
 			"type":"SCALAR"
 		}
 	],
 	"bufferViews":[
 		{
 			"buffer":0,
-			"byteLength":16992,
+			"byteLength":16980,
 			"byteOffset":0,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":16992,
-			"byteOffset":16992,
+			"byteLength":16980,
+			"byteOffset":16980,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":11328,
-			"byteOffset":33984,
+			"byteLength":11320,
+			"byteOffset":33960,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":4368,
-			"byteOffset":45312,
+			"byteLength":4362,
+			"byteOffset":45280,
 			"target":34963
 		}
 	],
 	"buffers":[
 		{
-			"byteLength":49680,
+			"byteLength":49644,
 			"uri":"civsim_ship.bin"
 		}
 	]

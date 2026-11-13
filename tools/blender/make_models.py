@@ -146,6 +146,46 @@ class Model:
             self.bm.faces.new((oa[-1], ob[-1], ib[-1], ia[-1]))  # ... and starboard
         self._add([v for ring in inner for v in ring], lining, Matrix.Identity(4), shade)
 
+    def deck(self, cell, sections, z, inset=0.1, shade=0.3):
+        """A deck at height `z` inside a hull lofted through `sections` with a lining at `inset`:
+        cut to the hull's own outline there, coming to a point where the keel rises to meet it."""
+        def half_width(w, keel, top):
+            w, keel = w * (1.0 - inset), keel + inset * (top - keel)
+            mid = keel + (top - keel) * 0.45
+            profile = [(0.0, keel), (w * 0.5, keel + (mid - keel) * 0.25), (w * 0.85, mid),
+                       (w * 0.98, mid + (top - mid) * 0.5), (w, top)]
+            for (x0, z0), (x1, z1) in zip(profile, profile[1:]):
+                if z0 <= z <= z1:
+                    return x0 + (x1 - x0) * (z - z0) / max(z1 - z0, 1e-9)
+            return w if z > top else None  # None: the keel is above the deck here
+
+        outline = []  # (y, half-width), bow to stern
+        previous = None
+        for y, w, keel, top in sections:
+            width = half_width(w, keel, top)
+            for other, here in ((previous, (y, w, keel, top)), ((y, w, keel, top), previous)):
+                # Where the keel crosses the deck between two sections, the deck comes to a point.
+                if other is not None and here is not None and (half_width(*other[1:]) is None) != (width is None) \
+                        and half_width(*here[1:]) is not None and other[2] != here[2]:
+                    t = (z - (other[2] + inset * (other[3] - other[2]))) / (
+                        (here[2] + inset * (here[3] - here[2])) - (other[2] + inset * (other[3] - other[2])))
+                    outline.append((other[0] + (here[0] - other[0]) * min(max(t, 0.0), 1.0), 0.0))
+            if width is not None:
+                outline.append((y, width * 0.99))
+            previous = (y, w, keel, top)
+        outline.sort()
+        verts = []
+        for (y0, w0), (y1, w1) in zip(outline, outline[1:]):
+            corners = [(-w0, y0, z), (w0, y0, z), (w1, y1, z), (-w1, y1, z)]
+            if w0 == 0.0:
+                corners = corners[1:]
+            elif w1 == 0.0:
+                corners = corners[:3]
+            face = [self.bm.verts.new(c) for c in corners]
+            self.bm.faces.new(face)  # wound to face up
+            verts += face
+        self._add(verts, cell, Matrix.Identity(4), shade)
+
     def hull(self, cell, length, width, height, at=(0, 0, 0), shade=0.7):
         """A ship's hull, bow toward -y (forward in Godot), stern at +y."""
         l, w, h = length / 2, width / 2, height
@@ -229,15 +269,16 @@ def ship() -> None:
     m = Model(HEX)
     # The hull, lofted through cross-sections from bow (-y) to stern (+y):
     # (y, half-width, keel height, gunwale height).
-    m.loft("clay", [(-1.0, 0.04, 0.42, 0.62), (-0.82, 0.22, 0.12, 0.5), (-0.5, 0.36, 0.02, 0.44),
-                    (0.0, 0.4, 0.0, 0.42), (0.45, 0.37, 0.03, 0.5), (0.78, 0.3, 0.12, 0.7),
-                    (0.95, 0.24, 0.25, 0.74)], lining="brick", inset=0.07)
-    m.box("plank", (0.6, 1.5, 0.04), at=(0, -0.05, 0.36), shade=0.3)  # the deck
+    sections = [(-1.0, 0.04, 0.42, 0.62), (-0.82, 0.22, 0.12, 0.5), (-0.5, 0.36, 0.02, 0.44),
+                (0.0, 0.4, 0.0, 0.42), (0.45, 0.37, 0.03, 0.5), (0.78, 0.3, 0.12, 0.7),
+                (0.95, 0.24, 0.25, 0.74)]
+    m.loft("clay", sections, lining="brick", inset=0.07)
+    m.deck("plank", sections, 0.38, inset=0.07)  # cut to the hull, so no corner shows through it
     m.box("brick", (0.62, 0.05, 0.06), at=(0, -0.58, 0.43))  # a wale across the bow
     m.box("clay", (0.5, 0.42, 0.24), at=(0, 0.72, 0.5))  # the stern castle
     m.box("brick", (0.54, 0.46, 0.05), at=(0, 0.72, 0.74))  # its rail
     m.box("water", (0.3, 0.02, 0.1), at=(0, 0.935, 0.55), shade=0.2)  # its windows, astern
-    m.box("timber", (0.06, 0.6, 0.06), at=(0, -1.12, 0.6), tilt=-1.25)  # the bowsprit
+    m.box("timber", (0.06, 0.62, 0.06), at=(0, -1.07, 0.6), tilt=-0.43)  # the bowsprit, rising forward from the foredeck
     # Masts: (y, height, sails as (width, height) from the bottom up).
     masts = [(-0.48, 1.35, [(0.62, 0.36), (0.5, 0.3)]),
              (0.05, 1.75, [(0.82, 0.46), (0.66, 0.36)]),
