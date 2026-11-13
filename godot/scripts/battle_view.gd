@@ -4,7 +4,7 @@ extends Control
 ##
 ## The box: a headline ("General Aldric (Zhanlu) assaults Cragford with 180 soldiers"), a bar
 ## per side (soldiers left of what it started with, in its colour, with today's losses), for a
-## siege a breach bar and then a "held N / 100 days" bar, and the last notes of the fight.
+## siege a breach bar and then a "held N / 60 days" bar, and the last notes of the fight.
 ## From afar a fight is only a small crossed-swords marker: clicking it opens its box. A box
 ## stays a few seconds once its fight is over, showing how it ended.
 ## Everything here comes from the simulation's "engagements", sent only while spectating.

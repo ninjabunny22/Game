@@ -37,7 +37,7 @@ DISTRUST_RATE_FACTOR = 0.5  # and is sent only this share of what its partner of
 WAR_COST = 100  # diplomacy points: about two check-ins' worth
 # There is no minimum army for declaring war: the strategist judges when it can win. What it
 # must keep at home is the home guard: enough to hold off the strongest other civ in reach.
-HOME_GUARD = 0.6  # ... as a share of that civ's strength (defenders fight on their own ground)
+HOME_GUARD = 0.4  # ... as a share of that civ's strength (defenders fight on their own ground)
 REACH = 4  # max gap, in tiles, across which two territories can fight
 MIN_WAR = 50  # ticks before a war can end by mutual consent
 MAX_WAR = 400  # ticks after which both sides are exhausted
@@ -95,7 +95,7 @@ MUSTER = 0.3  # share of full mobilisation raised while a war is only threatened
 
 # Regions and the native faction
 CAPITAL_DEFENSE = 3.0  # a region capital costs this many times its terrain to capture
-CAPITAL_HOLD = 100  # ticks an army that has broken into a civ's capital must hold it before the region falls
+CAPITAL_HOLD = 60  # ticks an army that has broken into a civ's capital must hold it before the region falls
 NATIVE_GARRISON = 6.0  # defenders of a neutral capital at the start, in soldier-equivalents ...
 NATIVE_GROWTH = 0.012  # ... growing by this much per tick ...
 NATIVE_GARRISON_MAX = 60.0  # ... up to this: weaker than a civ's army at any stage, but never trivial

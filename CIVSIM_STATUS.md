@@ -35,7 +35,7 @@ style). Balance and timing have not had their dedicated pass yet.
   castle hospital beds.
 - **Military:** trained and paid soldiers, up to 5 field armies per civ under commanders with
   limited capacity, garrisons, unit counters, battles, routs, pursuit, captured commanders,
-  sieges with a 100-day capital hold, rallies between allies, reinforcing an ally's
+  sieges with a 60-day capital hold, rallies between allies, reinforcing an ally's
   capital, generals leaving part of their army to hold a threatened castle of their own,
   refitting only at home, hospitals (10-day healing), scouting.
 - **Diplomacy:** stances, alliances (wear out after 100 days of peace), betrayal, peace terms
@@ -74,7 +74,10 @@ Plan (agreed 2026-11-13): war on the AI's own judgement with a home guard; fight
 - **War on the AI's own judgement:** no minimum army to declare war; a home guard (enough to
   hold off the strongest other civ in reach) stays home. Three check games: first wars on days
   631 (Highgate), 427 (Emberwaste), 387 (Five Gates); 19, 33 and 35 wars; all ended on score.
-  Watch for stalemates: in Emberwaste and Five Gates nothing changed hands for thousands of days.
+  Tuned against stalemates (3 games each): home guard 0.6 → 0.4 and the capital hold 100 → 60
+  days. Castles taken in wars went from a handful to 5 / 8 / 5 (Highgate / Emberwaste / Five
+  Gates). Still open: once two or three big civs remain they rarely take land from each other
+  (Highgate after day ~3,900, Five Gates after ~4,700); all three games ended on score.
 - **Fights you can follow** (boxes over battles and sieges, a battle alert), the **icon bar**,
   and the **tech tree** viewer, all while spectating.
 

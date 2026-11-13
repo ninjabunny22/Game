@@ -78,7 +78,7 @@ The overlay is built for watching:
 - **Fights you can follow** (while watching, not when you rule a civ). Over every battle,
   siege or assault on a native capital on screen floats a box: a headline ("General Varen of
   Zhanlu assaults Dunlinby with 122 soldiers"), a bar per side (soldiers left of what it
-  brought, today's losses), for a siege the breach and then the 100-day hold, and the last
+  brought, today's losses), for a siege the breach and then the 60-day hold, and the last
   notes of the fight, a line a day. From afar a fight is a crossed-swords marker; click it to
   open its box. When fights are going on and none is on screen, a crossed-swords button at
   the top says how many; click it to go to the largest, again for the next. A finished
@@ -90,7 +90,7 @@ The overlay is built for watching:
 - **Text size.** The whole overlay is drawn 35% larger than Godot's default;
   `[` and `]` make it smaller or larger while watching.
 - **Sieges.** A civ's capital does not fall the moment an army breaks in: the army
-  has to hold it for 100 days. The map shows who holds it and how far along they are,
+  has to hold it for 60 days. The map shows who holds it and how far along they are,
   and the defender's armies drop everything to drive them out.
 - **Peace on terms.** A side ahead in a war (at least one more castle taken) is paid a quarter of
   the loser's stores when it ends, and a winner whose advance has stalled accepts an offer
@@ -373,7 +373,7 @@ in `Params` in `strategy/utility.py`; rules in `diplomacy/rules.py`, `military/w
 | Peace terms (tribute) listened to after | 150 | `TERMS_AFTER` |
 | A war is kept up only from strength after | 300 | `WAR_WEARY_TICKS` |
 | Both sides exhausted after | 400 | `MAX_WAR` |
-| A broken-into capital falls if held | 100 | `CAPITAL_HOLD` |
+| A broken-into capital falls if held | 60 | `CAPITAL_HOLD` |
 | Truce after peace / after a surrender or tribute | 50 / 150 | `TRUCE`, `SURRENDER_TRUCE`, `DEMAND_TRUCE` |
 | Sickness possible after this long at war; lasts; rest after | 250 / 150 / 400 | `SICKNESS_*` |
 | An alliance is kept at least; lapses after this long at peace; re-allying waits | 100 / 100 / 300 | `ALLIANCE_MIN`, `ALLIANCE_WEARS`, `ALLIANCE_REST` |
@@ -580,7 +580,7 @@ them.
   mobilises up to 35% of the population as soldiers. Wars end when a civ's own capital
   falls, when neither side is aggressive (after 50 ticks), or after 400 ticks.
 - **The home guard.** A civ keeps enough soldiers at home to hold off the strongest other civ
-  in reach that is not its ally: 0.6 of that civ's strength, counted in full if it is at war
+  in reach that is not its ally: 0.4 of that civ's strength, counted in full if it is at war
   with it or set on attacking it, and at half otherwise (`Diplomacy.home_guard`). Armies
   sent to war and expeditions against the natives leave at least that behind, and never less
   than a fifth of the army. The strategist counts only the soldiers above it when it judges
@@ -638,7 +638,7 @@ its soldiers) between them, each under a commander.
 - **Taking ground.** Open enemy land changes hands only with its castle. An aggressor's
   army marches through it to the nearest capital its enemy holds and lays siege there, by
   the phase 3 capture rule against the local militia and the garrison; a capital costs
-  three times its terrain to break into, the army must then hold it for 100 days, and when
+  three times its terrain to break into, the army must then hold it for 60 days, and when
   it falls the whole region goes with it: every tile, building, store and villager. A civ that loses its
   own capital pays half its stock as tribute, moves its court to another
   capital it holds, and gets a 300-tick truce. A civ with no capital left is
