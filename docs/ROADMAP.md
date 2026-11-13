@@ -133,3 +133,10 @@ state is in CIVSIM_STATUS.md.
   against the first. Tune the strategist (strategy/utility.py: the runaway-leader and
   alliance weights) so the runners-up league against the leader more often and fight each
   other less, without changing the game's mechanics. Check in 3 games.
+- **To do (asked for 2026-11-13): at peace, take the neutral land nearby.** A civ at war with
+  nobody should make capturing the native regions near it a priority: more soldiers raised
+  for it and sent sooner. Campaigns already take the nearest regions first
+  (`Military._campaign_target`, region rings) but only with soldiers spare after the home
+  guard (`keep_home`), and only when the strategist's wish for land is high enough
+  (strategy/utility.py). Raise that priority while at peace, without changing the rules of
+  campaigns, and check in 3 games how much sooner neutral land is taken.
