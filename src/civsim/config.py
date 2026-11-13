@@ -63,8 +63,8 @@ MAPS = {
                "civs": (2, 4), "counts": (2, 4), "best": "4",
                "premise": "A long continent: neighbours fight, the far ends are safe, and the Crossroads lies in the middle."},
               {"id": "narrow_sea", "name": "The Narrow Sea", "file": True, "width": 176, "height": 144,
-               "civs": (2, 5), "best": "2 or 4",
-               "premise": "Two continents across an inland sea, joined only by the Wyrm's Neck; gold lies on the Drowned Crown."}],
+               "civs": (2, 4), "best": "2 or 4",
+               "premise": "Two continents across an inland sea, joined by the Wyrm's Neck in the west and the Skerry's causeways in the east; gold lies on the Drowned Crown."}],
 }
 
 

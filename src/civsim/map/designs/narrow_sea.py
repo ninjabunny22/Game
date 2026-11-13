@@ -1,12 +1,12 @@
 """The Narrow Sea: two continents across an inland sea. Frostmark in the north (pine, iron,
 fish) and Sunmarch in the south (grain, stone). In the west they are joined by
-the Wyrm's Neck, a narrow isthmus with a native fortress; in the east two small isles step across
-the strait; in mid-sea lies the Drowned Crown with two gold mines, too far out for settlers
+the Wyrm's Neck, a narrow isthmus with a native fortress; in the east causeways cross the strait by
+the Skerry, a second fortress; in mid-sea lies the Drowned Crown with two gold mines, too far out for settlers
 before Navigation."""
 
 from ..biomes import Biome
 from ..blueprint import Blueprint, RegionSpec
-from ..shapes import Circle, Polygon, Rect
+from ..shapes import Band, Circle, Polygon, Rect
 
 W, H = 176, 144
 COLS = 7
@@ -61,7 +61,9 @@ def blueprint() -> Blueprint:
         deposits.append(("game", (mx + 4, 40), 4))
         zones.append((Circle(mx - 4.5, 119.5, 3.2), Biome.HILLS))
         deposits.append(("stone", (mx - 5, 119), 5))
-        deposits.append(("iron", (mx - 3, 121), 2))  # the south is short of iron, not without it
+        # The south is short of iron, not without it (with veins of two, the north won 8 of 10
+        # two-civ games: iron arms soldiers).
+        deposits.append(("iron", (mx - 3, 121), 3))
         deposits.append(("fertile_soil", (mx + 4, 104), 8))
         deposits.append(("fertile_soil", (mx - 6, 130), 6))
     regions += [
@@ -69,31 +71,36 @@ def blueprint() -> Blueprint:
         RegionSpec("wyrms_neck", "The Wyrm's Neck", "Wyrmhold", (14, 72), Rect(NECK_X[0] - 6, 67, NECK_X[1], 77),
                    strength=2.0, defects=False, tags=("neck",)),
         RegionSpec("neck_south", "Neck South", "Southgate", (14, 82), Rect(NECK_X[0] - 6, 77, NECK_X[1], 86)),
-        RegionSpec("skerry", "The Skerry", "Skerryhaven", (149, 71), Circle(150.0, 72.0, 6.0)),
+        # The Skerry is the east's Neck: a fortress with a mine on the causeways across the strait
+        # (with the Neck the only way over on foot, the two western civs won 17 of 20 four-civ games).
+        RegionSpec("skerry", "The Skerry", "Skerryhaven", (149, 71), Circle(150.0, 72.0, 6.0),
+                   strength=2.0, defects=False, tags=("neck",)),
         RegionSpec("holm", "The Holm", "Holmhaven", (162, 71), Circle(163.0, 72.0, 6.0)),
         RegionSpec("drowned_crown", "The Drowned Crown", "Crownwater", (88, 72), Circle(88.0, 72.0, 9.0),
                    strength=2.0, defects=False, tags=("prize",)),
     ]
     links += [("neck_north", _k(NAMES_N[0][1]), "land"), ("neck_north", "wyrms_neck", "neck"),
               ("wyrms_neck", "neck_south", "neck"), ("neck_south", _k(NAMES_S[0][1]), "land"),
-              ("skerry", _k(NAMES_N[6][1]), "sea:6"), ("skerry", _k(NAMES_S[6][1]), "sea:6"),
+              ("skerry", _k(NAMES_N[6][1]), "causeway"), ("skerry", _k(NAMES_S[6][1]), "causeway"),
               ("holm", _k(NAMES_N[6][1]), "sea:6"), ("holm", _k(NAMES_S[6][1]), "sea:6"), ("skerry", "holm", "sea:6"),
               ("drowned_crown", _k(NAMES_N[3][1]), "sea:10"), ("drowned_crown", _k(NAMES_S[3][1]), "sea:10")]
+    shallows = [Band(((150, 63), (150, 70)), 2.6), Band(((150, 74), (150, 81)), 2.6)]
+    causeways = [[(150, 63), (150, 70)], [(150, 74), (150, 81)]]
     zones.append((Rect(0, 0, W, 13), Biome.TUNDRA))
     zones.append((Rect(NECK_X[0], 67, NECK_X[1], 77), Biome.HILLS))
     patches += [(Rect(0, 13, W, 58), Biome.FOREST, 0.42), (Rect(0, 86, W, H), Biome.FOREST, 0.12)]
     return Blueprint(
         id="narrow_sea", name="The Narrow Sea", width=W, height=H, seed=7303,
-        premise="Two continents across an inland sea, joined only by the Wyrm's Neck; gold lies on the Drowned Crown.",
+        premise="Two continents across an inland sea, joined by the Wyrm's Neck in the west and the Skerry's causeways in the east; gold lies on the Drowned Crown.",
         best="2 or 4",
         land=[north, south, neck] + isles, coast_noise=1.3,
         protect=[Rect(0, 52, 30, 92), Rect(136, 56, W, 88), Circle(88.0, 72.0, 8.0)],
         zones=zones, patches=patches, deposits=deposits,
-        scatter=[("fish", 34, None)], mines=[(13, 70), (86, 70), (90, 74)],
+        scatter=[("fish", 34, None)], mines=[(13, 70), (151, 73), (86, 70), (90, 74)],
+        shallows=shallows, causeways=causeways,
         regions=regions, links=links,
         starts={"NW": (_k(NAMES_N[1][1]), _k(NAMES_N[1][0])), "NE": (_k(NAMES_N[5][1]), _k(NAMES_N[5][0])),
-                "SW": (_k(NAMES_S[1][1]), _k(NAMES_S[1][0])), "SE": (_k(NAMES_S[5][1]), _k(NAMES_S[5][0])),
-                "NeckN": ("wyrms_neck", "neck_north"), "NeckS": ("wyrms_neck", "neck_south")},
-        sets={2: ["NW", "SW"], 3: ["NW", "NE", "SW"], 4: ["NW", "NE", "SW", "SE"],
-              5: [["NW", "NE", "SW", "SE", "NeckN"], ["NW", "NE", "SW", "SE", "NeckS"]]},
+                "SW": (_k(NAMES_S[1][1]), _k(NAMES_S[1][0])), "SE": (_k(NAMES_S[5][1]), _k(NAMES_S[5][0]))},
+        sets={2: ["NW", "SW"], 3: ["NW", "NE", "SW"], 4: ["NW", "NE", "SW", "SE"]},
+        # No five-civ game: a fifth civ in the Wyrm's Neck won 10 of 25, twice over.
     )
