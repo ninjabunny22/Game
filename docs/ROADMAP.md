@@ -82,3 +82,9 @@ state is in CIVSIM_STATUS.md.
 - **To do (asked for 2026-11-13): siege and war animations.** How generals and soldiers look
   and where they face in battles and sieges. First fix them all in a custom test scene (like
   the picture scenes in `godot/tests/`), then check them in real games.
+- **To do (asked for 2026-11-13): native campaigns in the chronicle.** When a civ sends an army
+  against a native-held castle, a headline ("Ossyria sends 120 soldiers under General Varen to
+  take Saltcrown Keep from the Hinterfolk"); if the attack fails or turns back, a line saying
+  so. The capture itself is already a headline ("Ossyria takes Saltcrown Keep from the
+  Hinterfolk; all of Saltcrown falls with it"). The expedition starts in
+  `Military` (military/warfare.py, `target_region`), which logs nothing today.
