@@ -29,7 +29,8 @@ var _camera := CameraRig.new()
 var _hud := Hud.new()
 var _menu := Menu.new()
 var _minimap := Minimap.new()
-var _battles := BattleView.new()  # fight boxes and the battle alert, while spectating
+var _battles := BattleView.new()
+var _follow_civ := -1  # the civ the camera keeps to (its drawer's Follow button), or -1  # fight boxes and the battle alert, while spectating
 var _auto_started := false
 var _starting := ""  # the mode of the game just asked for from the menu: "watch" or "rule"
 var _models := Models.new()
@@ -59,6 +60,7 @@ func _ready() -> void:
 	_hud.add_child(_minimap)  # shown and hidden with the rest of the overlay
 	_hud.add_child(_battles)
 	_battles.jump_requested.connect(_on_minimap_jump)
+	_hud.follow_requested.connect(func(civ_id: int) -> void: _follow_civ = civ_id)
 	_minimap.jump_requested.connect(_on_minimap_jump)
 	add_child(_menu)
 	_menu.start_requested.connect(_on_start_requested)
@@ -151,8 +153,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			_set_ui_scale(get_window().content_scale_factor - UI_SCALE_STEP)
 		KEY_BRACKETRIGHT:
 			_set_ui_scale(get_window().content_scale_factor + UI_SCALE_STEP)
-		KEY_1, KEY_2, KEY_3, KEY_4:
+		KEY_1, KEY_2, KEY_3, KEY_4, KEY_5:
 			_hud.toggle_card(event.keycode - KEY_1)
+		KEY_ESCAPE:
+			_hud.close_top()
 
 
 ## Labels and figures are shown according to zoom, so the far view stays readable.
@@ -244,8 +248,8 @@ func _on_init(data: Dictionary) -> void:
 	var castle := OS.get_environment("CIVSIM_CASTLE").split_floats(",", false)
 	if castle.size() == 2:  # CIVSIM_CASTLE="x,y" starts with that castle's panel open
 		_hud.show_castle(int(castle[0]), int(castle[1]), _castle_anchor(Vector2i(int(castle[0]), int(castle[1]))))
-	if OS.get_environment("CIVSIM_CARD") != "":  # start with one civ's card open, by civ id
-		_hud.toggle_card(int(OS.get_environment("CIVSIM_CARD")))
+	if OS.get_environment("CIVSIM_CARD") != "":  # start with one civ's card (or drawer) open, by civ id
+		_hud.toggle_card.call_deferred(int(OS.get_environment("CIVSIM_CARD")))
 	_territory_rev = -1
 	_ruled = -1
 	_ready_for_ticks = true
@@ -311,6 +315,22 @@ func _on_tick(tick: int, data: Dictionary) -> void:
 		for part: String in parts:
 			if int(parts[part]) > 30000:
 				print("slow tick %d: %s %d ms" % [tick, part, int(parts[part]) / 1000])
+	# "Follow" in a civ's drawer: the camera stays on its largest army in the field, or its capital.
+	if _follow_civ >= 0:
+		var lead: Variant = null
+		for army: Dictionary in data["armies"]:
+			if int(army["civ"]) == _follow_civ and army["role"] == "field" and not army.get("in_castle", false) \
+					and (lead == null or int(army["size"]) > int(lead["size"])):
+				lead = army
+		var target := Vector2i(-1, -1)
+		if lead != null:
+			target = Vector2i(int(lead["x"]), int(lead["y"]))
+		else:
+			for civ: Dictionary in data["civs"]:
+				if int(civ["id"]) == _follow_civ and not civ["settlements"].is_empty():
+					target = Vector2i(int(civ["settlements"][0]["x"]), int(civ["settlements"][0]["y"]))
+		if target.x >= 0:
+			_camera.focus(_terrain.tile_position(target.x, target.y), _camera.distance())
 	# CIVSIM_FOLLOW="distance" keeps the camera on the largest army led by a general, for scripted runs.
 	var follow := OS.get_environment("CIVSIM_FOLLOW")
 	if follow != "":

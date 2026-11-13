@@ -45,7 +45,7 @@ func _ready() -> void:
 	_alert.anchor_right = 0.5
 	_alert.offset_left = -43
 	_alert.offset_right = 43
-	_alert.offset_top = 10
+	_alert.offset_top = 62  # just under the top bar
 	_alert.tooltip_text = "Fights under way out of sight: click to go to one (again for the next)"
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color(0.45, 0.12, 0.1, 0.9)

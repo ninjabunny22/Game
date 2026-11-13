@@ -1,9 +1,11 @@
 extends CanvasLayer
-## Overlay UI for someone watching: the date and controls (top left), a log of
-## headline events (bottom left), a compact card per civ (top right) that expands
-## to full detail when clicked, and a diplomacy panel on demand.
+## Overlay UI. Watching, it is one bar across the top (the date and controls, and a
+## scoreboard chip per civ), one drawer on the right with everything about the civ whose chip
+## was clicked (overview, army, diplomacy, its path in the tech tree), the minimap, and the
+## log. Ruling a civ, the older layout stays: the ruler's panel, a card per civ, the log.
 
 signal command_requested(action: String, value: Variant)
+signal follow_requested(civ_id: int)  # keep the camera on this civ's largest army or capital; -1 to stop
 
 const TechTree := preload("res://scripts/tech_tree.gd")
 const WarBanner := preload("res://scripts/war_banner.gd")
@@ -20,6 +22,21 @@ const RESOURCE_LABELS := {"food": "Food", "wood": "Wood", "stone": "Stone", "ore
 const STANCE_COLORS := {"trade": "#7ccf7c", "ally": "#6fb7ff", "ignore": "#8a93a0", "aggression": "#e07a6a"}
 
 var _status: Label
+var _spectating := true  # nobody rules a civ: the watch layout
+var _bar: PanelContainer  # the top bar
+var _chips: HBoxContainer  # one scoreboard chip per civ, in the bar
+var _chip_buttons := {}  # civ id -> Button
+var _side: PanelContainer  # the civ cards (ruler mode)
+var _ruler_panel: PanelContainer
+var _log_panel: PanelContainer
+var _drawer: PanelContainer  # everything about one civ, while watching
+var _drawer_civ := -1
+var _drawer_title: RichTextLabel
+var _drawer_tabs: TabBar
+var _drawer_text: RichTextLabel
+var _follow_button: Button
+var _following := -1
+var _last_data := {}
 var _pause_button: Button
 var _tech_tree: PanelContainer  # tech_tree.gd: the tree as the civs climb it, while spectating
 var _tech_button: PanelContainer
@@ -76,18 +93,32 @@ func _ready() -> void:
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(root)
 
-	# Status and controls.
+	# The bar across the top: the date and the controls, then a chip per civ.
 	var controls := _panel(root)
-	controls.position = Vector2(10, 10)
+	_bar = controls
+	controls.anchor_right = 1.0
+	controls.offset_left = 10
+	controls.offset_right = -10
+	controls.offset_top = 8
 	var column := VBoxContainer.new()
 	controls.add_child(column)
+	var top_row := HBoxContainer.new()
+	top_row.add_theme_constant_override("separation", 10)
+	column.add_child(top_row)
 	_status = Label.new()
 	_status.add_theme_font_size_override("font_size", 16)
-	column.add_child(_status)
+	_status.custom_minimum_size = Vector2(150, 0)
+	top_row.add_child(_status)
 	# One row of icons; each says what it does, and its key, when the mouse rests on it.
 	var buttons := HBoxContainer.new()
 	buttons.add_theme_constant_override("separation", 4)
-	column.add_child(buttons)
+	top_row.add_child(buttons)
+	var gap := Control.new()
+	gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	top_row.add_child(gap)
+	_chips = HBoxContainer.new()
+	_chips.add_theme_constant_override("separation", 6)
+	top_row.add_child(_chips)
 	_pause_button = _icon_button(buttons, "pause", "Pause / resume  (Space)",
 		func() -> void: command_requested.emit("toggle_pause", null))
 	_icon_button(buttons, "step", "One day on  ( . )", func() -> void: command_requested.emit("step", null))
@@ -96,15 +127,14 @@ func _ready() -> void:
 	_icon_button(buttons, "diplomacy", "Diplomacy: every war, alliance and trade deal  (Tab)", toggle_diplomacy)
 	var help := Label.new()
 	help.text = ("Drag: pan   Right-drag: orbit   Wheel: zoom   B: region borders\n"
-			+ "Space: pause   . : step   - / = : speed   Tab: diplomacy   1-4: civ details\n"
-			+ "[ and ] : smaller / larger text")
+			+ "Space: pause   . : step   - / = : speed   Tab: diplomacy   T: tech tree   1-5: a civ\n"
+			+ "[ and ] : smaller / larger text   Esc: close   L: chronicle\n"
+			+ "Lines between castles: red war, blue alliance, green trade, grey neutral")
 	help.add_theme_font_size_override("font_size", 12)
 	help.modulate = Color(1, 1, 1, 0.6)
 	help.visible = false  # H or the ? button shows the keys
 	column.add_child(help)
 	_help = help
-	_icon_button(buttons, "legend", "What the lines between castles mean (click to show)",
-		func() -> void: _legend.visible = not _legend.visible)
 	_icon_button(buttons, "help", "Keys and controls  (H)", toggle_help)
 	_icon_button(buttons, "menu", "Back to the menu", func() -> void: command_requested.emit("end_game", {}))
 	var legend := RichTextLabel.new()
@@ -121,6 +151,7 @@ func _ready() -> void:
 
 	# The ruler's panel: take a civ in hand, and give it its orders.
 	var ruler_panel := _panel(root)
+	_ruler_panel = ruler_panel
 	ruler_panel.position = Vector2(10, 124)
 	_ruler_box = VBoxContainer.new()
 	_ruler_box.custom_minimum_size = Vector2(420, 0)
@@ -144,12 +175,17 @@ func _ready() -> void:
 	# The ruler's panel sits just below the bar, however tall it is (the legend and the help
 	# add lines); diplomacy opens beside the bar, clear of the civ cards.
 	var place := func() -> void:
-		ruler_panel.position.y = controls.position.y + controls.size.y + 8.0
-		_diplomacy_panel.position = Vector2(controls.position.x + controls.size.x + 8.0, controls.position.y)
+		var below := controls.position.y + controls.size.y + 8.0
+		ruler_panel.position.y = below
+		_diplomacy_panel.position = Vector2(470, below)
+		_side.offset_top = below
+		_tech_button.offset_top = below
+		_drawer.offset_top = below
 	controls.resized.connect(place)
 
 	# Event log.
 	var log_panel := _panel(root)
+	_log_panel = log_panel
 	log_panel.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	log_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	log_panel.offset_left = 10
@@ -166,6 +202,7 @@ func _ready() -> void:
 
 	# Civ cards: two lines each, so all of them always fit; one at a time opens to full detail.
 	var side := _panel(root)
+	_side = side
 	side.anchor_left = 1.0
 	side.anchor_right = 1.0
 	side.offset_left = -400
@@ -197,6 +234,8 @@ func _ready() -> void:
 	_cards_box.add_theme_constant_override("separation", 10)
 	_cards_box.resized.connect(_fit_cards)
 	_cards_scroll.add_child(_cards_box)
+
+	_build_drawer(root)
 
 	# A castle clicked on the map: who holds it, who is inside and with how many. It stands
 	# beside the castle and follows it as the camera moves; closed by its X or a click elsewhere.
@@ -534,6 +573,10 @@ func setup(init: Dictionary) -> void:
 	_ruler_signature = ""
 	_tech_tree.setup(init)
 	_banners.clear()
+	_make_chips()
+	_drawer_civ = -1
+	_following = -1
+	_drawer.visible = false
 
 
 func set_status(status: Dictionary) -> void:
@@ -555,12 +598,23 @@ func update(tick: int, data: Dictionary) -> void:
 		_deals["%d:%d" % [mini(int(deal["a"]), int(deal["b"])), maxi(int(deal["a"]), int(deal["b"]))]] = deal
 	for civ: Dictionary in data["civs"]:
 		_latest[int(civ["id"])] = civ
+	_last_data = data
 	_refresh_ruler(data.get("ruler"))
 	_refresh_castle()
+	# Watching: the bar's chips and the drawer. Ruling: the older panels.
+	var watching: bool = data.get("ruler") == null
+	if watching != _spectating:
+		_spectating = watching
+		if not watching:
+			select_civ(-1)
+	_chips.visible = _spectating
+	_side.visible = not _spectating
+	_ruler_panel.visible = not _spectating
+	_refresh_chips()
+	_refresh_drawer()
 	# The tech tree is a spectator's view: a ruler sees only what his own civ knows.
-	var spectating: bool = data.get("ruler") == null
-	_tech_button.visible = spectating
-	if not spectating:
+	_tech_button.visible = false  # watching, the tree opens from the drawer, T or its tab
+	if not _spectating:
 		_tech_tree.visible = false
 	_tech_tree.update(data)
 	_victory = data.get("victory")
@@ -615,6 +669,7 @@ func _days(ticks: int) -> String:
 ## Keep the bottom right clear for `height` pixels (the minimap): the cards stop above it.
 func reserve_bottom_right(height: float) -> void:
 	_reserved_bottom_right = height
+	_drawer.offset_bottom = -(height + 20.0)
 	_fit_cards()
 
 
@@ -712,11 +767,175 @@ func _refresh_castle() -> void:
 
 
 func toggle_tech_tree() -> void:
-	if _tech_button.visible:
+	if _spectating:
+		_tech_tree.pick(_drawer_civ)
 		_tech_tree.toggle()
 
 
+# -- the watch layout: scoreboard chips and the civ drawer ------------------------------
+
+const DRAWER_TABS := ["Overview", "Army", "Diplomacy", "Tech"]
+
+
+func _build_drawer(root: Control) -> void:
+	_drawer = _panel(root)
+	_drawer.anchor_left = 1.0
+	_drawer.anchor_right = 1.0
+	_drawer.anchor_bottom = 1.0
+	_drawer.offset_left = -450
+	_drawer.offset_right = -10
+	_drawer.offset_bottom = -20
+	_drawer.visible = false
+	(_drawer.get_theme_stylebox("panel") as StyleBoxFlat).bg_color.a = 0.94
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 8)
+	_drawer.add_child(column)
+	var header := HBoxContainer.new()
+	column.add_child(header)
+	_drawer_title = RichTextLabel.new()
+	_drawer_title.bbcode_enabled = true
+	_drawer_title.fit_content = true
+	_drawer_title.scroll_active = false
+	_drawer_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_drawer_title.add_theme_font_size_override("normal_font_size", 14)
+	_drawer_title.add_theme_font_size_override("bold_font_size", 20)
+	header.add_child(_drawer_title)
+	_follow_button = _button(header, "Follow", func() -> void:
+		_following = -1 if _following == _drawer_civ else _drawer_civ
+		follow_requested.emit(_following)
+		_refresh_drawer())
+	_follow_button.tooltip_text = "Keep the camera on this civ's largest army, or its capital"
+	var take := _button(header, "Rule it", func() -> void:
+		command_requested.emit("take_control", {"civ": _drawer_civ}))
+	take.tooltip_text = "Take this civ in hand yourself"
+	var close := _icon_button(header, "close", "Close  (Esc)", func() -> void: select_civ(-1))
+	close.custom_minimum_size = Vector2(32, 30)
+	_drawer_tabs = TabBar.new()
+	for tab: String in DRAWER_TABS:
+		_drawer_tabs.add_tab(tab)
+	_drawer_tabs.focus_mode = Control.FOCUS_NONE
+	_drawer_tabs.tab_changed.connect(_on_drawer_tab)
+	column.add_child(_drawer_tabs)
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	column.add_child(scroll)
+	_drawer_text = RichTextLabel.new()
+	_drawer_text.bbcode_enabled = true
+	_drawer_text.fit_content = true
+	_drawer_text.scroll_active = false
+	_drawer_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_drawer_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_drawer_text.add_theme_font_size_override("normal_font_size", 13)
+	_drawer_text.add_theme_font_size_override("bold_font_size", 13)
+	scroll.add_child(_drawer_text)
+
+
+func _make_chips() -> void:
+	for chip: Node in _chips.get_children():
+		chip.queue_free()
+	_chip_buttons.clear()
+	for civ_id: int in _civ_info:
+		var color := Color.html(_civ_info[civ_id]["color"])
+		var chip := Button.new()
+		chip.focus_mode = Control.FOCUS_NONE
+		chip.add_theme_font_size_override("font_size", 13)
+		chip.add_theme_color_override("font_color", color.lightened(0.45))
+		chip.add_theme_color_override("font_hover_color", Color.WHITE)
+		chip.add_theme_constant_override("icon_max_width", 16)
+		for state: Array in [["normal", 0.22], ["hover", 0.4], ["pressed", 0.55]]:
+			var style := StyleBoxFlat.new()
+			style.bg_color = Color(color.darkened(0.35), state[1])
+			style.border_color = color
+			style.border_width_bottom = 3
+			style.set_corner_radius_all(7)
+			style.content_margin_left = 7
+			style.content_margin_right = 7
+			style.content_margin_top = 4
+			style.content_margin_bottom = 4
+			chip.add_theme_stylebox_override(state[0], style)
+		chip.pressed.connect(func() -> void: select_civ(-1 if _drawer_civ == civ_id else civ_id))
+		_chips.add_child(chip)
+		_chip_buttons[civ_id] = chip
+
+
+## The scoreboard: each civ's name and points; swords while it is at war; dim once fallen.
+func _refresh_chips() -> void:
+	for civ_id: int in _chip_buttons:
+		if not _latest.has(civ_id):
+			continue
+		var civ: Dictionary = _latest[civ_id]
+		var chip: Button = _chip_buttons[civ_id]
+		var at_war := false
+		var allied := false
+		for key: String in _relations:
+			var pair := key.split(":")
+			if int(pair[0]) == civ_id or int(pair[1]) == civ_id:
+				at_war = at_war or _relations[key]["status"] == "war"
+				allied = allied or _relations[key]["status"] == "alliance"
+		chip.text = "%s %d" % [_civ_info[civ_id]["name"], int(civ.get("points", 0))]
+		chip.icon = _icon("battle") if at_war and civ["alive"] else null
+		chip.modulate = Color(1, 1, 1, 1.0 if civ["alive"] else 0.45)
+		chip.tooltip_text = "%s (%s): %d of the %d points that win%s\n%s  ·  Pop %d  ·  Army %d\n%s%s" % [
+			_civ_info[civ_id]["name"], _civ_info[civ_id]["personality"], int(civ.get("points", 0)), _points_needed,
+			"  ·  at war" if at_war else ("  ·  allied" if allied else ""), civ["era_name"], int(civ["population"]),
+			int(civ["soldiers"]), "Goal: %s" % civ["strategy"] if str(civ.get("strategy", "")) != "" else "",
+			"" if civ["alive"] else "\nDestroyed"]
+		var selected := civ_id == _drawer_civ
+		(chip.get_theme_stylebox("normal") as StyleBoxFlat).bg_color.a = 0.6 if selected else 0.22
+
+
+## Open the drawer on one civ (or close it with -1).
+func select_civ(civ_id: int) -> void:
+	_drawer_civ = civ_id if _civ_info.has(civ_id) else -1
+	_drawer.visible = _drawer_civ >= 0 and _spectating
+	_tech_tree.pick(_drawer_civ)
+	_refresh_chips()
+	_refresh_drawer()
+
+
+func _on_drawer_tab(tab: int) -> void:
+	if DRAWER_TABS[tab] == "Tech":
+		# The tree is too big for the drawer: it opens over the map, on this civ's path.
+		_tech_tree.pick(_drawer_civ)
+		if not _tech_tree.visible:
+			_tech_tree.toggle()
+	_refresh_drawer()
+
+
+func _refresh_drawer() -> void:
+	if _drawer_civ < 0 or not _latest.has(_drawer_civ) or not _drawer.visible:
+		return
+	var info: Dictionary = _civ_info[_drawer_civ]
+	var civ: Dictionary = _latest[_drawer_civ]
+	_drawer_title.text = "[b][color=%s]%s[/color][/b]\n[color=#8a93a0]%s · %d of %d pts · score %d[/color]" % [
+		info["color"], info["name"], info["personality"], int(civ.get("points", 0)), _points_needed, int(civ.get("score", 0))]
+	_follow_button.text = "Following" if _following == _drawer_civ else "Follow"
+	var tab: String = DRAWER_TABS[_drawer_tabs.current_tab]
+	var text := ""
+	if not civ["alive"]:
+		text = "[color=#e07a6a]Destroyed: its last capital has fallen[/color]"
+	elif tab == "Overview" or tab == "Tech":
+		text = _status_line(_drawer_civ, civ)
+		if str(civ.get("strategy", "")) != "":
+			text += "\n[color=#8a93a0]Goal:[/color] %s" % civ["strategy"]
+		if str(civ.get("plan", "")) != "":
+			text += "\n[color=#d98a5a]%s[/color]" % civ["plan"]
+		if civ.get("sickness") != null:
+			text += "\n[color=#c9a23a]Struck by %s (%d days left)[/color]" % [civ["sickness"]["name"], int(civ["sickness"]["days"])]
+		text += "\n\n" + _card_text(info, civ, false).split("\n", true, 1)[-1]
+	elif tab == "Army":
+		text = _army_text(civ)
+	elif tab == "Diplomacy":
+		text = "[b]%s's relations[/b]\n%s\n\n%s" % [info["name"], _diplomacy_text(_drawer_civ, civ),
+			_diplomacy_text_panel(_last_data) if not _last_data.is_empty() else ""]
+	_drawer_text.text = text
+
+
 func toggle_card(civ_id: int) -> void:
+	if _spectating:
+		select_civ(-1 if _drawer_civ == civ_id else civ_id)
+		return
 	if not _cards.has(civ_id):
 		return
 	_expanded = -1 if _expanded == civ_id else civ_id
@@ -730,7 +949,31 @@ func _on_card_input(event: InputEvent, civ_id: int) -> void:
 
 
 func toggle_diplomacy() -> void:
+	if _spectating:  # watching: diplomacy is a tab of the drawer
+		if _drawer_civ < 0:
+			select_civ(_first_alive())
+		_drawer_tabs.current_tab = DRAWER_TABS.find("Diplomacy")
+		_refresh_drawer()
+		return
 	_diplomacy_panel.visible = not _diplomacy_panel.visible
+
+
+func _first_alive() -> int:
+	for civ_id: int in _latest:
+		if _latest[civ_id]["alive"]:
+			return civ_id
+	return -1
+
+
+## Esc: close what is open, the most recent first.
+func close_top() -> bool:
+	if _tech_tree.visible:
+		_tech_tree.visible = false
+		return true
+	if _drawer.visible:
+		select_civ(-1)
+		return true
+	return false
 
 
 func _civ_name(civ_id: int) -> String:
@@ -826,7 +1069,9 @@ func _refresh_status() -> void:
 		return
 	# One tick is one day; speed is shown as days per minute, which is what a spectator feels.
 	var pace := "paused" if _paused else "%s days/min" % String.num(_speed * 60.0, 0)
-	_status.text = "Day %d  ·  %s  ·  %s" % [_tick, pace, _map_name if _map_name != "" else "seed %d" % _seed]
+	_status.text = "Day %d  ·  %s" % [_tick, pace.replace(" days/min", "/min")]
+	_status.tooltip_text = "%s  ·  %s" % [_map_name if _map_name != "" else "seed %d" % _seed, pace]
+	_status.mouse_filter = Control.MOUSE_FILTER_PASS
 	_pause_button.icon = _icon("play" if _paused else "pause")
 
 
@@ -877,7 +1122,7 @@ func _status_line(civ_id: int, civ: Dictionary) -> String:
 	return "   ".join(parts)
 
 
-func _card_text(info: Dictionary, civ: Dictionary) -> String:
+func _card_text(info: Dictionary, civ: Dictionary, with_army := true) -> String:
 	var lines: Array[String] = []
 	lines.append("[font_size=17][b][color=%s]%s[/color][/b][/font_size]  [color=#8a93a0]%s[/color]"
 			% [info["color"], info["name"], info["personality"]])
@@ -907,7 +1152,8 @@ func _card_text(info: Dictionary, civ: Dictionary) -> String:
 	lines.append("   ".join(stock))
 	if civ["thirsty"]:
 		lines.append("[color=#e07a6a]Out of water: the population is shrinking[/color]")
-	lines.append(_army_text(civ))
+	if with_army:
+		lines.append(_army_text(civ))
 	lines.append("[color=#8a93a0]Diplomacy points[/color] %d   %s" % [int(civ["diplomacy_points"]), _diplomacy_text(int(civ["id"]), civ)])
 	if civ["thinking"]:
 		lines.append("[color=#8a93a0]Strategist is thinking ...[/color]")
