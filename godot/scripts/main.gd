@@ -36,6 +36,7 @@ const LAYERS := [["borders", "Region borders  (B)"], ["lines", "War, alliance an
 	["resources", "Deposits and rich nodes"]]
 var _follow_civ := -1  # the civ the camera keeps to (its drawer's Follow button), or -1  # fight boxes and the battle alert, while spectating
 var _auto_started := false
+var _previewed := false
 var _starting := ""  # the mode of the game just asked for from the menu: "watch" or "rule"
 var _models := Models.new()
 var _characters := Characters.new()
@@ -71,6 +72,8 @@ func _ready() -> void:
 	add_child(_menu)
 	_menu.start_requested.connect(_on_start_requested)
 	_menu.civ_chosen.connect(_on_civ_chosen)
+	_menu.preview_requested.connect(func(size: String, map_id: String, civs: int) -> void:
+		_client.send_command("preview_map", {"size": size, "map": map_id, "civs": civs}))
 	add_child(_client)
 
 	_client.connection_changed.connect(_on_connection_changed)
@@ -215,7 +218,9 @@ func _process(delta: float) -> void:
 			print("  ", "  ".join(parts))
 	# CIVSIM_QUIT_AT=<tick> closes the viewer once the game reaches that tick, for scripted runs.
 	var quit_at := OS.get_environment("CIVSIM_QUIT_AT")
-	if quit_at != "" and _tick >= int(quit_at):
+	# CIVSIM_SHOT_AFTER=<seconds> does the same after that long, for a paused screen such as the menu.
+	var after := OS.get_environment("CIVSIM_SHOT_AFTER")
+	if (quit_at != "" and _tick >= int(quit_at)) or (after != "" and Time.get_ticks_msec() >= int(after) * 1000):
 		# CIVSIM_SHOT=<file.png> saves what the window shows just before it closes.
 		var shot := OS.get_environment("CIVSIM_SHOT")
 		if shot != "":
@@ -293,6 +298,8 @@ func _on_init(data: Dictionary) -> void:
 		_hud.toggle_card.call_deferred(int(OS.get_environment("CIVSIM_CARD")))
 		if OS.get_environment("CIVSIM_TAB") != "":  # and on one of its drawer's tabs, by name
 			_hud.show_drawer_tab.call_deferred(OS.get_environment("CIVSIM_TAB"))
+		if OS.get_environment("CIVSIM_TREE") == "1":  # and its house's family tree open
+			_hud.show_family_tree.call_deferred()
 	_territory_rev = -1
 	_ruled = -1
 	_ready_for_ticks = true
@@ -302,6 +309,12 @@ func _on_init(data: Dictionary) -> void:
 	_camera.auto_orbit = lobby != null
 	if lobby != null:
 		_menu.show_menu(lobby)
+		_menu.set_world(data, _civ_colors)
+		# CIVSIM_PREVIEW="size,map,civs" opens the menu's preview of that choice, for scripted runs.
+		var preview := OS.get_environment("CIVSIM_PREVIEW").split(",", false)
+		if preview.size() == 3 and not _previewed:
+			_previewed = true
+			_menu.open_preview_for.call_deferred(preview[0], preview[1], int(preview[2]))
 		# CIVSIM_START="mode,size,civs" starts that game straight from the menu, for scripted runs.
 		var start := OS.get_environment("CIVSIM_START").split(",", false)
 		if start.size() == 3 and not _auto_started:
@@ -323,6 +336,14 @@ func _on_tick(tick: int, data: Dictionary) -> void:
 	if not _ready_for_ticks:
 		return
 	_tick = tick
+	if _menu.visible:
+		_menu.set_tick(data)  # the preview's starts
+	# A civ that appeared in the middle of the game (a rebellion): every view learns its colour.
+	for entry: Dictionary in data.get("roster", []):
+		if int(entry["id"]) >= _civ_colors.size():
+			_civ_colors.append(Color.html(entry["color"]))
+			_civ_view.add_civ(entry)
+			_hud.add_civ(entry)
 	# Taking a civ in hand brings the camera to its capital.
 	var ruled: int = int(data["ruler"]["civ"]) if data.get("ruler") != null else -1
 	if ruled != _ruled:

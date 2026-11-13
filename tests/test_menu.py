@@ -97,3 +97,36 @@ def test_a_map_can_take_only_some_numbers_of_civs():
     assert game_config("small", 4, map="highgate").num_civs == 4
     for seed in range(6):  # a random small map for three civs is never one that refuses them
         assert game_config("small", 3, seed=seed, map="random").map_name != "Highgate"
+
+
+def test_a_preview_puts_the_chosen_map_behind_the_menu_and_the_game_is_that_one():
+    async def scenario():
+        server = SimServer(Simulation(game_config("small", seed=1)), make_brain("utility"), port=0,
+                           tick_rate=60.0, lobby=True)
+        task = asyncio.create_task(server.run())
+        await server.ready.wait()
+
+        async def next_init(ws):
+            while True:
+                message = json.loads(await ws.recv())
+                if message["type"] == "init":
+                    return message["data"]
+
+        def command(action, value=None):
+            return json.dumps({"type": "command", "version": protocol.PROTOCOL_VERSION,
+                               "data": {"action": action, "value": value}})
+
+        async with connect(f"ws://127.0.0.1:{server.port}", max_size=None) as ws:
+            await next_init(ws)
+            await ws.send(command("preview_map", {"size": "medium", "map": "tidewalk_isles", "civs": 3}))
+            shown = await next_init(ws)
+            assert shown["lobby"] is not None and shown["map_name"] == "Tidewalk Isles" and len(shown["civs"]) == 3
+            assert server.paused and server.sim.tick == 0, "the preview stays on the first day"
+            starts = [civ["capital_name"] for civ in shown["civs"]]
+            await ws.send(command("new_game", {"size": "medium", "map": "tidewalk_isles", "civs": 3, "mode": "watch"}))
+            game = await next_init(ws)
+            assert game["lobby"] is None and game["seed"] == shown["seed"]
+            assert [civ["capital_name"] for civ in game["civs"]] == starts
+        task.cancel()
+
+    asyncio.run(scenario())

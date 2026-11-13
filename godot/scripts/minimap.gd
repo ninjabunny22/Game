@@ -22,6 +22,10 @@ const ARMY_SIZE := 4.0
 const MOVE_SPEED := 6.0  # tiles a second, as the figures on the map
 const FAR_GROUND := 600.0  # how far a ray toward the horizon is followed for the view's outline
 
+var longest_side := LONGEST_SIDE  # bigger in the menu's preview
+var docked := true  # in the corner of the screen; false where a container places it (the menu's preview)
+var show_view := true  # the outline of what the camera sees (not in the menu's preview)
+var labels: Array = []  # [tile, name, colour] marks drawn over the map: the civs' starts, in the preview
 var _rich: Array = []  # [map position, colour] of each rich node
 var _width := 0
 var _height := 0
@@ -42,9 +46,10 @@ var _style := StyleBoxFlat.new()
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
-	set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-	grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	grow_vertical = Control.GROW_DIRECTION_BEGIN
+	if docked:
+		set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+		grow_horizontal = Control.GROW_DIRECTION_BEGIN
+		grow_vertical = Control.GROW_DIRECTION_BEGIN
 	_style.bg_color = Color(0.06, 0.075, 0.1, 0.85)
 	_style.set_corner_radius_all(8)
 	_style.set_border_width_all(1)
@@ -60,7 +65,7 @@ func setup(init: Dictionary, civ_colors: Array) -> void:
 	var map: Dictionary = init["map"]
 	_width = int(map["width"])
 	_height = int(map["height"])
-	_scale = LONGEST_SIDE / float(maxi(_width, _height))
+	_scale = longest_side / float(maxi(_width, _height))
 	_rich.clear()
 	for deposit: Dictionary in map.get("deposits", []):
 		if deposit.get("rich"):
@@ -69,10 +74,11 @@ func setup(init: Dictionary, civ_colors: Array) -> void:
 	_pixels = Vector2i(roundi(_width * _scale), roundi(_height * _scale))
 	var size_px := Vector2(_pixels) + Vector2(MARGIN, MARGIN) * 2.0
 	custom_minimum_size = size_px
-	offset_left = -10.0 - size_px.x
-	offset_top = -10.0 - size_px.y
-	offset_right = -10.0
-	offset_bottom = -10.0
+	if docked:
+		offset_left = -10.0 - size_px.x
+		offset_top = -10.0 - size_px.y
+		offset_right = -10.0
+		offset_bottom = -10.0
 
 	var water := {}
 	var peaks := {}
@@ -200,7 +206,15 @@ func _draw() -> void:
 		var half := ARMY_SIZE * 0.5
 		draw_rect(Rect2(at - Vector2(half + 1, half + 1), Vector2(ARMY_SIZE + 2, ARMY_SIZE + 2)), Color(0, 0, 0, 0.8))
 		draw_rect(Rect2(at - Vector2(half, half), Vector2(ARMY_SIZE, ARMY_SIZE)), _civ_colors[int(entry["civ"])])
-	_draw_view(picture)
+	var font := get_theme_default_font()
+	for label: Array in labels:  # a civ's start: a ring in its colour and its name
+		var at := _to_map(label[0])
+		draw_circle(at, 7.0, Color(0, 0, 0, 0.75))
+		draw_circle(at, 5.0, label[2])
+		draw_string_outline(font, at + Vector2(9, 5), str(label[1]), HORIZONTAL_ALIGNMENT_LEFT, -1, 14, 4, Color(0, 0, 0, 0.85))
+		draw_string(font, at + Vector2(9, 5), str(label[1]), HORIZONTAL_ALIGNMENT_LEFT, -1, 14, (label[2] as Color).lightened(0.4))
+	if show_view:
+		_draw_view(picture)
 
 
 ## The ground the camera sees: where the rays through the screen's corners meet the land,

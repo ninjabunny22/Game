@@ -116,6 +116,13 @@ content; code reads it through `economy/buildings.py`, `tech/tree.py` and `milit
   reports their deaths and wounds back). Its events have kind `family`; the viewer gets
   `families` on init, on a day a family changes and every 30 days. Portraits are cut from the
   boards in `portraits_royalty/` by `tools/cut_portraits.py` into `godot/assets/portraits`.
+- **Civs born mid-game:** a rebellion (`Families._rebel`) calls `Simulation._spawn_rebel`, which
+  appends a civ (id = its index; eight at most, one per name and colour), registers it with
+  every keeper of a `civs` table (diplomacy via `add_civ`, natives, families, villages,
+  military, geography), hands it a region (`Diplomacy.secede`) and soldiers
+  (`Military.rebel_forces`) and starts its war (`Diplomacy.rebellion_war`). Every tick sends
+  a `roster` of all civs; the viewer adds any it has not seen (`main.gd`, `hud.add_civ`), and
+  every view looks colours up in one shared array, so they all pick it up.
 - **Land in whole regions:** a civ's `territory` is always every tile of the regions it holds.
   Tiles change hands only through `Diplomacy.capture_region` (a native capital stormed, an
   enemy castle held for 60 days, a treaty) and `_eliminate`; there is no tile-by-tile

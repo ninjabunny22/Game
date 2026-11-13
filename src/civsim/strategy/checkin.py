@@ -76,7 +76,8 @@ def parse_stances(reply: object, context: dict, tick: int) -> tuple[dict[int, In
 
 
 MOTIVES = {"weaker", "busy", "sick", "rival", "exposed", "prize", "victory", "bully", "grudge", "ally", "runaway",
-           "water", "restless", "betrayal", "resources", "lost_lands", "home", "land_hunger", "refused", "gate"}
+           "water", "restless", "betrayal", "resources", "lost_lands", "home", "land_hunger", "refused", "gate",
+           "inheritance"}
 WATER_PRIORITY = 0.3  # urgency from which water is asked for ahead of anything else, and never given away
 WATER_URGENT = 0.7  # urgency from which every trade must be for water: as pressing as food
 

@@ -29,6 +29,7 @@ class SimServer:
         # In the lobby no game has been started: `sim` is a game playing itself behind the main
         # menu, replaced when the player starts one (new_game) and begun again when they leave it.
         self.lobby = lobby
+        self._preview: dict | None = None  # the menu's last preview: size, map, civs and the seed it was made with
         self.brain = brain
         self.host = host
         self.port = port
@@ -142,9 +143,28 @@ class SimServer:
             self._pending_steps += 1
         elif action == "set_speed":
             self.speed = _clamp_speed(value)
+        elif action == "preview_map":
+            # The menu's choice of map and civs: the game behind the menu becomes that one, on
+            # its first day and paused, so the player sees where each civ starts.
+            if not self.lobby or not isinstance(value, dict):
+                return
+            seed = random.SystemRandom().randrange(2**31)
+            size, chosen, civs = value.get("size"), value.get("map"), value.get("civs")
+            try:
+                sim = Simulation(game_config(size if isinstance(size, str) else "medium", civs, seed,
+                                             chosen if isinstance(chosen, str) and chosen else None))
+            except ValueError:
+                return
+            self._preview = {"size": size, "map": chosen or "", "civs": civs, "seed": seed}
+            self._start(sim, lobby=True, paused=True)
+            return
         elif action == "new_game":
             value = value if isinstance(value, dict) else {}
             seed = value.get("seed")
+            preview = self._preview or {}
+            if (not isinstance(seed, int) or isinstance(seed, bool)) and preview.get("size") == value.get("size") \
+                    and preview.get("map") == (value.get("map") or "") and preview.get("civs") == value.get("civs"):
+                seed = preview["seed"]  # the very game the preview showed
             if isinstance(seed, bool) or not isinstance(seed, int):
                 seed = random.SystemRandom().randrange(2**31)
             try:

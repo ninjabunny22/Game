@@ -38,6 +38,7 @@ from ..economy.rules import HEAL_TICKS, INFIRMARY_BEDS, MIN_POPULATION
 from ..map import WorldMap, find_path, region_neighbours
 from ..map.pathfinding import move_cost
 from .army import LEADERLESS_CAPACITY, XP_PER_LEVEL_STEP, Army, Captive, Commander, Rally
+from ..civ.family import BRAVE_LEVELS, GENERAL_DEFECTS, PRINCE_RANSOM
 from .engagements import Engagements
 from .units import BASE_UNIT, MAX_TIER, UNIT_TYPES, tier_strength, unit_strength
 
@@ -478,12 +479,67 @@ class Military:
             commander.name = self.families.full_name(prince)
             commander.person = prince.id
             prince.commanding = True
+            if "brave" in prince.traits:  # a brave prince is worth a seasoned general
+                commander.experience = max(commander.experience, XP_PER_LEVEL_STEP * BRAVE_LEVELS ** 2)
         return commander
 
+    def army_of(self, person: int) -> Army | None:
+        """The army a prince leads, if he leads one."""
+        for civ in self.civs.values():
+            for army in civ.armies:
+                if army.commander is not None and army.commander.person == person:
+                    return army
+        return None
+
+    def gap(self, a: int, b: int) -> int:
+        return self._gap(a, b)
+
+    def rebel_forces(self, king, rebel, tile: int, person: int, share: float, rng) -> float:
+        """The soldiers who go over to a rebel: his own army whole, `share` of every other army
+        of the king (they gather in the castle he seized), the general holding that castle and
+        perhaps one or two idle ones. Returns how many soldiers went over."""
+        garrison = Army(self.next_id(), rebel.id, tile, "garrison")
+        moved = 0.0
+        for army in list(king.armies):
+            if army.commander is not None and army.commander.person == person:
+                king.armies.remove(army)
+                for key in [k for k in self._battles if army.id in k]:
+                    self._battles.pop(key, None)
+                self._rally.pop(army.id, None)
+                self._stay.pop(army.id, None)
+                army.civ, army.target_civ, army.target_region = rebel.id, king.id, None
+                army.state, army.path, army.rally, army.pursuing, army.refit = "idle", [], None, None, False
+                army.duty, army.post, army.siege_progress = "defend", None, 0.0
+                rebel.armies.append(army)
+                moved += army.size
+                continue
+            if army.boat or army.size <= 0:
+                continue
+            tier = army.tier
+            units = army.take(army.size * share)
+            garrison.add(units, tier)
+            moved += sum(units.values())
+        rebel.armies.append(garrison)
+        king.soldiers = max(0.0, king.soldiers - moved)
+        rebel.soldiers = sum(army.size for army in rebel.armies)
+        for commander in [c for c in king.commanders if c.post == tile]:
+            king.commanders.remove(commander)  # the castle's own general goes with it
+            commander.post = tile
+            rebel.commanders.append(commander)
+        idle = [c for c in king.commanders if c.person is None and c.post is None]
+        for commander in idle[:2]:
+            if rng.random() < GENERAL_DEFECTS:
+                king.commanders.remove(commander)
+                rebel.commanders.append(commander)
+        if not rebel.commanders and not any(a.commander for a in rebel.armies):
+            rebel.commanders.append(self._new_commander(rebel, 1))
+        return moved
     def lose_prince(self, person: int, tick: int) -> None:
-        """A prince in command has died: his army is leaderless until a new commander comes."""
+        """A prince in command (or held captive) has died: his army is leaderless until a new
+        commander comes."""
         for civ in self.civs.values():
             civ.commanders = [c for c in civ.commanders if c.person != person]
+            civ.captives = [c for c in civ.captives if c.commander.person != person]
             for army in civ.armies:
                 if army.commander is not None and army.commander.person == person:
                     army.commander = None
@@ -543,6 +599,8 @@ class Military:
                 self.families.wound(prince.id, tick)
             return ""
         commander.post = None
+        if prince is not None:
+            self.families.captured(prince.id, winning.id, tick)
         switch = self.rng.random() < SWITCH_SIDES_CHANCE
         if switch and prince is None and self.roster(winning) < ROSTER_CAP:  # a prince never turns
             winning.commanders.append(commander)
@@ -1500,7 +1558,8 @@ class Military:
     # -- captured commanders -------------------------------------------------
 
     def ransom(self, commander: Commander) -> int:
-        return RANSOM_BASE + RANSOM_PER_LEVEL * commander.level
+        price = RANSOM_BASE + RANSOM_PER_LEVEL * commander.level
+        return price * PRINCE_RANSOM if commander.person is not None else price
 
     def _hold_captives(self, civ, tick: int, events: list) -> None:
         """A captive is bought back by his own side when it can afford him, and goes free
@@ -1517,14 +1576,20 @@ class Military:
                 civ.resources["gold"] += price
                 civ.captives.remove(captive)
                 home.commanders.append(captive.commander)
-                events.append({"civ": home.id, "kind": "war",
-                               "text": f"{home.name} ransoms {name} from {civ.name} for {price} gold"})
+                if captive.commander.person is not None and self.families is not None:
+                    self.families.freed(captive.commander.person, civ, price, tick, events)
+                else:
+                    events.append({"civ": home.id, "kind": "war",
+                                   "text": f"{home.name} ransoms {name} from {civ.name} for {price} gold"})
                 continue
             if self.diplomacy.relation(civ.id, home.id).status != "war":
                 civ.captives.remove(captive)
                 home.commanders.append(captive.commander)
-                events.append({"civ": home.id, "kind": "war",
-                               "text": f"{civ.name} releases {name} to {home.name} now that they are at peace"})
+                if captive.commander.person is not None and self.families is not None:
+                    self.families.freed(captive.commander.person, civ, None, tick, events)
+                else:
+                    events.append({"civ": home.id, "kind": "war",
+                                   "text": f"{civ.name} releases {name} to {home.name} now that they are at peace"})
 
     def _enlist(self, civ, captive: Captive, text: str, events: list) -> None:
         civ.captives.remove(captive)

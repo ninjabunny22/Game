@@ -427,6 +427,78 @@ class Diplomacy:
                            casualties={a: 0.0, b: 0.0}, declarer=declarer.id, guardian=guardian, defending=defending,
                            name=name, last_gain=tick)
 
+    def add_civ(self, civ) -> None:
+        """A civ that appears in the middle of the game (a rebellion): it gets a place in every
+        table kept between each pair of civs."""
+        self.civs[civ.id] = civ
+        for other in list(self.civs):
+            if other == civ.id:
+                continue
+            self.intents[(civ.id, other)] = Intent()
+            self.intents[(other, civ.id)] = Intent()
+            self.relations[(min(civ.id, other), max(civ.id, other))] = Relation()
+            self.standing[(civ.id, other)] = 0.0
+            self.standing[(other, civ.id)] = 0.0
+        self._reach_cache.clear()
+
+    def secede(self, rebel, loser, region, tick: int) -> None:
+        """A region goes over to a rebel whole, with its castle, buildings and people, and no
+        battle; the realm it left remembers it as lost."""
+        for tile in region.tiles:
+            if self.world.owner[tile] == loser.id:
+                self._transfer_tile(tile, rebel, loser, tick, [], announce=False)
+        region.owner = rebel.id
+        region.held_by, region.hold = None, 0
+        loser.settlements = [s for s in loser.settlements if s.tile != region.capital]
+        rebel.settlements.append(Settlement(region.capital_name, region.capital))
+        loser.lost_regions[region.id] = tick
+        recompute_capacity(loser, self.world)
+        recompute_capacity(rebel, self.world)
+        self._reach_cache.clear()
+
+    def rebellion_war(self, rebel, king, leader: str, tick: int, events: list) -> None:
+        """The rebel is at war with its king from the first day; the king's allies stand by him."""
+        name = f"The Rebellion of {leader}"
+        self._start_war(rebel, king, tick, aggressors={rebel.id}, name=name)
+        self.intents[(rebel.id, king.id)] = Intent(stance=Stance.AGGRESSION, commitment=1.0, tick=tick)
+        self.intents[(king.id, rebel.id)] = Intent(stance=Stance.AGGRESSION, commitment=1.0, tick=tick)
+        self.standing[(king.id, rebel.id)] = -3.0
+        self.standing[(rebel.id, king.id)] = -2.0
+        self._log(tick, events, "war", [rebel, king], f"{rebel.name} declares war on {king.name}: {name} begins")
+        for ally in self.allies(king.id):
+            self._join_defence(self.civs[ally], king, rebel, tick, events)
+
+    def pledge(self, patron, rebel, king, tick: int, events: list) -> None:
+        """A realm takes up a rebel's cause: an alliance, the promise that the rebel keeps its
+        land, and war on the king beside it."""
+        relation = self.relation(patron.id, rebel.id)
+        self._set_status(relation, "alliance", tick)
+        relation.alliance_name = f"The Pact of {rebel.name}"
+        self.intents[(patron.id, rebel.id)] = Intent(stance=Stance.ALLY, tick=tick)
+        self.intents[(rebel.id, patron.id)] = Intent(stance=Stance.ALLY, tick=tick)
+        self.remember(patron.id, rebel.id, 1.0)
+        self.remember(rebel.id, patron.id, 1.0)
+        if self.relation(patron.id, king.id).status != "war":
+            war = self.relation(rebel.id, king.id).war
+            self._start_war(patron, king, tick, aggressors={patron.id, rebel.id}, name=war.name if war else "")
+            self.intents[(patron.id, king.id)] = Intent(stance=Stance.AGGRESSION, commitment=0.6, tick=tick)
+            self.remember(king.id, patron.id, -1.0)
+            for ally in self.allies(king.id):
+                if ally != patron.id:
+                    self._join_defence(self.civs[ally], king, patron, tick, events)
+
+    def turn_on(self, patron, rebel, tick: int, events: list) -> None:
+        """A patron breaks its promise and falls on the rebel it swore to protect."""
+        relation = self.relation(patron.id, rebel.id)
+        self.deals = [d for d in self.deals if {d.a, d.b} != {patron.id, rebel.id}]
+        self._start_war(patron, rebel, tick, aggressors={patron.id}, name=f"The Betrayal of {rebel.name}")
+        relation.alliance_name = ""
+        self.betrayed.add((rebel.id, patron.id))
+        self.intents[(patron.id, rebel.id)] = Intent(stance=Stance.AGGRESSION, commitment=1.0, tick=tick)
+        self.standing[(rebel.id, patron.id)] = -3.0
+        self._log(tick, events, "war", [patron, rebel],
+                  f"{patron.name} turns on its ally {rebel.name}: The Betrayal of {rebel.name} begins")
+
     def _join_defence(self, guardian, victim, aggressor, tick: int, events: list) -> None:
         """An ally of a civ that was attacked is at war with the attacker, whether it likes it or not.
 
@@ -751,6 +823,9 @@ class Diplomacy:
         self._reach_cache.clear()
         self._log(tick, events, "war", [captor, loser],
                   f"{loser.name} is no more: its last capital has fallen to {captor.name}")
+        families = getattr(self, "families", None)
+        if families is not None:
+            families.realm_fell(loser, captor, tick, events)
 
     def _seize_stores(self, bdef, attacker, defender) -> str:
         """What a captured storage building holds goes with it. Returns a note for the log.

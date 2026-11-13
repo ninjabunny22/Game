@@ -9,7 +9,7 @@ from civsim.civ.personality import Personality
 
 
 def _civs(count=3):
-    return [SimpleNamespace(id=i, name=f"Realm{i}", alive=True, focus="balanced", born=None,
+    return [SimpleNamespace(id=i, name=f"Realm{i}", alive=True, focus="balanced", born=None, settlements=[],
                             personality=Personality("Builder", {"military": 1.0})) for i in range(count)]
 
 
@@ -93,7 +93,7 @@ def test_the_eldest_son_then_his_line_follows_the_ruler():
     families.die(ruler, 100, events, "a stroke")
     assert house.ruler == heir.id and families.unrest(0, 120) and not families.unrest(0, 100 + family.UNREST_DAYS)
     assert events and events[-1]["family"]["type"] == "succession" and events[-1]["family"]["banner"]
-    assert civs[0].born is not None and civs[0].born.name == heir.personality
+    assert (civs[0].born or civs[0].personality).name == heir.personality
 
 
 def test_a_spent_line_brings_a_cousin():

@@ -38,6 +38,16 @@ def _abroad(sim, civ) -> bool:
     return civ.soldiers >= 1 and away > 0.5 * civ.soldiers
 
 
+def _sworn(sim, civ_id: int, other_id: int) -> bool:
+    families = getattr(sim, "families", None)
+    return families is not None and frozenset((civ_id, other_id)) in families.bonds
+
+
+def _claim(sim, civ_id: int, other_id: int) -> str | None:
+    families = getattr(sim, "families", None)
+    return families.claim(civ_id, other_id, sim.tick) if families is not None else None
+
+
 def _unrest(sim, civ_id: int) -> bool:
     families = getattr(sim, "families", None)
     return families is not None and families.unrest(civ_id, sim.tick)
@@ -148,6 +158,10 @@ def stance_context(sim, civ) -> dict:
             "sick": diplomacy.sick(other),
             # A new ruler not yet settled on the throne (civ/family.py): a realm off balance.
             "unrest": _unrest(sim, other_id),
+            # Whose blood gives you a claim to their throne (civ/family.py), if any: a reason for war.
+            "throne_claim": _claim(sim, civ.id, other_id),
+            # A rebel and the patron that kept its word to it are sworn: they never fight.
+            "sworn": _sworn(sim, civ.id, other_id),
             # True when you and they are the two strongest civs: each stands in the other's way.
             "rival": civ.id in top and other_id in top,
             "active_deal": deal_text,

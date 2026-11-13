@@ -17,6 +17,18 @@ house is left, and if nobody is, a cousin. The heir rules by their own personali
 strategist plans by it from then on) and the realm is unsettled for UNREST_DAYS: it starts no
 war, and its rivals see it as exposed. A ruler or heir murdered by an enemy leaves a grudge.
 
+Ambition breeds plots: once a year an ambitious prince or lord who is not the heir may try to
+kill the ruler (more likely when the ruler is old, ill, new, a child, or the realm is losing a
+war). A third of attempts succeed; an heir nobody suspects simply takes the throne, but a plot
+found out (and every failed one) ends in rebellion: the plotter seizes a castle of the realm
+(never its capital) and breaks away as a new civ at war with his king, taking his own army, a
+share of the king's soldiers and a general or two (simulation.py, military/warfare.py). With
+no castle to seize, he is executed. A child heir rules through a regent, who may seize the
+crown; a house whose line dies out is claimed by the blood of a daughter married abroad, a
+reason for that realm to go to war (strategy/utility.py). Princes taken in battle are
+ransomed. Some are born brave (better commanders), sickly, learned (faster research while
+they rule) or cruel (others trust their realm less).
+
 All of it rolls its own dice (seeded from the game's seed), so a family never disturbs the rest
 of the game's random streams, and a replay of a seed sees the same deaths.
 """
@@ -26,6 +38,7 @@ import random
 from dataclasses import dataclass, field
 
 from ..datafiles import load_json
+from ..diplomacy.proclamations import proclaim
 from .personality import Personality, with_focus
 
 YEAR = 365
@@ -61,6 +74,31 @@ PRINCE_COMMANDS = 0.25  # chance a new commander is a prince of the house, if on
 WOUND_CHANCE = 0.25  # a prince whose army is routed and who escapes comes back wounded
 ROYAL_STANDING = 1.0  # how much better two ruling houses think of each other once joined by marriage
 
+# Plots, rebellion, regency, claims, traits.
+PLOT_BASE = 0.01  # yearly chance of a plot for a prince of the greatest ambition, before circumstances
+PLOT_FROM = 1000  # no plots before this day
+PLOT_SUCCESS = 1 / 3  # share of attempts on the ruler's life that succeed
+UNSUSPECTED = 0.5  # chance an heir whose plot succeeded is not found out
+MIN_REGIONS = 3  # a realm must hold this many regions for a prince to have a castle to seize
+DEFECT_BASE = 0.1  # share of the king's soldiers who go over to a rebel ...
+DEFECT_MAX = 0.25  # ... rising with the realm's troubles to this
+GENERAL_DEFECTS = 0.5  # chance each of up to two of the king's idle generals goes over
+REGENT_USURPS = 0.25  # yearly chance, times the regent's ambition, the regent takes the crown
+CLAIM_DAYS = 3000  # how long a claim to a throne through marriage is pressed
+TRAITS = ("brave", "sickly", "learned", "cruel")
+TRAIT_CHANCE = 0.45  # chance someone has one of them
+SICKLY = 1.35  # a sickly character's natural risk
+LEARNED = 0.15  # research a learned ruler adds
+CRUEL = 0.3  # how much worse each other realm thinks of a cruel ruler's every year
+BRAVE_LEVELS = 2  # a brave prince takes command this many levels up
+AMBITIOUS = 0.7  # from this ambition a character is shown as ambitious
+PRINCE_RANSOM = 3  # a prince costs this many times a general's ransom
+PATRON_BETRAYS = 0.35  # chance a realm that takes up a rebel's cause means to betray it ...
+PATRON_TEMPER = {"Expansionist": 0.2, "Merchant": 0.05, "Builder": -0.1, "Scholar": -0.1, "Agrarian": -0.05}
+BETRAY_AFTER = (20, 60)  # ... and how many days later it turns on the rebel
+ROYAL_RANSOM = 400  # gold a father pays to have a rebel child back from whoever holds them
+SWORN = 3.0  # how the rebel and a patron that keeps its word think of each other
+
 PORTRAITS = "res://assets/portraits"
 FACES = {"m": (0, 2, 4), "f": (1, 3, 5)}  # the shared faces (portraits/common), by sex
 GROWN = 16  # from this age a shared face is shown grown up
@@ -88,6 +126,11 @@ class Character:
     cause: str = ""
     ruled: bool = False  # has sat on the throne
     commanding: bool = False  # leads an army
+    ambition: float = 0.0  # 0 to 1: how much they want a crown that is not theirs
+    traits: list[str] = field(default_factory=list)  # brave, sickly, learned, cruel
+    usurper: bool = False  # took the throne by a crime
+    deposed: bool = False  # put aside: out of the line of succession
+    captive_of: int | None = None  # the civ holding them prisoner
 
     def age(self, day: int) -> int:
         return (day - self.birth_day) // YEAR
@@ -106,6 +149,9 @@ class House:
     civ: int | None  # the civ it rules, or None for one that only marries in
     ruler: int | None = None
     members: list[int] = field(default_factory=list)  # every member, living and dead, oldest first
+    regent: int | None = None  # who rules for a child on the throne
+    branch: str = ""  # for a house founded by a rebel: whose line it is
+    origin: str = ""  # ... and the house it broke away from
 
 
 def natural_death_chance(age: int, health: float = 1.0, ill: bool = False, wounds: int = 0) -> float:
@@ -143,6 +189,11 @@ class Families:
         self.changed = 0  # the last day anything about a family changed (the viewer is sent them then)
         self.unrest_until: dict[int, int] = {}  # civ id -> the day its unrest ends
         self.later: list[dict] = []  # events from elsewhere in the day (a prince falling in battle)
+        self.spawn = None  # set by the simulation: makes a rebel's new civ (or None if it cannot)
+        self.rebellions: dict[int, int] = {}  # civ id -> the rebel civ that broke away from it
+        self.claims: dict[tuple[int, int], dict] = {}  # (claiming civ, claimed civ) -> {"by", "since"}
+        self.betrayals: dict[tuple[int, int], int] = {}  # (patron, rebel civ) -> the day it turns on the rebel
+        self.bonds: set[frozenset] = set()  # rebel and patron that kept its word: they never fight
         self.now = 0
         data = load_json("houses.json")
         self._names = data["names"]
@@ -217,6 +268,11 @@ class Families:
         # Those already alive at the start are checked on a day of their own, so a year's events
         # do not all fall on one day; anyone born later, on their birthday.
         person.check_day = birth_day % YEAR if birth_day > 0 else self.rng.randrange(YEAR)
+        person.ambition = round(self.rng.random() ** 1.6, 2)
+        if self.rng.random() < TRAIT_CHANCE:
+            person.traits.append(self.rng.choice(TRAITS))
+            if "sickly" in person.traits:
+                person.health = round(person.health * SICKLY, 2)
         self.people[person.id] = person
         house.members.append(person.id)
         return person
@@ -256,7 +312,7 @@ class Families:
                 if child.id in seen:
                     continue
                 seen.add(child.id)
-                if child.alive and child.house == house.key:
+                if child.alive and child.house == house.key and not child.deposed:
                     order.append(child)
                 descend(child)
 
@@ -266,7 +322,7 @@ class Families:
             for parent_id in ruler.parents:
                 descend(self.people[parent_id])
         rest = [self.people[m] for m in house.members if m not in seen and self.people[m].alive
-                and self.people[m].house == house.key and self.people[m].id != house.ruler
+                and self.people[m].house == house.key and not self.people[m].deposed and self.people[m].id != house.ruler
                 and self.people[m].spouse != house.ruler]
         order += sorted(rest, key=lambda p: (p.birth_day, p.id))
         return order
@@ -298,10 +354,16 @@ class Families:
         self.now = tick
         events.extend(self.later)
         self.later.clear()
+        if self.betrayals:
+            self._betrayals(tick, events)
+        if tick % 30 == 0:
+            self._ransoms(tick, events)
         for house in list(self.by_civ.values()):
             civ = self.civs[house.civ]
             if not civ.alive:
                 continue
+            if house.regent is not None:
+                self._regency(house, civ, tick, events)
             for member_id in list(house.members):
                 person = self.people[member_id]
                 if not person.alive or person.house != house.key:
@@ -348,6 +410,18 @@ class Families:
             if husband.alive and ADULT <= age <= FERTILE_UNTIL:
                 if self.rng.random() < (BIRTH_YOUNG if age < 35 else BIRTH_OLDER):
                     self._birth(wife, husband, tick, events)
+        if not person.alive:
+            return
+        if person.id == house.ruler and "cruel" in person.traits and self.diplomacy is not None:
+            for other in self.civs.values():  # word of a cruel ruler spreads
+                if other.id != civ.id and other.alive:
+                    self.diplomacy.remember(other.id, civ.id, -CRUEL)
+        if house.regent == person.id:
+            if self.rng.random() < REGENT_USURPS * person.ambition:
+                self._usurp(person, house, civ, tick, events)
+            return
+        if self._may_plot(person, house, civ, tick) and self.rng.random() < self._plot_chance(person, house, civ, tick):
+            self._plot(person, house, civ, tick, events)
 
     def _enemies(self, civ_id: int) -> list[int]:
         if self.diplomacy is None:
@@ -452,55 +526,398 @@ class Families:
             person.wounds += 1
             self.changed = tick
 
-    def die(self, person: Character, tick: int, events: list, cause: str, killer=None) -> None:
-        """A death, and if it was the ruler's, the succession."""
+    def die(self, person: Character, tick: int, events: list, cause: str, killer=None, plotter=None,
+            quiet: bool = False) -> Character | None:
+        """A death, and if it was the ruler's, the succession. `killer` is a realm that had them
+        murdered, `plotter` a kinsman who did. Returns the new ruler, if the ruler died."""
         if not person.alive:
-            return
+            return None
         house = self.houses[person.house]
         civ = self.civs[house.civ] if house.civ is not None else None
         age = person.age(tick)
         name = self.full_name(person)
         person.alive, person.died, person.cause = False, tick, cause
         self.changed = tick
-        if self.military is not None and person.commanding:
+        if self.military is not None and (person.commanding or person.captive_of is not None):
             self.military.lose_prince(person.id, tick)
+        if house.regent == person.id:
+            house.regent = None
         if civ is None:
-            return
+            return None
         was_ruler = house.ruler == person.id
         murdered = killer is not None
         how = {"old age": "dies of old age", "a long illness": "dies after a long illness",
-               "childbirth": "dies in childbirth", "battle": "falls in battle"}.get(cause, f"dies of {cause}")
+               "childbirth": "dies in childbirth", "battle": "falls in battle",
+               "executed for treason": "is executed for treason"}.get(cause, f"dies of {cause}")
         if murdered:
             how = f"is poisoned, and all eyes turn to {killer.name}" if cause == "poison" else \
                 f"is murdered by an assassin, and all eyes turn to {killer.name}"
             if self.diplomacy is not None:
                 self.diplomacy.remember(civ.id, killer.id, -2.0)
+        elif plotter is not None:
+            how = "is poisoned at the high table" if cause == "poison" else "is stabbed in the night"
         text = f"{name} of {civ.name} {how}, aged {age}"
         line = f"{house.name} mourns {person.name}."
+        heir = None
         if was_ruler:
-            heir = self._succeed(house, civ, tick)
+            heir = self._succeed(house, civ, tick, events)
             if heir is not None:
                 text += f"; {self.title(heir)} {heir.name} takes the throne"
+                if house.regent is not None:
+                    regent = self.people[house.regent]
+                    text += f", with {self.title(regent)} {regent.name} as regent"
                 line = (f"The {'king' if person.sex == 'm' else 'queen'} is dead. Long live "
                         f"{self.title(heir)} {heir.name}!")
                 if murdered:
                     line = f"{person.name} is slain by treachery! {heir.name} swears vengeance on {killer.name}."
+                elif plotter is not None and heir is plotter:
+                    line = f"The {'king' if person.sex == 'm' else 'queen'} is dead, and {heir.name} wastes no tears."
         elif murdered:
             line = f"Murder in the hall of {house.name}! {killer.name} will answer for {person.name}."
-        kind = "assassination" if murdered else ("succession" if was_ruler else "death")
+        if quiet:
+            return heir
+        kind = "assassination" if murdered or plotter is not None else ("succession" if was_ruler else "death")
+        if cause == "executed for treason":
+            kind, line = "execution", f"So ends {person.name}, who reached for a crown that was not theirs."
         self._log(events, civ, kind, person, text, banner=True, line=line,
                   civs=[civ.id] + ([killer.id] if murdered else []))
+        return heir
 
-    def _succeed(self, house: House, civ, tick: int) -> Character | None:
+    def _succeed(self, house: House, civ, tick: int, events: list | None = None) -> Character | None:
         heir = self.heir(house)
-        if heir is None:  # the line is spent: a cousin comes forward
+        if heir is None:  # the line is spent: blood married abroad may claim it, and a cousin comes forward
+            if events is not None:
+                self._claim(house, civ, tick, events)
             heir = self._add(house, self._name("m"), "m", tick - (35 + self.rng.randrange(20)) * YEAR)
             heir.personality = self.rng.choice(sorted(self._archetypes["archetypes"]))
         house.ruler = heir.id
         heir.ruled = True
+        house.regent = None
+        if heir.age(tick) < GROWN:  # a child on the throne: the mother, else the eldest grown kin, rules for them
+            mother = next((self.people[p] for p in heir.parents if self.people[p].sex == "f"), None)
+            if mother is not None and mother.alive and mother.house == house.key:
+                house.regent = mother.id
+            else:
+                grown = [p for p in self.line(house) if p is not heir and p.age(tick) >= ADULT]
+                house.regent = grown[0].id if grown else None
         self.unrest_until[civ.id] = tick + UNREST_DAYS
         self._crown(civ, heir)
         return heir
+
+    # -- regency ------------------------------------------------------------
+
+    def _regency(self, house: House, civ, tick: int, events: list) -> None:
+        """A regency ends when the child on the throne comes of age (or the regent is gone)."""
+        ruler = self.people[house.ruler]
+        regent = self.people[house.regent]
+        if not regent.alive or regent.house != house.key:
+            house.regent = None
+        elif ruler.age(tick) >= GROWN:
+            house.regent = None
+            self.changed = tick
+            self._log(events, civ, "regency", ruler,
+                      f"{self.full_name(ruler)} of {civ.name} comes of age and rules alone; {regent.name}'s regency ends")
+
+    def _usurp(self, regent: Character, house: House, civ, tick: int, events: list) -> None:
+        """The regent takes the crown from the child it was holding it for."""
+        child = self.people[house.ruler]
+        child_name = self.full_name(child)
+        house.regent = None
+        if self.rng.random() < 0.5:
+            self.die(child, tick, events, "a fever in the tower", plotter=regent, quiet=True)
+            fate = "dies in the tower, and few believe it was a fever"
+        else:
+            child.deposed = True
+            fate = "is sent to a monastery"
+        house.ruler = regent.id
+        regent.ruled = regent.usurper = True
+        self.unrest_until[civ.id] = tick + UNREST_DAYS
+        self._crown(civ, regent)
+        self.changed = tick
+        self._log(events, civ, "usurpation", regent,
+                  f"{child_name} of {civ.name} {fate}; the regent {regent.name} takes the crown", banner=True,
+                  line=f"A child cannot hold a kingdom. {regent.name} will.")
+
+    # -- claims through marriage ----------------------------------------------
+
+    def _claim(self, house: House, civ, tick: int, events: list) -> None:
+        """A house whose line has died out: the blood of a daughter married into another ruling
+        house gives that realm a claim to the throne, and a reason for war."""
+        blood = [p for p in self.people.values() if p.alive and p.house != house.key and (
+            p.born == house.name or any(self.people[q].born == house.name for q in p.parents))]
+        for person in sorted(blood, key=lambda p: (p.birth_day, p.id)):
+            other = self.houses[person.house]
+            if other.civ is None or other.civ == civ.id or not self.civs[other.civ].alive:
+                continue
+            claimant = self.civs[other.civ]
+            self.claims[(claimant.id, civ.id)] = {"by": person.id, "since": tick}
+            self._log(events, claimant, "claim", person,
+                      f"The line of {house.name} is spent: {self.full_name(person)} of {claimant.name} claims "
+                      f"the crown of {civ.name} by blood", banner=True,
+                      line=f"The crown of {civ.name} is {person.name}'s by right of blood!", civs=[claimant.id, civ.id])
+            return
+
+    def claim(self, civ_id: int, other_id: int, tick: int) -> str | None:
+        """Whose claim `civ_id` has to the throne of `other_id` (a name), if one is pressed."""
+        entry = self.claims.get((civ_id, other_id))
+        if entry is None:
+            return None
+        person = self.people[entry["by"]]
+        if not person.alive or tick - entry["since"] > CLAIM_DAYS or not self.civs[other_id].alive:
+            del self.claims[(civ_id, other_id)]
+            return None
+        return f"{self.title(person)} {person.name}"
+
+    # -- plots and rebellion ------------------------------------------------
+
+    def _may_plot(self, person: Character, house: House, civ, tick: int) -> bool:
+        if tick < PLOT_FROM or person.id == house.ruler or person.house != house.key or person.deposed:
+            return False
+        if person.age(tick) < ADULT or person.captive_of is not None or person.ambition < 0.3:
+            return False
+        if person.spouse == house.ruler:
+            return False
+        king = self.people[house.ruler]
+        if self.heir(house) is person and king.age(tick) < 60 and house.regent is None:
+            return False  # an heir with time on his side waits
+        if len(civ.settlements) < MIN_REGIONS or self.rebellions.get(civ.id) in self._living_civs():
+            return False
+        return True
+
+    def _living_civs(self) -> set[int]:
+        return {c.id for c in self.civs.values() if c.alive}
+
+    def _troubles(self, civ, tick: int) -> float:
+        """How shaken the realm is: 0 calm, up to 1 in deep trouble."""
+        house = self.by_civ[civ.id]
+        king = self.people[house.ruler]
+        trouble = 0.0
+        trouble += 0.3 if king.age(tick) >= 65 or king.age(tick) < GROWN else 0.0
+        trouble += 0.2 if tick < king.ill_until else 0.0
+        trouble += 0.3 if self.unrest(civ.id, tick) else 0.0
+        trouble += 0.2 if self._sick(civ) else 0.0
+        if self.diplomacy is not None:
+            for enemy in self.diplomacy.enemies(civ.id):
+                war = self.diplomacy.relation(civ.id, enemy).war
+                if war is not None and self.diplomacy.ahead(war) == enemy:
+                    trouble += 0.3  # losing a war
+                    break
+        return min(1.0, trouble)
+
+    def _plot_chance(self, person: Character, house: House, civ, tick: int) -> float:
+        ambition = person.ambition
+        elder = [p for p in self.line(house) if p.sex == person.sex and p.birth_day < person.birth_day
+                 and set(p.parents) & set(person.parents)]
+        if elder:
+            ambition += 0.15  # a younger son
+        if person.personality == "Expansionist" or "cruel" in person.traits:
+            ambition += 0.1
+        circumstances = 1.0 + 2.0 * self._troubles(civ, tick) + (0.5 if person.commanding else 0.0)
+        return PLOT_BASE * min(1.0, ambition) ** 2 * circumstances
+
+    def _plot(self, person: Character, house: House, civ, tick: int, events: list) -> None:
+        """An attempt on the ruler's life, and what comes of it."""
+        king = self.people[house.ruler]
+        was_heir = self.heir(house) is person
+        means = self.rng.choice(("poison", "a knife"))
+        if self.rng.random() < PLOT_SUCCESS:
+            new = self.die(king, tick, events, means, plotter=person)
+            if new is person and was_heir and self.rng.random() < UNSUSPECTED:
+                person.usurper = True
+                return  # he wears the crown, and nobody can prove a thing
+            if new is person:  # found out on the throne: he keeps it, but the realm reels
+                person.usurper = True
+                self.unrest_until[civ.id] = tick + 2 * UNREST_DAYS
+                self._log(events, civ, "usurpation", person,
+                          f"{self.full_name(person)} of {civ.name} is named the murderer of {king.name}, and keeps the crown",
+                          banner=True, line=f"Let them whisper. {person.name} wears the crown.")
+                return
+            reason = f"found out after the murder of {king.name}"
+        else:
+            reason = f"caught trying to {'poison' if means == 'poison' else 'stab'} {self.full_name(king)}"
+        self._rebel(person, house, civ, tick, events, reason)
+
+    def _rebel(self, person: Character, house: House, civ, tick: int, events: list, reason: str) -> None:
+        """A plotter found out flees to a castle of the realm and raises a new realm against his
+        king, or, with nowhere to go, is executed."""
+        name = self.full_name(person)  # as they were known before
+        castles = [s for s in civ.settlements[1:]]
+        rebel = None
+        castle = None
+        if castles and self.spawn is not None:
+            army = self.military.army_of(person.id) if self.military is not None else None
+            if army is not None:
+                castle = min(castles, key=lambda s: (self.military.gap(army.tile, s.tile), s.tile))
+            else:
+                castle = self.rng.choice(castles)
+            rebel = self.spawn(person, civ, castle.tile, self._defection(person, civ, tick), tick, events)
+        if rebel is None:
+            self.die(person, tick, events, "executed for treason")
+            return
+        self.rebellions[civ.id] = rebel.id
+        branch = House(f"{house.key}:{person.id}", house.name, rebel.id, ruler=person.id,
+                       branch=f"{person.name}'s line", origin=house.key)
+        self.houses[branch.key] = branch
+        self.by_civ[rebel.id] = branch
+        followers = [person] + ([self.people[person.spouse]] if person.spouse is not None else [])
+        followers += [p for p in self._descendants(person)]
+        for follower in followers:
+            if follower.alive and follower.house == house.key:
+                follower.house = branch.key
+                branch.members.append(follower.id)
+        person.ruled = True
+        self.unrest_until[rebel.id] = -1
+        self.changed = tick
+        if self.diplomacy is not None:
+            for enemy in self.diplomacy.enemies(civ.id):
+                if enemy != rebel.id:
+                    self.diplomacy.remember(enemy, rebel.id, 1.0)  # the enemy of my enemy
+        line = proclaim(rebel.name, civ.name, "rebellion", person.name, random.Random(tick * 7 + person.id))
+        self._log(events, rebel, "rebellion", person,
+                  f"{name}, {reason}, seizes {castle.name} and raises the banner of revolt: "
+                  f"{rebel.name} breaks away from {civ.name}", banner=True, line=line, civs=[rebel.id, civ.id])
+        self._seek_patron(rebel, civ, person, tick, events)
+
+    def _seek_patron(self, rebel, king, person: Character, tick: int, events: list) -> None:
+        """The rebel looks abroad for a protector: the strongest realm at war with the king, or
+        that hates him. It promises the rebel his land; whether it means it is another matter."""
+        d = self.diplomacy
+        if d is None:
+            return
+        options = [c for c in self.civs.values() if c.alive and c.id not in (rebel.id, king.id)
+                   and (king.id in d.enemies(c.id) or d.standing.get((c.id, king.id), 0.0) <= -1.0)]
+        if not options:
+            return
+        patron = max(options, key=lambda c: (d.strength(c), -c.id))
+        d.pledge(patron, rebel, king, tick, events)
+        ruler = self.ruler(patron.id)
+        betrays = PATRON_BETRAYS + PATRON_TEMPER.get((patron.born or patron.personality).name, 0.0)
+        if ruler is not None and "cruel" in ruler.traits:
+            betrays += 0.2
+        if self.rng.random() < betrays:
+            self.betrayals[(patron.id, rebel.id)] = tick + self.rng.randint(*BETRAY_AFTER)
+        else:
+            self.bonds.add(frozenset((patron.id, rebel.id)))
+            d.standing[(patron.id, rebel.id)] = d.standing[(rebel.id, patron.id)] = SWORN
+        self._log(events, patron, "pledge", person,
+                  f"{patron.name} takes up the cause of {person.name}, swearing that {rebel.name} shall keep its lands",
+                  banner=True, line=f"{rebel.name} does not stand alone. {patron.name} marches with it!",
+                  civs=[patron.id, rebel.id, king.id])
+
+    def _betrayals(self, tick: int, events: list) -> None:
+        """A patron that never meant its promise falls on the rebel when its day comes."""
+        for (patron_id, rebel_id), day in list(self.betrayals.items()):
+            if tick < day:
+                continue
+            del self.betrayals[(patron_id, rebel_id)]
+            patron, rebel = self.civs[patron_id], self.civs[rebel_id]
+            if not (patron.alive and rebel.alive) or self.diplomacy.relation(patron_id, rebel_id).status != "alliance":
+                continue
+            self.diplomacy.turn_on(patron, rebel, tick, events)
+            leader = self.ruler(rebel_id)
+            if leader is not None:
+                self._log(events, patron, "betrayal", leader,
+                          f"{patron.name} breaks its oath and falls on {rebel.name}: {leader.name}'s lands are its prize",
+                          banner=True, line=f"Promises are for the weak. {rebel.name}'s lands are ours now.",
+                          civs=[patron_id, rebel_id])
+
+    def realm_fell(self, loser, captor, tick: int, events: list) -> None:
+        """A realm is gone. A rebel ruler is taken alive: by his own father's realm he is put
+        aside, by anyone else held for ransom (`_ransoms`)."""
+        house = self.by_civ.get(loser.id)
+        if house is None or not house.origin or house.ruler is None:
+            return
+        person = self.people[house.ruler]
+        if not person.alive:
+            return
+        father = self.houses.get(house.origin)
+        self.changed = tick
+        if father is not None and father.civ == captor.id:
+            self._return(person, father, deposed=True)
+            self._log(events, captor, "captured", person,
+                      f"{person.name} is dragged before the court of {captor.name}, stripped of every title, and locked away",
+                      banner=True, line=f"The rebellion is over. {person.name} will never see the sky again.",
+                      civs=[captor.id])
+            return
+        person.captive_of = captor.id
+        self._log(events, captor, "captured", person,
+                  f"{captor.name} takes {person.name} alive as {loser.name} falls, and names a ransom",
+                  banner=True, line=f"{person.name} is ours. Let the old king pay to have his child back.",
+                  civs=[captor.id] + ([father.civ] if father and father.civ is not None else []))
+
+    def _return(self, person: Character, house: House, deposed: bool) -> None:
+        person.house = house.key
+        person.captive_of = None
+        person.deposed = deposed
+        if person.id not in house.members:
+            house.members.append(person.id)
+
+    def _ransoms(self, tick: int, events: list) -> None:
+        """Once a month a father whose rebel child is held abroad buys them back, if he can."""
+        for person in self.people.values():
+            if not person.alive or person.captive_of is None or person.commanding:
+                continue
+            house = self.houses[person.house]
+            father = self.houses.get(house.origin) if house.origin else None
+            if father is None or father.civ is None or not self.civs[father.civ].alive:
+                continue
+            home, captor = self.civs[father.civ], self.civs[person.captive_of]
+            if home.resources.get("gold", 0.0) < ROYAL_RANSOM + 50:
+                continue
+            home.resources["gold"] -= ROYAL_RANSOM
+            captor.resources["gold"] = captor.resources.get("gold", 0.0) + ROYAL_RANSOM
+            self._return(person, father, deposed=True)
+            self.changed = tick
+            self._log(events, home, "ransom", person,
+                      f"{home.name} pays {captor.name} {ROYAL_RANSOM} gold for {person.name}, who comes home in chains",
+                      banner=True, line=f"{person.name} is home, and will answer for what was done.",
+                      civs=[home.id, captor.id])
+
+    def _descendants(self, person: Character) -> list[Character]:
+        found = []
+        for child in self.children(person):
+            found.append(child)
+            found += self._descendants(child)
+        return found
+
+    def _defection(self, person: Character, civ, tick: int) -> float:
+        """The share of the king's soldiers who follow a rebel."""
+        return min(DEFECT_MAX, DEFECT_BASE + 0.1 * self._troubles(civ, tick) + 0.05 * person.ambition)
+
+    def personality_of(self, person: Character) -> Personality:
+        name = person.personality or self.rng.choice(sorted(self._archetypes["archetypes"]))
+        jitter = self._archetypes["jitter"]
+        return Personality(name, {key: round(value * (1 + self.rng.uniform(-jitter, jitter)), 3)
+                                  for key, value in self._archetypes["archetypes"][name].items()})
+
+    # -- captives, traits ---------------------------------------------------
+
+    def captured(self, person_id: int, captor_id: int, tick: int) -> None:
+        person = self.people.get(person_id)
+        if person is not None:
+            person.captive_of, person.commanding = captor_id, False
+            self.changed = tick
+
+    def freed(self, person_id: int, captor, price: int | None, tick: int, events: list) -> None:
+        """A prince comes home: ransomed (for `price` gold) or let go at the peace."""
+        person = self.people.get(person_id)
+        if person is None or not person.alive:
+            return
+        person.captive_of = None
+        person.commanding = True  # back at the head of his men
+        self.changed = tick
+        home = self.civs[self.houses[person.house].civ] if self.houses[person.house].civ is not None else None
+        if home is None:
+            return
+        how = f"ransomed from {captor.name} for {price} gold" if price else f"released by {captor.name} at the peace"
+        self._log(events, home, "ransom", person, f"{self.full_name(person)} of {home.name} comes home, {how}",
+                  banner=True, line=f"{person.name} is home! The bells ring in {home.name}.", civs=[home.id, captor.id])
+
+    def apply_modifiers(self, civ, mods) -> None:
+        """A learned ruler's realm learns faster."""
+        ruler = self.ruler(civ.id)
+        if ruler is not None and "learned" in ruler.traits:
+            mods.science_mult += LEARNED
 
     def _crown(self, civ, heir: Character) -> None:
         """The heir rules by their own lights: the civ's personality becomes theirs."""
@@ -523,7 +940,8 @@ class Families:
         house = self.by_civ.get(civ_id)
         if house is None or self.rng.random() >= PRINCE_COMMANDS:
             return None
-        options = [p for p in self.line(house) if p.sex == "m" and not p.commanding and ADULT <= p.age(tick) <= 55]
+        options = [p for p in self.line(house) if p.sex == "m" and not p.commanding and p.captive_of is None
+                   and ADULT <= p.age(tick) <= 55]
         return options[0] if options else None
 
     # -- telling it ---------------------------------------------------------
@@ -532,7 +950,7 @@ class Families:
              line: str = "", civs: list | None = None) -> None:
         events.append({"civ": civ.id, "kind": "family", "text": text,
                        "family": {"type": kind, "person": person.id, "portrait": person.picture(self.now),
-                                  "crest": f"{PORTRAITS}/{person.house}/crest.png", "banner": banner,
+                                  "crest": f"{PORTRAITS}/{person.house.split(':')[0]}/crest.png", "banner": banner,
                                   "line": line, "dead": not person.alive, "civs": civs or [civ.id]}})
         if self.diplomacy is not None:
             self.diplomacy.history.append({"tick": self.now, "civs": civs or [civ.id], "text": text})
@@ -556,11 +974,17 @@ class Families:
                     "ruler": house.ruler == person.id, "heir": heir is person,
                     "ill": tick < person.ill_until, "wounds": person.wounds, "commanding": person.commanding,
                     "personality": person.personality,
+                    "parents": list(person.parents), "spouse": person.spouse,
+                    "traits": person.traits + (["ambitious"] if person.ambition >= AMBITIOUS and person.alive else [])
+                              + (["usurper"] if person.usurper else []),
+                    "regent": house.regent == person.id, "deposed": person.deposed,
+                    "captive": self.civs[person.captive_of].name if person.captive_of is not None else "",
                 })
             members.sort(key=lambda m: (not m["ruler"], not m["heir"], not m["alive"], m["died"] or 0,
                                         -(m["age"] or 0)))
-            result.append({"civ": civ_id, "house": house.name, "key": house.key,
-                           "crest": f"{PORTRAITS}/{house.key}/crest.png" if house.key in _BOARD_HOUSES else "",
+            base = house.key.split(":")[0]
+            result.append({"civ": civ_id, "house": house.name, "key": house.key, "branch": house.branch,
+                           "crest": f"{PORTRAITS}/{base}/crest.png" if base in _BOARD_HOUSES else "",
                            "unrest": self.unrest(civ_id, tick), "members": members})
         return result
 

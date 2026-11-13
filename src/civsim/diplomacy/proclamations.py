@@ -47,6 +47,11 @@ LINES = {
               "{target} should have known its place. We will teach it."],
     "restless": ["Too long have our swords rested. {target} will feel them!",
                  "The long peace has made us soft. {target} will remind us what we are."],
+    "inheritance": ["The crown of {target} is ours by blood, and {about} will wear it!",
+                    "{target}'s throne has no heir but {about}. We come to claim it!"],
+    "rebellion": ["The crown belongs to the worthy! {about}'s reign begins, and {target}'s old order ends.",
+                  "{target} has grown weak and blind. {about} will not kneel to it again!",
+                  "Let {target} send its armies. {about} and {us} stand free!"],
     "weaker": ["{target} is weak, and the weak do not keep what they hold.",
                "{target} cannot stand against us. Forward!"],
 }

@@ -8,6 +8,18 @@ extends CanvasLayer
 
 signal start_requested(mode: String, size: String, civs: int, seed_text: String, map_id: String, difficulty: String)
 signal civ_chosen(civ_id: int)  # -1: watch after all
+## The game behind the menu should become the chosen map with this many civs, on its first day
+## (the simulation starts it paused; the game then started from the menu is that very one).
+signal preview_requested(size: String, map_id: String, civs: int)
+
+const Minimap := preload("res://scripts/minimap.gd")
+var _quiet := true  # while the menu is being built, choices do not ask for a new backdrop
+var _preview_timer: Timer
+var _preview_panel: PanelContainer
+var _preview_map: Control
+var _preview_list: RichTextLabel
+var _world_civs: Array = []  # the backdrop's civs, from its init message
+var _world_colors: Array = []
 
 const ACCENT := Color(0.36, 0.62, 1.0)
 const MODES := [
@@ -51,6 +63,9 @@ func _ready() -> void:
 
 ## Show the menu. `lobby` is what the sim offers: the map sizes and how many civs each takes.
 func show_menu(lobby: Dictionary) -> void:
+	if visible and _menu != null and is_instance_valid(_menu):
+		return  # already open (the backdrop was only swapped for a preview): keep every choice
+	_quiet = true
 	_sizes = lobby["sizes"]
 	_mode = "watch"  # each visit starts from watching, whatever the last game was
 	_clear()
@@ -167,10 +182,20 @@ func show_menu(lobby: Dictionary) -> void:
 	start.add_theme_font_size_override("font_size", 20)
 	_style_button(start, ACCENT.darkened(0.1), ACCENT, 12)
 	start.pressed.connect(func() -> void: start_requested.emit(_mode, _size, _civs, _seed.text.strip_edges(), _map, _difficulty))
-	last.add_child(start)
+	var look := Button.new()
+	look.text = "Preview"
+	look.tooltip_text = "Where each civ starts on this map, and how the map looks on the first day"
+	look.custom_minimum_size = Vector2(130, 44)
+	look.add_theme_font_size_override("font_size", 18)
+	_style_button(look, Color(1, 1, 1, 0.1), Color(1, 1, 1, 0.2), 12)
+	look.pressed.connect(_open_preview)
+	last.add_child(look)
+	last.move_child(look, 1)
+	_build_preview()
 
 	_set_mode(_mode)
 	_set_size(_size if _size_cards.has(_size) else str(_sizes[0]["id"]))
+	_quiet = false
 
 
 ## Show the civs of a game about to be ruled, for the player to choose one.
@@ -226,6 +251,9 @@ func _clear() -> void:
 		child.queue_free()
 	_menu = null
 	_pick = null
+	_preview_panel = null
+	_preview_map = null
+	_preview_list = null
 
 
 func _set_difficulty(level: String) -> void:
@@ -285,6 +313,7 @@ func _set_map(id: String) -> void:
 		_premise.text = str(entry.get("premise", "")) + ("  Best with %s civs." % best if best != "" else "")
 	if _civ_count != null:
 		_set_civs(_civs)
+	_ask_preview()
 
 
 func _set_civs(civs: int) -> void:
@@ -307,6 +336,109 @@ func _set_civs(civs: int) -> void:
 	if counts.size() < counts[-1] - counts[0] + 1:
 		which = " or ".join(counts.map(func(n: int) -> String: return str(n)))
 	_civ_hint.text = "%s on %s" % [which, where]
+	_ask_preview()
+
+
+## A new backdrop for the choice, once the clicking has settled.
+func _ask_preview() -> void:
+	if _quiet or _preview_timer == null:
+		return
+	_preview_timer.start()
+
+
+## The preview: the menu steps aside so the map's first day shows behind, and a panel at the
+## side holds the map in small with each civ's start marked.
+func _build_preview() -> void:
+	if _preview_timer == null:
+		_preview_timer = Timer.new()
+		_preview_timer.one_shot = true
+		_preview_timer.wait_time = 0.4
+		_preview_timer.timeout.connect(func() -> void: preview_requested.emit(_size, _map, _civs))
+		add_child(_preview_timer)
+	_preview_panel = _panel(Color(0.05, 0.065, 0.095, 0.92), 18, 18)
+	_preview_panel.set_anchors_preset(Control.PRESET_CENTER_LEFT)
+	_preview_panel.offset_left = 30
+	_preview_panel.grow_vertical = Control.GROW_DIRECTION_BOTH
+	_preview_panel.visible = false
+	_root.add_child(_preview_panel)
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 10)
+	_preview_panel.add_child(column)
+	var title := Label.new()
+	title.text = "How the game begins"
+	title.add_theme_font_size_override("font_size", 22)
+	column.add_child(title)
+	_preview_map = Minimap.new()
+	_preview_map.longest_side = 380.0
+	_preview_map.docked = false
+	_preview_map.show_view = false
+	_preview_map.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	column.add_child(_preview_map)
+	_preview_list = RichTextLabel.new()
+	_preview_list.bbcode_enabled = true
+	_preview_list.fit_content = true
+	_preview_list.scroll_active = false
+	_preview_list.custom_minimum_size = Vector2(380, 0)
+	_preview_list.add_theme_font_size_override("normal_font_size", 14)
+	column.add_child(_preview_list)
+	var back := Button.new()
+	back.text = "Back to the menu"
+	back.custom_minimum_size = Vector2(0, 40)
+	_style_button(back, ACCENT.darkened(0.1), ACCENT, 10)
+	back.pressed.connect(func() -> void:
+		_preview_panel.visible = false
+		_menu.visible = true)
+	column.add_child(back)
+	_fill_preview()
+
+
+## For scripted runs: choose a map and a number of civs, and open the preview.
+func open_preview_for(size: String, map_id: String, civs: int) -> void:
+	_set_size(size)
+	_set_map(map_id)
+	_set_civs(civs)
+	_open_preview()
+
+
+func _open_preview() -> void:
+	_preview_timer.stop()
+	preview_requested.emit(_size, _map, _civs)  # make sure the backdrop is this very choice
+	_menu.visible = false
+	_preview_panel.visible = true
+
+
+## The backdrop's map and civs, as each new one arrives (main.gd).
+func set_world(init: Dictionary, colors: Array) -> void:
+	_world_civs = init.get("civs", [])
+	_world_colors = colors
+	if _preview_map != null and is_instance_valid(_preview_map):
+		_preview_map.setup(init, colors)
+		_fill_preview()
+
+
+func set_tick(data: Dictionary) -> void:
+	if _preview_map == null or not is_instance_valid(_preview_map) or not is_instance_valid(_preview_panel) \
+			or not _preview_panel.visible:
+		return
+	_preview_map.update(data)
+	var labels: Array = []
+	for civ: Dictionary in data["civs"]:
+		var civ_id := int(civ["id"])
+		if civ["settlements"].is_empty() or civ_id >= _world_civs.size():
+			continue
+		var home: Dictionary = civ["settlements"][0]
+		labels.append([Vector2(int(home["x"]), int(home["y"])), str(_world_civs[civ_id]["name"]), _world_colors[civ_id]])
+	_preview_map.labels = labels
+	_preview_map.queue_redraw()
+
+
+func _fill_preview() -> void:
+	if _preview_list == null:
+		return
+	var lines: Array[String] = []
+	for civ: Dictionary in _world_civs:
+		lines.append("[color=%s]●[/color] [b]%s[/b] starts at %s" % [civ["color"], civ["name"], civ.get("capital_name", "?")])
+	_preview_list.text = "\n".join(lines) + "\n[color=#8a93a0]Start the game with the seed left blank and it is this one.[/color]"
 
 
 ## The numbers of civs a choice takes, smallest first.

@@ -98,6 +98,7 @@ func announce(day: int, title_text: String, color: Color, line: String, footer: 
 	var name_label := Label.new()
 	name_label.text = "%s  ·  day %d" % [footer, day]
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART  # a long footer wraps, the banner keeps its width
 	name_label.add_theme_font_size_override("font_size", 14)
 	name_label.add_theme_color_override("font_color", Color(0.75, 0.7, 0.62))
 	column.add_child(name_label)

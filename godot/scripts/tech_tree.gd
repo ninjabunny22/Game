@@ -61,6 +61,10 @@ func _ready() -> void:
 	visible = false
 
 
+func add_civ(civ: Dictionary) -> void:
+	_civs[int(civ["id"])] = {"color": Color.html(civ["color"]), "name": civ["name"]}
+
+
 func setup(init: Dictionary) -> void:
 	_eras = init["tech_tree"]["eras"]
 	_techs = init["tech_tree"]["techs"]

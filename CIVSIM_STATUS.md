@@ -103,6 +103,15 @@ Plan (agreed 2026-11-13): war on the AI's own judgement with a home guard; fight
   personality and 60 days of unrest; portraits cut from the boards (`tools/cut_portraits.py`);
   a Family tab in the drawer, family banners and chronicle lines; protocol 21. The
   "Noble Houses Collage" board is not used (it contradicts the single-house boards).
+- **Rebellions and more** (plan agreed 2026-11-13): plots by ambitious princes, rebel civs
+  appearing mid-game (protocol 22, `roster`), regency and usurping regents, throne claims
+  through marriage (war motive "inheritance"), prince ransoms, traits, a family tree view.
+  Rebels find patrons, who keep their word (a sworn bond) or betray them; fallen rebels are
+  locked away or ransomed to their fathers. Three check games: about 0.4 expected plots a
+  game (0.48 / 0.37 / 0.35), so roughly one game in three sees a rebellion.
+- **Menu preview:** choosing a map or civ count swaps the backdrop for that map on day 0
+  (`preview_map` command, paused); a Preview panel marks each civ's start; a game started with
+  the seed left blank reuses the preview's seed.
 
 ## Balance batch (2026-11-13)
 

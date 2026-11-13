@@ -9,6 +9,8 @@ signal follow_requested(civ_id: int)  # keep the camera on this civ's largest ar
 
 const TechTree := preload("res://scripts/tech_tree.gd")
 const WarBanner := preload("res://scripts/war_banner.gd")
+const FamilyTree := preload("res://scripts/family_tree.gd")
+var _family_tree: PanelContainer
 const LINK_LEGEND := "[color=#ff4033]━[/color] war   [color=#59a6ff]━[/color] alliance   [color=#59e666]━[/color] trade   [color=#aaaaaa]━[/color] neutral"
 
 const MAX_HEADLINES := 5
@@ -229,6 +231,8 @@ func _ready() -> void:
 	_tech_tree.offset_right = -20
 	_tech_tree.offset_bottom = -20
 	add_child(_tech_tree)  # beside the overlay's root, so it can come in front of the minimap too
+	_family_tree = FamilyTree.new()
+	add_child(_family_tree)
 	_banners = WarBanner.new()
 	root.add_child(_banners)
 	_tech_button = _panel(root)
@@ -567,20 +571,7 @@ func setup(init: Dictionary) -> void:
 	_cards.clear()
 	_civ_info.clear()
 	for civ: Dictionary in init["civs"]:
-		var civ_id := int(civ["id"])
-		_civ_info[civ_id] = civ
-		var card := RichTextLabel.new()
-		card.bbcode_enabled = true
-		card.fit_content = true
-		card.scroll_active = false
-		card.custom_minimum_size = Vector2(370, 0)
-		card.mouse_filter = Control.MOUSE_FILTER_STOP  # clickable: opens and closes the detail
-		card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-		card.gui_input.connect(_on_card_input.bind(civ_id))
-		card.add_theme_font_size_override("normal_font_size", 13)
-		card.add_theme_font_size_override("bold_font_size", 13)
-		_cards_box.add_child(card)
-		_cards[civ_id] = card
+		_add_card(civ)
 	_expanded = -1
 	_latest.clear()
 	_routine.clear()
@@ -600,6 +591,35 @@ func setup(init: Dictionary) -> void:
 	_drawer_civ = -1
 	_following = -1
 	_drawer.visible = false
+
+
+func _add_card(civ: Dictionary) -> void:
+	var civ_id := int(civ["id"])
+	_civ_info[civ_id] = civ
+	var card := RichTextLabel.new()
+	card.bbcode_enabled = true
+	card.fit_content = true
+	card.scroll_active = false
+	card.custom_minimum_size = Vector2(370, 0)
+	card.mouse_filter = Control.MOUSE_FILTER_STOP  # clickable: opens and closes the detail
+	card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	card.gui_input.connect(_on_card_input.bind(civ_id))
+	card.add_theme_font_size_override("normal_font_size", 13)
+	card.add_theme_font_size_override("bold_font_size", 13)
+	_cards_box.add_child(card)
+	_cards[civ_id] = card
+
+
+## A civ born in the middle of the game (a rebellion): a card, a chip on the bar, a place in
+## the chronicle's filter and the tech tree.
+func add_civ(civ: Dictionary) -> void:
+	if _civ_info.has(int(civ["id"])):
+		return
+	_add_card(civ)
+	_make_chips()
+	_chronicle_filter.add_item(str(civ["name"]), int(civ["id"]))
+	_tech_tree.add_civ(civ)
+	_fit_cards()
 
 
 func set_status(status: Dictionary) -> void:
@@ -967,7 +987,10 @@ func _build_drawer(root: Control) -> void:
 	_drawer_text.fit_content = true
 	_drawer_text.scroll_active = false
 	_drawer_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_drawer_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_drawer_text.mouse_filter = Control.MOUSE_FILTER_PASS  # its "family tree" link is clicked
+	_drawer_text.meta_clicked.connect(func(meta: Variant) -> void:
+		if str(meta) == "tree":
+			show_family_tree())
 	_drawer_text.add_theme_font_size_override("normal_font_size", 13)
 	_drawer_text.add_theme_font_size_override("bold_font_size", 13)
 	scroll.add_child(_drawer_text)
@@ -1109,6 +1132,8 @@ func _personality(civ_id: int) -> String:
 
 
 const FAMILY_COLUMNS := 4
+const TRAIT_COLORS := {"brave": "#e8b84a", "sickly": "#9ab07a", "learned": "#7ab0e0", "cruel": "#e07a6a",
+	"ambitious": "#d98a5a", "usurper": "#e05a4a"}
 
 ## The drawer's Family tab: a portrait for each living member (the ruler first, the heir
 ## marked), then the dead in grey with when and how they died.
@@ -1118,7 +1143,8 @@ func _family_text(civ_id: int) -> String:
 	var house: Dictionary = _families[civ_id]
 	var living: Array = house["members"].filter(func(m: Dictionary) -> bool: return m["alive"])
 	var dead: Array = house["members"].filter(func(m: Dictionary) -> bool: return not m["alive"])
-	var text := "[b]House %s[/b]%s\n" % [house["house"],
+	var text := "[b]House %s[/b]%s%s   [url=tree][color=#59a6ff]family tree[/color][/url]\n" % [house["house"],
+		"  [color=#8a93a0](%s)[/color]" % house["branch"] if str(house.get("branch", "")) != "" else "",
 		"  [color=#c9a23a](a new ruler, not yet settled)[/color]" if house["unrest"] else ""]
 	text += _portrait_table(living, str(house.get("crest", "")), false)
 	if not dead.is_empty():
@@ -1138,6 +1164,8 @@ func _portrait_table(members: Array, crest: String, dead: bool) -> String:
 		var role := ""
 		if member["ruler"]:
 			role = "[color=#e8b84a]♛ rules[/color]\n"
+		elif member.get("regent", false):
+			role = "[color=#e8b84a]regent[/color]\n"
 		elif member["heir"]:
 			role = "[color=#e8b84a]heir[/color]\n"
 		var about := ""
@@ -1154,6 +1182,12 @@ func _portrait_table(members: Array, crest: String, dead: bool) -> String:
 				notes.append("[color=#d98a5a]wounded[/color]")
 			if member["commanding"]:
 				notes.append("commands")
+			if str(member.get("captive", "")) != "":
+				notes.append("[color=#e07a6a]held by %s[/color]" % member["captive"])
+			if member.get("deposed", false):
+				notes.append("deposed")
+			for quality: Variant in member.get("traits", []):
+				notes.append("[color=%s]%s[/color]" % [TRAIT_COLORS.get(str(quality), "#c9b48a"), quality])
 			if str(member.get("born", "")) != "":
 				notes.append("née %s" % member["born"] if member["sex"] == "f" else "of %s" % member["born"])
 			about = "[color=#8a93a0]%s[/color]" % " · ".join(notes)
@@ -1165,9 +1199,14 @@ func _portrait_table(members: Array, crest: String, dead: bool) -> String:
 ## A death, a murder, a succession or a marriage between ruling houses: a banner like a war's.
 func _announce_family(tick: int, event: Dictionary, family: Dictionary, color: String) -> void:
 	var kind := str(family["type"])
-	var icon: String = "res://assets/icons/%s.svg" % {"assassination": "dagger", "marriage": "rings"}.get(kind, "crown")
+	var icon: String = "res://assets/icons/%s.svg" % {"assassination": "dagger", "marriage": "rings",
+		"rebellion": "dagger", "execution": "dagger", "usurpation": "dagger", "claim": "battle",
+		"pledge": "rings", "betrayal": "dagger", "captured": "dagger"}.get(kind, "crown")
 	var title: String = {"death": "A death in the house", "succession": "The crown passes",
-		"assassination": "Murder!", "marriage": "A royal wedding"}.get(kind, "News of the court")
+		"assassination": "Murder!", "marriage": "A royal wedding", "rebellion": "Rebellion!",
+		"execution": "A traitor's end", "usurpation": "The crown is seized", "claim": "A claim to a throne",
+		"ransom": "A prince comes home", "pledge": "An oath to the rebel", "betrayal": "Betrayed!",
+		"captured": "The rebel is taken"}.get(kind, "News of the court")
 	var portrait := str(family.get("portrait", ""))
 	if portrait == "":
 		portrait = str(family.get("crest", ""))
@@ -1209,7 +1248,16 @@ func _first_alive() -> int:
 
 
 ## Esc: close what is open, the most recent first.
+## The drawer's civ's house as a tree, over the map.
+func show_family_tree() -> void:
+	if _families.has(_drawer_civ):
+		_family_tree.show_house(_families[_drawer_civ], Color.html(_civ_info[_drawer_civ]["color"]))
+
+
 func close_top() -> bool:
+	if _family_tree.visible:
+		_family_tree.visible = false
+		return true
 	if _chronicle.visible:
 		_chronicle.visible = false
 		return true

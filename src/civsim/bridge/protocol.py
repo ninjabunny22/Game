@@ -30,10 +30,10 @@ from ..simulation import Simulation
 from ..config import HEADCOUNT, MAP_SIZES, MAPS, civ_counts, civ_range
 from ..diplomacy import rules
 
-PROTOCOL_VERSION = 21
+PROTOCOL_VERSION = 22
 RULER_COMMANDS = ("take_control", "release_control", "set_stance", "set_focus", "set_research", "set_build",
                   "answer_proposal", "start_rally", "cancel_rally", "reinforce_ally", "recall_reinforcement")
-GAME_COMMANDS = ("new_game", "end_game")  # start a game from the menu; go back to the menu
+GAME_COMMANDS = ("new_game", "end_game", "preview_map")  # start a game from the menu; back to it; show a map behind it
 COMMANDS = ("pause", "resume", "toggle_pause", "step", "set_speed", *RULER_COMMANDS, *GAME_COMMANDS)
 
 
@@ -432,6 +432,9 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
             for deal in diplomacy.deals
         ],
         "events": sim.events,
+        # Every civ's name and colour, as in the init message: a rebellion adds one mid-game.
+        "roster": [{"id": civ.id, "name": civ.name, "color": civ.color, "personality": civ.personality.name,
+                    "capital_name": civ.capital.name if civ.settlements else ""} for civ in sim.civs],
     }
     # The ruling houses, on a day something in them changed and once a month for their ages.
     if sim.families.changed == sim.tick or sim.tick % 30 == 0:

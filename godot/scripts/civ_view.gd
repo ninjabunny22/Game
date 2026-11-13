@@ -382,6 +382,10 @@ func set_layer(layer: String, on: bool) -> void:
 	_show_layers()
 
 
+func add_civ(civ: Dictionary) -> void:
+	_civ_names[int(civ["id"])] = str(civ["name"])
+
+
 ## A rally is marked where it gathers, with the days left, and then on the city it marches on.
 func show_rallies(rallies: Array) -> void:
 	var seen := {}

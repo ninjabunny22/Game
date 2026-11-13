@@ -91,6 +91,7 @@ class Params:
     TRADE_REFUSED: float = 0.25  # it has refused us something we lack for this long ...
     REFUSED_DAYS: int = 100  # ... days
     GATE_THREAT: float = 0.2  # it holds a pass, neck or crossing that opens into our land
+    THRONE_CLAIM: float = 0.45  # our blood has a claim to its throne (its own line died out)
     HOLD_THE_LEADER: float = 0.6  # the edge at which a war on a near-winner is still fought on
     EASY: float = -0.3  # added to the worth of attacking a human ruler on the easy setting ...
     HARD: float = 0.2  # ... and on the hard one
@@ -357,7 +358,7 @@ class UtilityBrain:
                 friends_wars, need=0.0, player=None, difficulty="normal") -> tuple[float, str]:
         p = self.p
         self._motive = (None, None)
-        if not (can_declare and n["in_reach"]) or n["truce"] or you.get("sick") or you.get("unrest"):
+        if not (can_declare and n["in_reach"]) or n["truce"] or you.get("sick") or you.get("unrest") or n.get("sworn"):
             return 0.0, ""  # nor does a civ that is itself sick, or whose new ruler is not yet settled, start anything
         sick = bool(n.get("sick"))
         # Caught off balance: its army is away, or has just been beaten.
@@ -448,6 +449,11 @@ class UtilityBrain:
             score += p.LOST_LANDS + (p.LOST_HOME if n.get("holds_our_home") else 0.0)
             why = f"{lost[0]} was ours" if not n.get("holds_our_home") else f"{n['name']} holds our old home"
             motive, about = ("home", lost[0]) if n.get("holds_our_home") else ("lost_lands", lost[0])
+        claim = n.get("throne_claim")
+        if claim:
+            score += p.THRONE_CLAIM
+            why = f"{claim} is the rightful heir to {n['name']}'s throne"
+            motive, about = "inheritance", claim
         plain = motive in ("weaker", "busy", "bully", "restless", "exposed")  # says little: a broader reason may speak
         if you.get("crowded"):
             score += p.LAND_HUNGER

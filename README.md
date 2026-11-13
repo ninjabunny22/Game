@@ -40,7 +40,10 @@ it weighs attacking, allying and trading with every neighbour from the civ's per
 and the situation, and says why. `--brain rules` uses the simpler policy the tests run on.
 
 **Main menu.** Started with nothing said about the game (`./CivSim.command`), the
-viewer opens on its main menu over a game playing itself. The menu chooses whether to
+viewer opens on its main menu over a game playing itself. Choosing a map, or a number of civs,
+puts that map behind the menu on its first day; **Preview** steps the menu aside and shows the
+map in small with each civ's start marked, and the game then started (with the seed left blank)
+is exactly that one. The menu chooses whether to
 watch or to rule a civ, a map (any of the nine by name, a random one of a size, or a random
 one of any size) and how many civs, within what that map takes. A game to be ruled starts
 paused on a screen for choosing a civ. `--size`, `--map` and `--civs` choose the same from
@@ -157,7 +160,38 @@ The overlay is built for watching:
     as exposed.
   - **Where you see it:** deaths, murders, successions and royal weddings are proclaimed in a
     banner like a war's, and every family event is in the chronicle. A civ's drawer has a
-    Family tab with portraits.
+    Family tab with portraits, and a family tree (generations as rows, the dead greyed).
+  - **Traits:** about half are born with one:
+    - brave: commands as a seasoned general;
+    - sickly: 35% more at risk;
+    - learned: +15% research while ruling;
+    - cruel: every realm thinks worse of theirs each year.
+  - **Plots and rebellion:** from day 1,000, an ambitious prince or lord who is not the heir may
+    plot against the ruler, more likely when the ruler is old, ill, new or a child, or the realm
+    is losing a war; about one game in three sees a rebellion, by chance, not by schedule.
+    - **A third of attempts succeed.** An heir nobody suspects simply takes the throne; one
+      found out keeps it in a shaken realm.
+    - **Any other plotter found out, and every failed one, rebels.** He seizes a castle of the
+      realm (never its capital) with its region, and breaks away as a new civ at war with his
+      king. He takes his family, his own army, 10–25% of the king's soldiers, the castle's
+      general and perhaps one or two more, and a fifth of the stores.
+    - **With no castle to seize** (or no name left for a new civ: eight at most), he is executed.
+    - The king's allies stand by him; his enemies warm to the rebel.
+    - Any grown member of the house can plot: sons, daughters, brothers, sisters.
+    - **A patron:** the rebel turns to the strongest realm at war with the king (or that hates
+      him). It allies with the rebel, swears he keeps his land, and goes to war on the king.
+      - About a third of patrons mean to betray him: 20–60 days later they fall on him.
+        Expansionists and cruel rulers are likelier to, builders and scholars less.
+      - One that keeps its word is sworn to him: the two never fight each other.
+    - **A fallen rebel** is taken alive. His own father's realm strips him of every title
+      and locks him away; anyone else holds him until his father pays 400 gold, and he comes
+      home in chains, out of the line of succession.
+  - **Regency:** a child on the throne (under 16) rules through the mother or the eldest grown
+    kin, who may take the crown for themselves.
+  - **Claims:** a house whose line dies out is taken by a cousin, but the blood of a daughter
+    married abroad gives that realm a claim to the throne, and a reason for war, for 3,000 days.
+  - **Ransom:** a prince taken in battle costs three times a general's ransom, and comes home
+    with a banner.
 - **Sickness.** A civ at war for 250 days or more may be struck by sickness: it loses people
   at once and for 150 days fights worse and grows slower. Neighbours see it; enemies press
   harder and a warlike ally may turn on it.

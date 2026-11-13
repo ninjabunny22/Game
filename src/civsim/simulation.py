@@ -43,6 +43,7 @@ SCORE_PER_POINT = 60
 SCORE_PER_TECH = 20
 
 CIV_NAMES = ["Aurelia", "Kheshet", "Norvald", "Zhanlu", "Tamari", "Ossyria", "Valmere", "Iskandar"]
+REBEL_STORES = 0.2  # share of the king's stores a rebel carries off
 CIV_COLORS = ["#d9433b", "#3b7dd9", "#e8c33a", "#a04fd6", "#3bbf9a", "#e07b2e", "#e86fb0", "#f0f0f0"]
 
 
@@ -80,6 +81,8 @@ class Simulation:
         self.families = Families(self.civs, self.config.seed, self.diplomacy)
         self.military.families = self.families
         self.families.military = self.military
+        self.families.spawn = self._spawn_rebel
+        self.diplomacy.families = self.families
         # What each region is worth to each civ: one valuation for campaigns, war
         # targets, harbours and the strategist.
         self.geography = Geography(self.world, self.civs, self.diplomacy, self.military)
@@ -106,6 +109,7 @@ class Simulation:
             if "mining" in civ.known_techs:  # a mine is only worked by a civ that knows how
                 mods.income["gold"] += MINE_GOLD * self.mines_held(civ)
             self.diplomacy.apply_modifiers(civ, mods)
+            self.families.apply_modifiers(civ, mods)
             self.modifiers[civ.id] = mods
             self.ai.plan(civ, mods, self.tick, events)
             manage_villagers(civ, self.world, mods, lambda: next(self._ids))
@@ -121,6 +125,48 @@ class Simulation:
         self._schedule_checkins()
         self.events = events
         return events
+
+    # -- rebellion ---------------------------------------------------------------
+
+    def _spawn_rebel(self, person, king, tile: int, share: float, tick: int, events: list):
+        """A new civ in the middle of the game: a prince who has broken with his king holds the
+        castle on `tile` and its region, with its people and stores, `share` of the king's
+        soldiers and the rest that civ/family.py and military/warfare.py give him, and is at war
+        with the king at once. None if there is no name left for another civ."""
+        used = {civ.name for civ in self.civs}
+        free = [name for name in CIV_NAMES if name not in used]
+        if not free or len(self.civs) >= len(CIV_COLORS):
+            return None
+        world = self.world
+        region = world.regions[world.region_of[tile]]
+        part = 1.0 / max(1, len(king.settlements))
+        personality = self.families.personality_of(person)
+        rebel = Civilization(
+            id=len(self.civs),
+            name=free[self.families.rng.randrange(len(free))],
+            color=CIV_COLORS[len(self.civs)],
+            personality=personality,
+            population=king.population * part,
+            resources={res: amount * REBEL_STORES for res, amount in king.resources.items()},
+            settlements=[],
+        )
+        king.population -= rebel.population
+        for res in king.resources:
+            king.resources[res] -= rebel.resources[res]
+        rebel.born = personality
+        rebel.known_techs = list(king.known_techs)
+        rebel.home_region = region.id
+        rebel.focus = "military"
+        self.civs.append(rebel)  # world.civs is this same list
+        for keeper in (self.natives, self.families, self.villages, self.military, self.geography):
+            keeper.civs[rebel.id] = rebel
+        self.diplomacy.add_civ(rebel)
+        self.modifiers[rebel.id] = compute_modifiers(rebel, self.building_defs, self.tech_tree)
+        self.diplomacy.secede(rebel, king, region, tick)  # (seizing stores weighs its strength)
+        self.modifiers[rebel.id] = compute_modifiers(rebel, self.building_defs, self.tech_tree)
+        self.military.rebel_forces(king, rebel, region.capital, person.id, share, self.families.rng)
+        self.diplomacy.rebellion_war(rebel, king, person.name, tick, events)
+        return rebel
 
     def mines_held(self, civ) -> int:
         """Gold mines in the regions the civ holds: each pays it MINE_GOLD a day."""
