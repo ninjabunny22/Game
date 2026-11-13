@@ -1487,7 +1487,7 @@ class Military:
         if target is None:
             return
         need = CAMPAIGN_ADVANTAGE * natives.defence(target)
-        soldiers = need / max(self.diplomacy.quality(civ), 0.1) / (1 - GARRISON_KEEP)
+        soldiers = self._campaign_soldiers(civ, target)
         if soldiers > self.diplomacy.mobilization_cap(civ) * civ.population:
             return  # not strong enough yet
         if civ.income["gold"] <= 0 and civ.resources["gold"] < 0.2 * self.mods[civ.id].storage["gold"]:
@@ -1503,6 +1503,12 @@ class Military:
                     commander=self._appoint(civ), state="marching")
         army.add(civ.garrison.take(min((1 - GARRISON_KEEP) * civ.soldiers, self.capacity(army))), civ.garrison.tier)
         civ.armies.append(army)
+
+    def _campaign_soldiers(self, civ, region) -> float:
+        """Soldiers it takes to storm a native capital: twice its defence, with a share of the
+        army left at home."""
+        need = CAMPAIGN_ADVANTAGE * self.diplomacy.natives.defence(region)
+        return need / max(self.diplomacy.quality(civ), 0.1) / (1 - GARRISON_KEEP)
 
     def _worth(self, values: dict, tile: int) -> float:
         """What the region whose capital stands on `tile` is worth to the civ, 0 without a valuation."""
@@ -1533,6 +1539,8 @@ class Military:
                 overseas = worth.by_sea and worth.access >= ACCESS_BY_SHIP
                 if not (near or overseas):
                     continue
+                if self._campaign_soldiers(civ, region) > self.diplomacy.mobilization_cap(civ) * civ.population:
+                    continue  # more than it can put under arms: waiting for it would wait for ever
                 key = (-worth.total, region.id)
             else:
                 continue

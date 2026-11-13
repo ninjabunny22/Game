@@ -58,8 +58,10 @@ def blueprint() -> Blueprint:
             size = (4 if res == "iron" else 8) if len(rich) == 1 else 3
             deposits.append((res, (int(hx) + j, int(hy) - j), size))
         deposits.append(("fertile_soil", tuple(int(v) for v in towards(x, y, b - 10, 5.0)), 6))
-        if rich == ("stone",):  # stone builds less than iron arms: the stone isles grow more grain
+        if rich == ("stone",):  # stone builds less than iron arms: the stone isles grow more grain ...
             deposits.append(("fertile_soil", tuple(int(v) for v in towards(x, y, b + 35, 7.5)), 7))
+            # ... and are short of iron, not without it (in play they lost far more often without).
+            deposits.append(("iron", (int(hx) - 1, int(hy) + 1), 2))
         patches.append((Sector(x, y, 0, ISLE + 4, b - 180, b + 180), Biome.FOREST, 0.3))
         deposits.append(("game", tuple(int(v) for v in towards(x, y, b - 120, 6.5)), 4))
     regions.append(RegionSpec("saltcrown", "Saltcrown", "Saltcrown Keep", (48, 48), Circle(C, C, HUB + 4),

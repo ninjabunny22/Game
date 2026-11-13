@@ -81,3 +81,13 @@ def test_a_harbour_faces_the_water_that_leads_to_its_goal(isle_game):
     civ.harbour_goal = isle.capital
     site = find_site(civ, world, harbour)
     assert site is not None and water_bodies(world, [site]) & lagoon
+
+
+def test_a_campaign_does_not_wait_for_a_prize_it_could_never_take():
+    sim = Simulation(game_config("medium", 2, seed=2, map="emberwaste"))
+    civ = sim.civs[0]
+    kesh = next(r for r in sim.world.regions if r.name == "Oasis of Kesh")
+    target = sim.military._campaign_target(civ)
+    kesh.garrison = 10_000  # far beyond anything it could field
+    again = sim.military._campaign_target(civ)
+    assert again is not kesh and (again is not None or target is kesh)

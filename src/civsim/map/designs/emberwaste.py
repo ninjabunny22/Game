@@ -36,8 +36,10 @@ def blueprint() -> Blueprint:
             deposits.append(("fertile_soil", tuple(int(v) for v in towards(C, C, (lo + hi) / 2 + 8, 34.0)), 7))
         name, capital = DESERTS[k]
         at = towards(C, C, a - 16, 21.0)
+        # The desert's natives are few (in play, stronger ones were never taken, and the game
+        # stalled with the civs penned in their valleys).
         regions.append(RegionSpec(_k(name), name, capital, (int(at[0]), int(at[1])),
-                                  Sector(C, C, KESH, SAND, a - 36, a + 36)))
+                                  Sector(C, C, KESH, SAND, a - 36, a + 36), strength=0.6))
         rivers.append([towards(C, C, a, SAND + 0.5), towards(C, C, a + 3, 38.0), towards(C, C, a, 47.0)])
         # The desert's gold, and a caravan oasis on the way in.
         hx, hy = towards(C, C, a + 14, 22.0)
@@ -47,6 +49,7 @@ def blueprint() -> Blueprint:
         ox, oy = towards(C, C, a - 20, 15.5)
         lakes.append(Circle(ox, oy, 1.8))
         zones.append((Circle(ox, oy, 3.6), Biome.PLAINS))
+        deposits.append(("fertile_soil", (int(ox) + 2, int(oy)), 6))  # the oasis feeds its caravanserai
         links += [(_k(VALLEYS[2 * k][0]), _k(VALLEYS[2 * k + 1][0]), "river"),
                   (_k(VALLEYS[2 * k + 1][0]), _k(VALLEYS[(2 * k + 2) % 10][0]), "land"),
                   (_k(VALLEYS[2 * k][0]), _k(name), "land"), (_k(VALLEYS[2 * k + 1][0]), _k(name), "land"),
@@ -55,7 +58,7 @@ def blueprint() -> Blueprint:
     links += [("ashara", "bone_flats", "land"), ("belqis", "saltpan", "land"), ("saltpan", "esmer", "land"),
               ("hazir", "bone_flats", "land")]
     regions.append(RegionSpec("kesh", "Oasis of Kesh", "Kesh", (48, 48), Circle(C, C, KESH),
-                              strength=2.0, defects=False, tags=("prize", "crossroads")))
+                              strength=1.5, defects=False, tags=("prize", "crossroads")))
     zones = [(Circle(C, C, SAND), Biome.DESERT)] + zones
     zones += [(Circle(C, C, 7.5), Biome.FOREST), (Circle(C, C, 3.5), Biome.PLAINS)]
     zones += [(Circle(C, C, 10.0) - Circle(C, C, 7.5), Biome.HILLS)]
