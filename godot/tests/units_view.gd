@@ -1,7 +1,8 @@
 extends SceneTree
 ## Draws armies the way the game does (unit_view.gd) on a flat field, to check by eye:
 ## one besieging another civ's capital (its siege engines up), one at sea (its ship alone, no
-## one on deck), one marching. Saves pictures of them:
+## one on deck), one marching, and two villagers crossing water (their fishing boats alone,
+## rowing). Saves pictures of them:
 ##   Godot --path godot --script res://tests/units_view.gd -- <output folder>
 
 const UnitView := preload("res://scripts/unit_view.gd")
@@ -23,6 +24,7 @@ func height_at(_x: float, _z: float) -> float:
 
 var _camera := Camera3D.new()
 var _frames := 0
+var _armies: Array = []
 var _out := ""
 var _units: Node3D
 var _models := Models.new()
@@ -69,14 +71,15 @@ func _init() -> void:
 	# Civ 1 holds a capital at (20, 20); civ 0's army besieges it from (18, 20).
 	_units.update_posted([{"id": 1, "settlements": [{"x": 20, "y": 20}], "commanders_in_reserve": []}])
 	var general := {"name": "Aldric", "level": 3, "battles": 4, "wins": 3}
-	_units.update([
+	_armies = [
 		_army(1, 0, 18, 20, "besieging", general, false),
 		_army(2, 0, 30, 20, "marching", {"name": "Edda", "level": 2, "battles": 1, "wins": 1}, true),
 		_army(3, 0, 14, 20, "marching", {"name": "Farid", "level": 1, "battles": 0, "wins": 0}, false,
 			{"cavalry": 160, "swordsman": 40}, "cavalry"),
 		_army(4, 1, 10, 20, "fighting", {"name": "Greta", "level": 2, "battles": 2, "wins": 1}, false,
 			{"archer": 150, "spearman": 50}, "archer"),
-	], [])
+	]
+	_units.update(_armies, _boatmen(22))
 	_units.set_detail(2)
 	var ship: Node3D = _models.instance("civsim_ship", _models.tinted_material(colors[0]), 2.0)
 	ship.position = Vector3(26, 0, 26)
@@ -93,6 +96,16 @@ func _army(id: int, civ: int, x: int, y: int, state: String, commander: Dictiona
 		"duty": "attack", "units": units, "size": 200, "capacity": 200,
 		"rally": null, "dominant": dominant, "afloat": afloat, "boat": afloat, "strength": 200.0,
 		"commander": commander, "refit": false, "tier": 1.0, "scouted": true}
+
+
+## Two villagers afloat, one of each civ, in row `y` of the sea.
+func _boatmen(y: int) -> Array:
+	return [
+		{"id": 1, "civ": 0, "x": 31, "y": y, "task": "gather", "gathers": "food", "at_work": false,
+			"mounted": false, "afloat": true},
+		{"id": 2, "civ": 1, "x": 29, "y": y, "task": "build", "gathers": null, "at_work": false,
+			"mounted": true, "afloat": true},
+	]
 
 
 func _process(_delta: float) -> bool:
@@ -120,6 +133,14 @@ func _process(_delta: float) -> bool:
 		_save("swing_a")
 	elif _frames == 101:
 		_save("swing_b")
+		_camera.look_at_from_position(Vector3(30.7, 1.2, 23.6), Vector3(30, 0.2, 21.0))
+	elif _frames == 108:
+		_save("fishing_boats_at_rest")
+		_units.update(_armies, _boatmen(21))  # they row a tile on
+	elif _frames == 116:
+		_save("fishing_boats_rowing_a")
+	elif _frames == 124:
+		_save("fishing_boats_rowing_b")
 		return true
 	return false
 

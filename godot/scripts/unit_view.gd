@@ -9,6 +9,7 @@ extends Node3D
 ## the army is doing. An army without a commander is led by a figure of its dominant type. An army that has put out from a harbour is shown as a ship until it
 ## lands. Villagers are animated too: walking, hammering at a building, working the
 ## land or drawing water; one with a horse from the stables is shown riding.
+## A villager crossing water is shown as a small fishing boat alone, its oars rowing.
 ##
 ## How much is drawn follows the zoom. From afar a field army is a single marker in its
 ## civ's colour with its size and its general's name; garrisons and villagers are left out.
@@ -38,6 +39,13 @@ const MAX_RANKS := 8  # ... up to this many behind whoever leads it
 const RANK_SPACING := 0.34
 const STRIKES := ["attack", "shoot"]  # what a model's fighting animation may be called
 const BOAT_LENGTH := 0.95
+# A villager's fishing boat: its length in tiles (half an army's ship), where its waterline and
+# rowlocks are (in the model's own units, as tools/blender/make_models.py draws it) and how it rows.
+const SKIFF_LENGTH := 0.45
+const SKIFF_WATERLINE := 0.05
+const SKIFF_ROWLOCK := Vector3(0.2, 0.225, -0.1)
+const STROKE_RATE := 6.0  # radians a second: about one stroke a second
+const ROWING_ON := 1.5  # seconds the oars keep going after the boat last moved
 ## Siege engines an army brings up to an enemy capital's walls: [model, size, where (behind the leader)].
 const SIEGE_ENGINES := [["civsim_ram", 0.55, Vector3(0.0, 0, 0.45)], ["civsim_catapult", 0.5, Vector3(0.55, 0, -0.65)]]
 const SIEGE_REACH := 3  # tiles from an enemy capital within which a besieging army has its engines up
@@ -57,6 +65,7 @@ var _villagers := {}  # villager id -> {"node", "look", "target"}
 var _materials := {}
 var _detail := 0  # 0 whole-map view, 1 closer, 2 full detail
 var _swell := 0.0
+var _clock := 0.0
 var _characters: RefCounted  # characters.gd
 var _adventurers: RefCounted  # adventurers.gd
 var _models: RefCounted  # models.gd: the ship and the siege engines
@@ -128,23 +137,39 @@ func update(armies: Array, villagers: Array) -> void:
 		seen[id] = true
 		# Only what changes the model itself; what the villager is doing is shown by its animation.
 		var plain: bool = not _characters.has("Villager")
-		var look := "%d:%s:%s" % [int(villager["civ"]), villager["mounted"], villager["task"] if plain else ""]
+		var afloat := bool(villager.get("afloat", false))
+		var mounted := bool(villager["mounted"])
+		var look := "%d:%s:%s" % [int(villager["civ"]), mounted, villager["task"] if plain else ""]
 		if not _villagers.has(id) or _villagers[id]["look"] != look:
 			var at: Variant = null
+			var skiff: Variant = null
 			if _villagers.has(id):
 				at = _villagers[id]["node"].position
+				skiff = _villagers[id].get("skiff")
 				_villagers[id]["node"].queue_free()
-			_villagers[id] = _make_villager(int(villager["civ"]), villager["task"], look, bool(villager["mounted"]))
+			_villagers[id] = _make_villager(int(villager["civ"]), villager["task"], look, mounted)
 			if at != null:  # same villager, new task: carry on from where it stands
 				_villagers[id]["node"].position = at
 				_villagers[id]["placed"] = true
+			if skiff != null:
+				_villagers[id]["skiff"] = skiff
 		var key := "%d,%d" % [int(villager["x"]), int(villager["y"])]
 		var n: int = crowd.get(key, 0)
 		crowd[key] = n + 1
 		var fan := Vector3(-0.3 + 0.3 * (n % 3), 0, 0.3 - 0.3 * (n / 3 % 3))
 		_aim(_villagers[id], _spot(int(villager["x"]), int(villager["y"]), fan))
-		_villagers[id]["afloat"] = bool(villager.get("afloat", false))  # aboard ship: not drawn
-		_villagers[id]["node"].visible = not _villagers[id]["afloat"]
+		_villagers[id]["afloat"] = afloat
+		# On water a villager crosses in a fishing boat, shown alone like an army's ship: it
+		# comes and goes with the water.
+		if afloat and not _villagers[id].has("skiff"):
+			var made: Variant = _make_skiff(int(villager["civ"]))
+			if made != null:
+				_villagers[id]["skiff"] = made
+				_villagers[id]["rowed"] = ROWING_ON
+		elif not afloat and _villagers[id].has("skiff"):
+			_villagers[id]["skiff"]["node"].queue_free()
+			_villagers[id].erase("skiff")
+		_villagers[id]["node"].visible = not afloat
 		# What it does once it has stopped walking.
 		var doing := "idle"
 		if villager["at_work"] and villager["task"] == "build":
@@ -152,7 +177,7 @@ func update(armies: Array, villagers: Array) -> void:
 		elif villager["at_work"] and villager["task"] == "gather":
 			doing = "water" if villager["gathers"] == "water" else "pick"
 		_villagers[id]["doing"] = doing
-		_villagers[id]["mounted"] = bool(villager["mounted"])
+		_villagers[id]["mounted"] = mounted
 	_drop_missing(_villagers, seen)
 
 
@@ -210,6 +235,7 @@ func _show_army(entry: Dictionary) -> void:
 
 
 func _process(delta: float) -> void:
+	_clock += delta
 	for group: Dictionary in [_armies, _villagers, _posted]:
 		for entry: Dictionary in group.values():
 			var node: Node3D = entry["node"]
@@ -236,10 +262,34 @@ func _process(delta: float) -> void:
 					_swell += delta
 					entry["boat"].position.y = 0.03 * sin(_swell * 1.7 + node.position.x)
 					entry["boat"].rotation.z = 0.05 * sin(_swell * 1.3 + node.position.z)
+			elif entry.has("skiff"):
+				_row(entry, moving, delta)
 			elif entry.get("mounted", false):
 				_characters.play(node, ("trot" if offset.length() > 1.5 else "walk") if moving else "idle")
 			else:
 				_characters.play(node, "walk" if moving else entry.get("doing", "idle"))
+
+
+## A villager's boat goes where he would be (he is not drawn aboard), bow first, riding the water a little; its oars pull
+## while it is under way and for a moment after, and otherwise lie still.
+func _row(entry: Dictionary, moving: bool, delta: float) -> void:
+	var skiff: Dictionary = entry["skiff"]
+	var node: Node3D = entry["node"]
+	var boat: Node3D = skiff["node"]
+	var measure: float = skiff["measure"]
+	entry["rowed"] = 0.0 if moving else float(entry.get("rowed", ROWING_ON)) + delta
+	var rowing: bool = entry["rowed"] < ROWING_ON
+	var bob := 0.008 * sin(_clock * 1.7 + node.position.x)
+	boat.position = node.position + Vector3(0, bob - SKIFF_WATERLINE * measure, 0)
+	boat.rotation = Vector3(0, node.rotation.y, 0.04 * sin(_clock * 1.3 + node.position.z))
+	if rowing:
+		skiff["stroke"] = float(skiff["stroke"]) + STROKE_RATE * delta
+	var stroke: float = skiff["stroke"]
+	# The blade sweeps back in the water, then lifts and comes forward through the air.
+	var sweep := 0.5 * sin(stroke) if rowing else 0.0
+	var dip := -0.3 - 0.16 * cos(stroke) if rowing else -0.12
+	(skiff["oars"][0] as Node3D).rotation = Vector3(0, sweep, dip)
+	(skiff["oars"][1] as Node3D).rotation = Vector3(0, PI - sweep, dip)
 
 
 ## Sets where a figure should be. A figure seen for the first time appears there
@@ -258,6 +308,8 @@ func _spot(x: int, y: int, offset: Vector3) -> Vector3:
 func _drop_missing(group: Dictionary, seen: Dictionary) -> void:
 	for id: Variant in group.keys():  # army and villager ids, or "civ:name" for a posted general
 		if not seen.has(id):
+			if group[id].has("skiff"):
+				group[id]["skiff"]["node"].queue_free()
 			group[id]["node"].queue_free()
 			group.erase(id)
 
@@ -462,6 +514,33 @@ func _make_villager(civ: int, task: String, look: String, mounted: bool) -> Dict
 		_part(figure, _box(0.2, 0.14, 0.2), WOOD.lightened(0.3), Vector3(0, 0.3, 0.2))
 	add_child(figure)
 	return {"node": figure, "look": look, "target": Vector3.ZERO}
+
+
+## A fishing boat in the civ's colour with its two oars, or null without the models.
+func _make_skiff(civ: int) -> Variant:
+	var material: Material = _models.tinted_material(_civ_colors[civ])
+	var hull: Node3D = _models.instance("civsim_fishing_boat", material, SKIFF_LENGTH)
+	if hull == null:
+		return null
+	var boat := Node3D.new()
+	boat.add_child(hull)
+	var measure := hull.scale.x
+	var oars: Array[Node3D] = []
+	for side: float in [1.0, -1.0]:
+		var oar: Node3D = _models.instance("civsim_oar", material, 1.0)
+		if oar == null:
+			continue
+		oar.scale = hull.scale  # drawn to the boat's measure, not sized on its own
+		var pivot := Node3D.new()  # at the rowlock
+		pivot.position = Vector3(side * SKIFF_ROWLOCK.x, SKIFF_ROWLOCK.y, SKIFF_ROWLOCK.z) * measure
+		pivot.add_child(oar)
+		boat.add_child(pivot)
+		oars.append(pivot)
+	if oars.size() < 2:
+		boat.free()
+		return null
+	add_child(boat)
+	return {"node": boat, "oars": oars, "measure": measure, "stroke": 0.0}
 
 
 func _soldier_figure(unit_id: String, color: Color) -> Node3D:

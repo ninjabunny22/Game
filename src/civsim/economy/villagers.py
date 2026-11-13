@@ -98,7 +98,7 @@ def _send(civ, villager: Villager, world: WorldMap, mods, task: str, target: int
     """Set the villager walking to `target`. Like an army it walks round water and mountains,
     over bridges and through passes; it takes ship from near a working harbour, or, with boats
     and no harbour, from any shore. With no way there it stays as it is, and the place is left
-    alone for OUT_OF_REACH days. (A villager afloat is drawn as nothing at all.)"""
+    alone for OUT_OF_REACH days. (The viewer draws a villager afloat as a fishing boat.)"""
     search = max(3000, int(0.5 * world.width * world.height))
     boats = bool(mods.boats)
     path = find_path(world, villager.tile, target, bool(mods.bridges), boats, max_nodes=search,

@@ -54,7 +54,8 @@ style). Balance and timing have not had their dedicated pass yet.
     rigged horse (mounted generals for cavalry armies), all animated from the KayKit
     Character Animations pack by weapon;
   - castles built from Hexagon pieces that grow by era;
-  - Blender-made gold mine, ship (shown alone when an army is at sea), harbour, stable,
+  - Blender-made gold mine, ship (shown alone when an army is at sea), fishing boat with oars
+    (a villager crossing water is shown as one, rowing), harbour, stable,
     catapult and ram (beside armies besieging a capital), and spear;
   - still water and levelled ground under castles.
 
@@ -129,6 +130,7 @@ the old custom .glb files that lay at the root are in `art/legacy_models/` (both
 
 | Commit | Change |
 |---|---|
+| (this commit) | Villagers cross water in fishing boats, rowing |
 | `874dde0` | Malformed commands refused instead of crashing |
 | `c22bcbc` | The Narrow Sea's Skerry crossing; Narrow Sea 2–4 civs |
 | `457c9dc`, `1de0466`, `9f27b23`, `9fe4b7b`, `dbe180b` | Balance fixes from the batch; eight-way movement |

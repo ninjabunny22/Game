@@ -7,7 +7,7 @@ const Models := preload("res://scripts/models.gd")
 const Adventurers := preload("res://scripts/adventurers.gd")
 const Characters := preload("res://scripts/characters.gd")
 const Main := preload("res://scripts/main.gd")
-const MODELS := [["civsim_gold_mine", 1.0], ["civsim_ship", 1.0], ["civsim_harbour", 1.9], ["civsim_stable", 1.9],
+const MODELS := [["civsim_gold_mine", 1.0], ["civsim_ship", 1.0], ["civsim_fishing_boat", 0.45], ["civsim_harbour", 1.9], ["civsim_stable", 1.9],
 	["civsim_catapult", 0.7], ["civsim_ram", 0.8], ["building_home_A_green", 0.78]]
 
 var _camera := Camera3D.new()

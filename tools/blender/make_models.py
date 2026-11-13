@@ -238,6 +238,40 @@ def ship() -> None:
     m.export("civsim_ship", HEXAGON_OUT)
 
 
+def fishing_boat() -> None:
+    """A villager's boat for crossing water: a small open hull with two benches, a basket of
+    the day's catch in the bow and a short mast whose sail carries the owner's colour. No one
+    is drawn aboard, as with the ship; the oars are their own model (oar), so they can row.
+    About 1 long, bow forward."""
+    m = Model(HEX)
+    m.loft("clay", [(-0.5, 0.02, 0.15, 0.27), (-0.36, 0.13, 0.04, 0.215), (-0.1, 0.2, 0.0, 0.19),
+                    (0.2, 0.2, 0.0, 0.19), (0.42, 0.15, 0.03, 0.21), (0.5, 0.1, 0.08, 0.235)])
+    m.box("plank", (0.24, 0.56, 0.02), at=(0, 0.06, 0.085), shade=0.3)  # the bottom boards ...
+    m.box("plank", (0.1, 0.18, 0.02), at=(0, -0.31, 0.105), shade=0.3)  # ... and the bow's, higher
+    for side in (-1, 1):
+        m.box("brick", (0.025, 0.66, 0.025), at=(side * 0.195, 0.05, 0.185))  # the gunwale
+        m.box("iron", (0.03, 0.03, 0.035), at=(side * 0.2, 0.1, 0.205))  # a rowlock
+    m.box("timber", (0.38, 0.07, 0.02), at=(0, 0.28, 0.15))  # the stern bench
+    m.box("timber", (0.34, 0.06, 0.02), at=(0, -0.2, 0.15))  # the mast bench
+    m.cylinder("hay", 0.055, 0.07, at=(0, -0.33, 0.125), segments=7, top=0.065)  # the basket ...
+    m.box("steel", (0.07, 0.035, 0.02), at=(0.01, -0.33, 0.19), turn=0.5)  # ... and a fish in it
+    m.cylinder("timber", 0.016, 0.6, at=(0, -0.2, 0.1), segments=6)  # the mast
+    m.box("timber", (0.36, 0.02, 0.02), at=(0, -0.2, 0.64))  # its yard
+    m.box("white", (0.32, 0.014, 0.3), at=(0, -0.222, 0.335), shade=0.35)  # the sail
+    m.box("team", (0.1, 0.022, 0.296), at=(0, -0.222, 0.337), shade=0.35)  # a stripe in the owner's colour
+    m.box("team", (0.012, 0.09, 0.045), at=(0, -0.15, 0.655), shade=0.3)  # a pennant
+    m.export("civsim_fishing_boat", HEXAGON_OUT)
+
+
+def oar() -> None:
+    """One oar of the fishing boat, pivoting at its rowlock (the origin): the shaft runs
+    outboard along +x to the blade, with the handle a little inboard."""
+    m = Model(HEX)
+    m.cylinder("timber", 0.012, 0.5, at=(-0.1, 0, 0), segments=5, axis="X")
+    m.box("plank", (0.15, 0.012, 0.06), at=(0.455, 0, -0.03), shade=0.3)  # the blade
+    m.export("civsim_oar", HEXAGON_OUT)
+
+
 def harbour() -> None:
     """A harbour on a 2 x 2 square: a stone quay on the land side, a timber pier running out
     over the water (+y in Blender, the side that is turned to face the water), a storehouse
@@ -377,6 +411,6 @@ def bridge_pier() -> None:
 
 
 if __name__ == "__main__":
-    for make in (gold_mine, ship, harbour, stable, catapult, ram, spear, bridge, bridge_pier):
+    for make in (gold_mine, ship, fishing_boat, oar, harbour, stable, catapult, ram, spear, bridge, bridge_pier):
         reset()
         make()

@@ -66,7 +66,7 @@ const KEEP := "building_castle_green"
 const SITE_STAGES := ["building_stage_A", "building_stage_B", "building_stage_C"]
 const SITE_SIZE := 0.85
 ## Every pack model drawn other than through BUILDING_MODELS, for the asset check.
-const EXTRA_MODELS := ["civsim_gold_mine", "civsim_ship", "civsim_catapult", "civsim_ram", "building_destroyed", "building_scaffolding", "flag_green", "wall_straight", "wall_straight_gate",
+const EXTRA_MODELS := ["civsim_gold_mine", "civsim_ship", "civsim_fishing_boat", "civsim_oar", "civsim_catapult", "civsim_ram", "building_destroyed", "building_scaffolding", "flag_green", "wall_straight", "wall_straight_gate",
 	"fence_wood_straight", "fence_wood_straight_gate", "building_tower_base_green", "building_tower_A_green",
 	"building_tower_catapult_green", "building_church_green", "building_blacksmith_green", "building_well_green",
 	"building_tavern_green", "building_market_green", "building_castle_green", "building_tower_A_green", "building_stage_A",
