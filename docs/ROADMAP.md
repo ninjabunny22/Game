@@ -93,3 +93,6 @@ state is in CIVSIM_STATUS.md.
   person marked (greyed if dead). A war, battle or siege event moves the camera to where it
   is being fought (the fight's place, else the attacked castle). Events would need to carry
   the person, the place or the war they concern (bridge/protocol.py).
+- **To do (asked for 2026-11-13): more names for generals.** The list of commander names
+  (`COMMANDER_NAMES`, military/warfare.py) is short, so the same names keep coming back. Make
+  it much longer, perhaps with a flavour per civ.
