@@ -131,3 +131,16 @@ state is in CIVSIM_STATUS.md.
   guard (`keep_home`), and only when the strategist's wish for land is high enough
   (strategy/utility.py). Raise that priority while at peace, without changing the rules of
   campaigns, and check in 3 games how much sooner neutral land is taken.
+- **To plan (asked for 2026-11-13): fewer, bigger villages, and a building cap per region.**
+  Around a capital the villages and houses sprawl into a clutter of roofs and names. Instead:
+  - **Villages:** at most 3 around each capital, each upgraded from level 1 to 5; every level
+    houses more villagers (the population a region holds stays about the same, in fewer,
+    larger places, drawn bigger as they grow).
+  - **Other buildings outside the walls** (farms, mines, lumber camps...): a maximum per region
+    too, upgraded by level rather than built again and again.
+  - **Why it matters for play:** a region's slots are limited, so more land means more room to
+    grow, which gives civs one more reason to fight over regions.
+  - **To work out in the plan:** the levels' costs and capacities, how upgrades replace today's
+    village growth (civ/villages.py) and building placement (`placement_problem` / `place`),
+    what the AI builds and when, how a captured region's villages and buildings pass over, the
+    look at each level (one model per level, from the packs), and a balance check in 3 games.
