@@ -201,6 +201,8 @@ def _settlement(sim: Simulation, civ, settlement, watcher) -> dict:
     # Its generals in reserve, its hospital (all the civ's wounded and beds, spread through its
     # castles) and, if an enemy has broken in, who and how far the hold has gone.
     entry["generals"] = [{"name": c.name, "level": c.level} for c in civ.commanders if c.post == settlement.tile]
+    # Who rules it: the ruler at the capital, else the member of the house governing it (civ/family.py).
+    entry["ruled_by"] = sim.families.ruler_of(civ.id, settlement.tile)
     # Who is inside its walls, none of whom is drawn on the map: the civ's villagers on its
     # castle ground, its soldiers (the garrison's share and the civ's armies standing there) and
     # its generals (those in reserve, and those leading the armies inside). For another civ's

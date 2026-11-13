@@ -569,11 +569,13 @@ class Military:
             commander.post = capitals[place] if place < len(capitals) else None
 
     def post_defence(self, civ, tile: int) -> float:
-        """Extra defence a capital has from the commander stationed there."""
+        """Extra defence a capital has from the commander stationed there, and from a brave
+        governor ruling it (civ/family.py)."""
+        governor = self.families.governor_defence(civ.id, tile) if self.families is not None else 0.0
         for commander in civ.commanders:
             if commander.post == tile:
-                return POST_DEFENCE + POST_DEFENCE_PER_LEVEL * commander.level
-        return 0.0
+                return POST_DEFENCE + POST_DEFENCE_PER_LEVEL * commander.level + governor
+        return governor
 
     def capital_fell(self, captor, loser, tile: int, tick: int, events: list) -> None:
         """The commander holding a capital that falls is killed, captured or gets away."""

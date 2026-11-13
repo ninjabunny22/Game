@@ -1,8 +1,9 @@
 """Royal families: each civ is ruled by a house (data/houses.json, from the portrait boards) whose
 members age, marry, have children, fall ill and die, and whose ruler is followed by an heir.
 
-Ageing is exact: a character is one year older for every 365 days (age = (day - birth_day) //
-365; members alive at the start are born `age * 365` days before day 0). Once a year (on their
+Ageing is exact: a child is a year older every CHILD_YEAR (120) days until 18, so heirs grow up
+within a game, and an adult a year older every 365 days (`age_after`; members alive at the
+start are born `born_aged(age)` days before day 0). Once a year (on their
 birthday, or for those alive at the start on a day of the year of their own) a character faces
 one natural-death check, whose chance rises with every year of age (a Gompertz
 curve, `natural_death_chance`); health, an illness and old wounds weigh on it. Apart from that,
@@ -41,7 +42,8 @@ from ..datafiles import load_json
 from ..diplomacy.proclamations import proclaim
 from .personality import Personality, with_focus
 
-YEAR = 365
+YEAR = 365  # days in a year of an adult's life
+CHILD_YEAR = 120  # days in a year of childhood: children grow up faster, so heirs come of age in a game
 # Natural death: the chance of dying within the year at `age`, A at 30, multiplied by e^B a year.
 MORTALITY_A = 0.0022
 MORTALITY_B = 0.075
@@ -102,6 +104,21 @@ SWORN = 3.0  # how the rebel and a patron that keeps its word think of each othe
 PORTRAITS = "res://assets/portraits"
 FACES = {"m": (0, 2, 4), "f": (1, 3, 5)}  # the shared faces (portraits/common), by sex
 GROWN = 16  # from this age a shared face is shown grown up
+RULE_AGE = 12  # the youngest who rules in their own name; a younger ruler has a regent
+# What a governor brings, from their own nature: their trait if it has a bonus, else their
+# personality. (modifier, amount, words); "defense" strengthens only the castle they rule.
+GOVERNOR_TRAITS = {
+    "brave": ("defense", 0.2, "+20% defence of the castle"),
+    "learned": ("science_mult", 0.05, "+5% research"),
+    "cruel": ("military", 0.05, "+5% army strength"),
+}
+GOVERNOR_PERSONALITIES = {
+    "Expansionist": ("mobilization", 0.02, "+2% of the people under arms"),
+    "Builder": ("build_speed", 0.08, "+8% building speed"),
+    "Scholar": ("science_mult", 0.04, "+4% research"),
+    "Merchant": ("gold", 0.08, "+8% gold"),
+    "Agrarian": ("food", 0.06, "+6% food"),
+}
 
 
 @dataclass
@@ -131,9 +148,10 @@ class Character:
     usurper: bool = False  # took the throne by a crime
     deposed: bool = False  # put aside: out of the line of succession
     captive_of: int | None = None  # the civ holding them prisoner
+    governs: int | None = None  # the tile of the castle they rule for the crown, if any
 
     def age(self, day: int) -> int:
-        return (day - self.birth_day) // YEAR
+        return age_after(day - self.birth_day)
 
     def picture(self, day: int) -> str:
         """The portrait to show: their own, or their shared face at their age ("" for none)."""
@@ -152,6 +170,20 @@ class House:
     regent: int | None = None  # who rules for a child on the throne
     branch: str = ""  # for a house founded by a rebel: whose line it is
     origin: str = ""  # ... and the house it broke away from
+
+
+def age_after(days: int) -> int:
+    """How old someone is `days` after their birth: a year every CHILD_YEAR days until ADULT,
+    then one every YEAR days."""
+    if days < ADULT * CHILD_YEAR:
+        return max(0, days) // CHILD_YEAR
+    return ADULT + (days - ADULT * CHILD_YEAR) // YEAR
+
+
+def born_aged(age: int, day: int = 0) -> int:
+    """The birth day of someone who is exactly `age` on `day`."""
+    lived = age * CHILD_YEAR if age < ADULT else ADULT * CHILD_YEAR + (age - ADULT) * YEAR
+    return day - lived
 
 
 def natural_death_chance(age: int, health: float = 1.0, ill: bool = False, wounds: int = 0) -> float:
@@ -219,7 +251,7 @@ class Families:
             self.by_civ[civ_id] = house
         ids = {}
         for entry in data["members"]:
-            person = self._add(house, entry["name"], entry["sex"], -entry.get("age", 0) * YEAR,
+            person = self._add(house, entry["name"], entry["sex"], born_aged(entry.get("age", 0)),
                                f"{PORTRAITS}/{key}/{entry['id']}.png")
             ids[entry["id"]] = person
             person.born = entry.get("born", "")
@@ -254,13 +286,13 @@ class Families:
         house = House(name.lower(), name, civ.id)
         self.houses[house.key] = house
         self.by_civ[civ.id] = house
-        ruler = self._add(house, self._name("m"), "m", -50 * YEAR)
-        consort = self._add(house, self._name("f"), "f", -46 * YEAR)
+        ruler = self._add(house, self._name("m"), "m", born_aged(50))
+        consort = self._add(house, self._name("f"), "f", born_aged(46))
         ruler.spouse, consort.spouse = consort.id, ruler.id
         ruler.ruled, house.ruler = True, ruler.id
         ruler.personality = (civ.born or civ.personality).name
         for sex, age in (("m", 24), ("f", 20)):
-            child = self._add(house, self._name(sex), sex, -age * YEAR)
+            child = self._add(house, self._name(sex), sex, born_aged(age))
             child.face = self.rng.choice(FACES[sex])
             child.parents = [ruler.id, consort.id]
             child.personality = self._inherit(child)
@@ -361,6 +393,7 @@ class Families:
             self._betrayals(tick, events)
         if tick % 30 == 0:
             self._ransoms(tick, events)
+            self._govern(tick)
         for house in list(self.by_civ.values()):
             civ = self.civs[house.civ]
             if not civ.alive:
@@ -455,7 +488,7 @@ class Families:
         if partner is None:  # a daughter or son of a minor noble family
             family = self.rng.choice(self._names["minor_houses"])
             age = max(ADULT, person.age(tick) + self.rng.randint(-5, 3))
-            partner = self._add(house, self._name(want), want, tick - age * YEAR - self.rng.randrange(YEAR))
+            partner = self._add(house, self._name(want), want, born_aged(age, tick) - self.rng.randrange(YEAR))
             partner.born = family
             partner.face = self.rng.choice(FACES[want])
         # The bride joins her husband's house.
@@ -591,12 +624,12 @@ class Families:
         if heir is None:  # the line is spent: blood married abroad may claim it, and a cousin comes forward
             if events is not None:
                 self._claim(house, civ, tick, events)
-            heir = self._add(house, self._name("m"), "m", tick - (35 + self.rng.randrange(20)) * YEAR)
+            heir = self._add(house, self._name("m"), "m", born_aged(35 + self.rng.randrange(20), tick))
             heir.personality = self.rng.choice(sorted(self._archetypes["archetypes"]))
         house.ruler = heir.id
         heir.ruled = True
         house.regent = None
-        if heir.age(tick) < GROWN:  # a child on the throne: the mother, else the eldest grown kin, rules for them
+        if heir.age(tick) < RULE_AGE:  # a child on the throne: the mother, else the eldest grown kin, rules for them
             mother = next((self.people[p] for p in heir.parents if self.people[p].sex == "f"), None)
             if mother is not None and mother.alive and mother.house == house.key:
                 house.regent = mother.id
@@ -615,7 +648,7 @@ class Families:
         regent = self.people[house.regent]
         if not regent.alive or regent.house != house.key:
             house.regent = None
-        elif ruler.age(tick) >= GROWN:
+        elif ruler.age(tick) >= RULE_AGE:
             house.regent = None
             self.changed = tick
             self._log(events, civ, "regency", ruler,
@@ -695,7 +728,8 @@ class Families:
         house = self.by_civ[civ.id]
         king = self.people[house.ruler]
         trouble = 0.0
-        trouble += 0.3 if king.age(tick) >= 65 or king.age(tick) < GROWN else 0.0
+        # Old age, or a ruler under 18 whose competence is in doubt, invites plots.
+        trouble += 0.3 if king.age(tick) >= 65 or king.age(tick) < ADULT else 0.0
         trouble += 0.2 if tick < king.ill_until else 0.0
         trouble += 0.3 if self.unrest(civ.id, tick) else 0.0
         trouble += 0.2 if self._sick(civ) else 0.0
@@ -749,7 +783,10 @@ class Families:
         castle = None
         if castles and self.spawn is not None:
             army = self.military.army_of(person.id) if self.military is not None else None
-            if army is not None:
+            governed = next((s for s in castles if s.tile == person.governs), None)
+            if governed is not None:  # the castle they rule for the crown is theirs already
+                castle = governed
+            elif army is not None:
                 castle = min(castles, key=lambda s: (self.military.gap(army.tile, s.tile), s.tile))
             else:
                 castle = self.rng.choice(castles)
@@ -876,6 +913,67 @@ class Families:
                       banner=True, line=f"{person.name} is home, and will answer for what was done.",
                       civs=[home.id, captor.id])
 
+    # -- governors ------------------------------------------------------------
+
+    def _govern(self, tick: int) -> None:
+        """Every castle of a realm but its capital (which the ruler holds) is ruled for the
+        crown by a grown member of the house: the ruler's children first, then the rest of the
+        line. One who dies, is taken, goes to war or loses the castle is replaced."""
+        for house in self.by_civ.values():
+            civ = self.civs[house.civ]
+            if not civ.alive or not civ.settlements:
+                continue
+            castles = [s.tile for s in civ.settlements[1:]]
+            line = self.line(house)
+            held = {}
+            for person in line:
+                if person.governs is not None:
+                    if (person.governs in castles and person.captive_of is None and not person.commanding
+                            and person.governs not in held):
+                        held[person.governs] = person
+                    else:
+                        person.governs = None
+                        self.changed = tick
+            free = [p for p in line if p.governs is None and p.captive_of is None and not p.commanding
+                    and p.age(tick) >= ADULT]
+            for tile in castles:
+                if tile not in held and free:
+                    free.pop(0).governs = tile
+                    self.changed = tick
+
+    def governor_bonus(self, person: Character) -> tuple[str, float, str] | None:
+        """What a governor brings: fixed by who they are (their trait, else their personality)."""
+        for trait in person.traits:
+            if trait in GOVERNOR_TRAITS:
+                return GOVERNOR_TRAITS[trait]
+        return GOVERNOR_PERSONALITIES.get(person.personality)
+
+    def governors(self, civ_id: int) -> list[Character]:
+        house = self.by_civ.get(civ_id)
+        return [p for p in self.line(house) if p.governs is not None] if house is not None else []
+
+    def governor_defence(self, civ_id: int, tile: int) -> float:
+        """Extra defence a brave governor gives the castle they rule."""
+        for person in self.governors(civ_id):
+            bonus = self.governor_bonus(person)
+            if person.governs == tile and bonus is not None and bonus[0] == "defense":
+                return bonus[1]
+        return 0.0
+
+    def ruler_of(self, civ_id: int, tile: int) -> str | None:
+        """Who rules the castle on `tile` for its realm: the ruler at the capital, else its governor."""
+        house = self.by_civ.get(civ_id)
+        civ = self.civs.get(civ_id)
+        if house is None or civ is None or not civ.settlements or house.ruler is None:
+            return None
+        if civ.settlements[0].tile == tile:
+            return self.full_name(self.people[house.ruler])
+        governor = next((p for p in self.line(house) if p.governs == tile), None)
+        if governor is None:
+            return None
+        bonus = self.governor_bonus(governor)
+        return self.full_name(governor) + (f" ({bonus[2]})" if bonus is not None else "")
+
     def _descendants(self, person: Character) -> list[Character]:
         found = []
         for child in self.children(person):
@@ -921,6 +1019,16 @@ class Families:
         ruler = self.ruler(civ.id)
         if ruler is not None and "learned" in ruler.traits:
             mods.science_mult += LEARNED
+        # Each governor's own bonus, for the whole realm (a brave one's defence is for their castle only).
+        for person in self.governors(civ.id):
+            bonus = self.governor_bonus(person)
+            if bonus is None or bonus[0] == "defense":
+                continue
+            key, amount, _ = bonus
+            if key in mods.yield_mult:
+                mods.yield_mult[key] += amount
+            else:
+                setattr(mods, key, getattr(mods, key) + amount)
 
     def _crown(self, civ, heir: Character) -> None:
         """The heir rules by their own lights: the civ's personality becomes theirs."""
@@ -982,6 +1090,8 @@ class Families:
                               + (["usurper"] if person.usurper else []),
                     "regent": house.regent == person.id, "deposed": person.deposed,
                     "captive": self.civs[person.captive_of].name if person.captive_of is not None else "",
+                    "governs": next((s.name for s in self.civs[house.civ].settlements if s.tile == person.governs), ""),
+                    "governor_bonus": (self.governor_bonus(person) or (None, 0, ""))[2] if person.governs is not None else "",
                 })
             members.sort(key=lambda m: (not m["ruler"], not m["heir"], not m["alive"], m["died"] or 0,
                                         -(m["age"] or 0)))

@@ -165,7 +165,8 @@ The overlay is built for watching:
 - **Royal houses.** Each civ is ruled by a house from the portrait boards (Valedorn, Ashbourne,
   Thornwick, Frostmere, Greythorne, Silvermere; others only marry in), with the ages printed on
   the boards.
-  - **Ageing:** everyone is one year older every 365 days, exactly.
+  - **Ageing:** a child is a year older every 120 days until 18 (so heirs grow up within a
+    game); after that everyone is one year older every 365 days, exactly.
   - **Natural death:** on each birthday a character faces a check whose chance rises with
     every year of age: 0.2% a year at 30, 0.7% at 45, 2% at 60, 4.4% at 70, 9% at 80, 20%
     at 90. Frail health, an illness (for a year) or old wounds make it worse.
@@ -179,6 +180,12 @@ The overlay is built for watching:
     which warms their realms to each other), and couples have children; a child shows a
     child's face until 16, then the same face grown up.
   - **Princes in war:** princes can command armies, and fall, be wounded or be taken in battle.
+  - **Governors:** every castle but the capital is ruled for the crown by a grown member of
+    the house (the ruler's children first); click a castle to see who rules it. Each governor
+    brings a bonus of their own, from their nature: a brave one +20% defence of their castle,
+    a learned one +5% research, a cruel one +5% army strength; otherwise by personality
+    (Expansionist +2% under arms, Builder +8% building speed, Scholar +4% research, Merchant
+    +8% gold, Agrarian +6% food). A governor who rebels seizes the castle they rule.
   - **Succession:** when a ruler dies, the eldest son (then daughter) and their line follow,
     then the ruler's brothers and sisters, then a cousin. The heir rules by their own
     personality, and for 60 days the realm is unsettled: it starts no war, and rivals see it
@@ -211,8 +218,9 @@ The overlay is built for watching:
     - **A fallen rebel** is taken alive. His own father's realm strips him of every title
       and locks him away; anyone else holds him until his father pays 400 gold, and he comes
       home in chains, out of the line of succession.
-  - **Regency:** a child on the throne (under 16) rules through the mother or the eldest grown
-    kin, who may take the crown for themselves.
+  - **Regency:** a ruler under 12 rules through the mother or the eldest grown kin, who may
+    take the crown for themselves. From 12 they rule alone, but until 18 their competence is
+    doubted and plots against them are likelier.
   - **Claims:** a house whose line dies out is taken by a cousin, but the blood of a daughter
     married abroad gives that realm a claim to the throne, and a reason for war, for 3,000 days.
   - **Ransom:** a prince taken in battle costs three times a general's ransom, and comes home

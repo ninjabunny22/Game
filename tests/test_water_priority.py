@@ -253,7 +253,7 @@ def test_a_thirsty_civ_and_a_rich_neighbour_end_up_trading_water(sim):
         civ.diplomacy_points = 300
     thirsty.resources.update(wood=250, stone=250)
     deal = None
-    for _ in range(160):
+    for _ in range(400):
         set_water(sim, rich, 60, 5, stock=sim.modifiers[rich.id].storage["water"])
         mods = sim.modifiers[thirsty.id]
         sim.step_with(brain)

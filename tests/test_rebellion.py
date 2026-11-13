@@ -99,9 +99,9 @@ def test_a_child_on_the_throne_rules_through_a_regent_until_sixteen():
     for person in families.line(house):
         if person is not child:
             person.deposed = True  # only the child is left in the line
-    families.die(ruler, 10 * YEAR, [], "a stroke")
+    families.die(ruler, 5 * family.CHILD_YEAR, [], "a stroke")  # the child is 5
     assert house.ruler == child.id and house.regent is not None
-    families._regency(house, families.civs[0], 16 * YEAR, events := [])
+    families._regency(house, families.civs[0], 16 * family.CHILD_YEAR, events := [])
     assert house.regent is None and events and events[-1]["family"]["type"] == "regency"
 
 
@@ -121,7 +121,7 @@ def test_an_ambitious_regent_may_take_the_crown():
 def test_a_spent_line_is_claimed_by_blood_married_abroad():
     families = Families(_civs(2), seed=4, diplomacy=_Diplomacy())
     a, b = families.house_of(0), families.house_of(1)
-    daughter = families._add(b, "Anwen", "f", -25 * YEAR)
+    daughter = families._add(b, "Anwen", "f", family.born_aged(25))
     daughter.born = a.name  # born to house a, married into house b
     for member in a.members:
         if families.people[member].id != a.ruler:
@@ -210,3 +210,41 @@ def test_court_intrigue_off_means_no_plots_or_murders():
     assert "poison" not in family.sudden_rates(40, enemies=2, royal=True, intrigue=0.0)
     busy = Simulation(game_config("medium", 4, 3, intrigue="frequent")).families
     assert busy.intrigue > 1.0
+
+
+def test_the_kings_children_govern_his_other_castles_and_a_rebel_takes_the_one_they_rule():
+    sim, king = _realm_of_three()
+    families = sim.families
+    families._govern(sim.tick)
+    house = families.house_of(king.id)
+    assert families.ruler_of(king.id, king.capital.tile) == families.full_name(families.ruler(king.id))
+    governors = [p for p in families.line(house) if p.governs is not None]
+    assert governors and all(p.governs in [s.tile for s in king.settlements[1:]] for p in governors)
+    for settlement in king.settlements[1:]:
+        assert families.ruler_of(king.id, settlement.tile) is not None
+    rebel_prince = governors[0]
+    ruled = rebel_prince.governs
+    families._rebel(rebel_prince, house, king, sim.tick, [], "caught")
+    assert sim.civs[-1].capital.tile == ruled  # the castle they ruled is the one they take
+
+
+def test_a_governor_brings_their_own_bonus_and_a_young_king_invites_plots():
+    sim, king = _realm_of_three()
+    families = sim.families
+    families._govern(sim.tick)
+    governor = families.governors(king.id)[0]
+    governor.traits, governor.personality = [], "Merchant"
+    from civsim.economy.modifiers import Modifiers
+    mods = Modifiers()
+    gold = mods.yield_mult["gold"]
+    families.apply_modifiers(king, mods)
+    assert mods.yield_mult["gold"] == gold + family.GOVERNOR_PERSONALITIES["Merchant"][1]
+    governor.traits = ["brave"]  # a brave governor's bonus is the defence of their own castle
+    assert families.governor_defence(king.id, governor.governs) == family.GOVERNOR_TRAITS["brave"][1]
+    assert sim.military.post_defence(king, governor.governs) >= family.GOVERNOR_TRAITS["brave"][1]
+    ruler = families.ruler(king.id)
+    ruler.birth_day = family.born_aged(30, sim.tick)
+    calm = families._troubles(king, sim.tick)
+    ruler.birth_day = family.born_aged(15, sim.tick)  # under 18: his competence is doubted
+    assert families._troubles(king, sim.tick) > calm
+    assert family.RULE_AGE == 12

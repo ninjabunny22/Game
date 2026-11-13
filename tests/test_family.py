@@ -36,7 +36,7 @@ def test_age_rises_by_exactly_one_year_every_365_days():
     start = ruler.age(0)
     assert ruler.age(364) == start and ruler.age(365) == start + 1
     assert ruler.age(5 * YEAR) == start + 5  # 45 is 50 on day 1,825
-    person = family.Character(99, "Test", ruler.house, "m", birth_day=-45 * YEAR)
+    person = family.Character(99, "Test", ruler.house, "m", birth_day=family.born_aged(45))
     assert person.age(1825) == 50 and person.age(1824) == 49
 
 
@@ -131,7 +131,9 @@ def test_children_are_born_only_to_married_couples():
         father, mother = (families.people[p] for p in child.parents)
         assert father.spouse == mother.id and mother.sex == "f"
         assert child.face is not None and child.picture(child.birth_day).endswith(f"child_{child.face}.png")
-        assert child.picture(child.birth_day + family.GROWN * YEAR).endswith(f"adult_{child.face}.png")
+        assert child.picture(child.birth_day + family.GROWN * family.CHILD_YEAR).endswith(f"adult_{child.face}.png")
+    assert family.age_after(18 * family.CHILD_YEAR) == 18 and family.age_after(17 * family.CHILD_YEAR) == 17
+    assert family.age_after(18 * family.CHILD_YEAR + YEAR) == 19  # grown up, a year is 365 days again
 
 
 def test_every_portrait_on_the_boards_was_cut():

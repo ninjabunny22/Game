@@ -810,6 +810,8 @@ func _refresh_castle() -> void:
 			_castle_title.text = str(settlement["name"])
 			lines.append(_civ_name(int(civ["id"])))
 			lines.append("[color=#8a93a0]%s[/color]" % ("The capital of the realm" if main else "A regional capital"))
+			if settlement.get("ruled_by") != null:
+				lines.append("[color=#8a93a0]Ruled by:[/color] [color=#e8cf8a]%s[/color]" % settlement["ruled_by"])
 			var region: Dictionary = _regions_at.get(_castle_at, {})
 			if not region.is_empty():
 				var worth := "[color=#8a93a0]%s · worth %d point%s[/color]" % [str(region["name"]), int(region.get("points", 1)),
@@ -1191,6 +1193,10 @@ func _portrait_table(members: Array, crest: String, dead: bool) -> String:
 				notes.append("[color=#d98a5a]wounded[/color]")
 			if member["commanding"]:
 				notes.append("commands")
+			if str(member.get("governs", "")) != "":
+				notes.append("rules %s" % member["governs"])
+				if str(member.get("governor_bonus", "")) != "":
+					notes.append("[color=#e8cf8a]%s[/color]" % member["governor_bonus"])
 			if str(member.get("captive", "")) != "":
 				notes.append("[color=#e07a6a]held by %s[/color]" % member["captive"])
 			if member.get("deposed", false):
