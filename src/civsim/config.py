@@ -54,7 +54,7 @@ MAPS = {
                 "civs": (2, 5), "best": "3 to 5",
                 "premise": "Fertile valleys ring a great desert; the gold lies in the sand, and Kesh at its heart."},
                {"id": "the_divide", "name": "The Divide", "file": True, "width": 96, "height": 96,
-                "civs": (2, 5), "best": "2 or 4",
+                "civs": (2, 5), "counts": (2, 4, 5), "best": "2 or 4",
                 "premise": "A ridge of peaks splits the land in two; three passes cross it, the Kingsgate in the middle."}],
     "large": [{"id": "five_gates", "name": "The Five Gates", "file": True, "width": 160, "height": 160,
                "civs": (2, 5), "best": "5",

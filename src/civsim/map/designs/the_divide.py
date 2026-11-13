@@ -88,5 +88,7 @@ def blueprint() -> Blueprint:
         starts={"NW": ("frostwick", "westwatch"), "NE": ("seal_bay", "eastwatch"), "N5": ("pinemere", "ironwater"),
                 "SW": ("goldfield", "westgate_vale"), "SE": ("sunreach", "eastgate_vale"),
                 "S5": ("barleydown", "wheatmere")},
-        sets={2: ["NW", "SE"], 3: ["NW", "NE", "S5"], 4: ["NW", "NE", "SW", "SE"], 5: ["NW", "N5", "NE", "SW", "SE"]},
+        # No 3: two civs on one half and one alone on the other always made the lone one lose
+        # (the pair ally against it: it won 1 game in 15).
+        sets={2: ["NW", "SE"], 4: ["NW", "NE", "SW", "SE"], 5: ["NW", "N5", "NE", "SW", "SE"]},
     )
