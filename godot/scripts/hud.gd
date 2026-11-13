@@ -14,7 +14,7 @@ const LINK_LEGEND := "[color=#ff4033]━[/color] war   [color=#59a6ff]━[/color
 const MAX_HEADLINES := 5
 const ROUTINE_WINDOW := 100  # days over which routine events are counted for the summary line
 # Events worth a line of their own. Everything else is only counted.
-const HEADLINE_KINDS := ["war", "diplomacy", "region", "era"]
+const HEADLINE_KINDS := ["war", "diplomacy", "region", "era", "family"]
 const ROUTINE_LABELS := {"capture": "buildings captured", "village": "village changes", "tech": "discoveries",
 	"trade": "trade changes"}
 const MAX_TECHS_LISTED := 6  # the most recent ones; the full list no longer fits a card
@@ -540,6 +540,9 @@ func set_connected(connected: bool) -> void:
 
 
 func setup(init: Dictionary) -> void:
+	_families.clear()
+	for house: Dictionary in init.get("families", []):
+		_families[int(house["civ"])] = house
 	_regions_at.clear()
 	for region: Dictionary in init.get("regions", []):
 		_regions_at[Vector2i(int(region["x"]), int(region["y"]))] = region
@@ -619,6 +622,8 @@ func update(tick: int, data: Dictionary) -> void:
 	for civ: Dictionary in data["civs"]:
 		_latest[int(civ["id"])] = civ
 	_last_data = data
+	for house: Dictionary in data.get("families", []):
+		_families[int(house["civ"])] = house
 	_refresh_ruler(data.get("ruler"))
 	_refresh_castle()
 	# Watching: the bar's chips and the drawer. Ruling: the older panels.
@@ -664,6 +669,12 @@ func update(tick: int, data: Dictionary) -> void:
 			var involved := [int(event["civ"])]
 			if event.has("target"):
 				involved.append(int(event["target"]))
+			var family: Dictionary = event.get("family", {})
+			for other: Variant in family.get("civs", []):
+				if not int(other) in involved:
+					involved.append(int(other))
+			if family.get("banner", false) and (ruled == null or int(ruled["civ"]) in involved):
+				_announce_family(tick, event, family, color)
 			if event.has("proclamation"):
 				var words := "        [color=%s][i]“%s”[/i][/color]" % [color, event["proclamation"]]
 				_log_lines.append(words)
@@ -904,7 +915,8 @@ func _refresh_chronicle() -> void:
 
 # -- the watch layout: scoreboard chips and the civ drawer ------------------------------
 
-const DRAWER_TABS := ["Overview", "Army", "Diplomacy", "Tech"]
+const DRAWER_TABS := ["Overview", "Family", "Army", "Diplomacy", "Tech"]
+var _families := {}  # civ id -> its ruling house (civ/family.py), as last sent
 
 
 func _build_drawer(root: Control) -> void:
@@ -1006,13 +1018,19 @@ func _refresh_chips() -> void:
 		chip.text = "%s %d" % [_civ_info[civ_id]["name"], int(civ.get("points", 0))]
 		chip.icon = _icon("battle") if at_war and civ["alive"] else null
 		chip.modulate = Color(1, 1, 1, 1.0 if civ["alive"] else 0.45)
-		chip.tooltip_text = "%s (%s): %d of the %d points that win%s\n%s  ·  Pop %d  ·  Army %d\n%s%s" % [
-			_civ_info[civ_id]["name"], _civ_info[civ_id]["personality"], int(civ.get("points", 0)), _points_needed,
+		chip.tooltip_text = "%s (%s): %d of the %d points that win%s\n%s  ·  Pop %d  ·  Army %d\n%s%s%s" % [
+			_civ_info[civ_id]["name"], _personality(civ_id), int(civ.get("points", 0)), _points_needed,
 			"  ·  at war" if at_war else ("  ·  allied" if allied else ""), civ["era_name"], int(civ["population"]),
 			int(civ["soldiers"]), "Goal: %s" % civ["strategy"] if str(civ.get("strategy", "")) != "" else "",
-			"" if civ["alive"] else "\nDestroyed"]
+			"" if civ["alive"] else "\nDestroyed", _ruler_line(civ_id, "\n")]
 		var selected := civ_id == _drawer_civ
 		(chip.get_theme_stylebox("normal") as StyleBoxFlat).bg_color.a = 0.6 if selected else 0.22
+
+
+func show_drawer_tab(tab: String) -> void:
+	if DRAWER_TABS.has(tab):
+		_drawer_tabs.current_tab = DRAWER_TABS.find(tab)
+		_refresh_drawer()
 
 
 ## Open the drawer on one civ (or close it with -1).
@@ -1039,7 +1057,7 @@ func _refresh_drawer() -> void:
 	var info: Dictionary = _civ_info[_drawer_civ]
 	var civ: Dictionary = _latest[_drawer_civ]
 	_drawer_title.text = "[b][color=%s]%s[/color][/b]\n[color=#8a93a0]%s · %d of %d pts · score %d[/color]" % [
-		info["color"], info["name"], info["personality"], int(civ.get("points", 0)), _points_needed, int(civ.get("score", 0))]
+		info["color"], info["name"], _personality(_drawer_civ), int(civ.get("points", 0)), _points_needed, int(civ.get("score", 0))]
 	_follow_button.text = "Following" if _following == _drawer_civ else "Follow"
 	var tab: String = DRAWER_TABS[_drawer_tabs.current_tab]
 	var text := ""
@@ -1054,12 +1072,107 @@ func _refresh_drawer() -> void:
 		if civ.get("sickness") != null:
 			text += "\n[color=#c9a23a]Struck by %s (%d days left)[/color]" % [civ["sickness"]["name"], int(civ["sickness"]["days"])]
 		text += "\n\n" + _card_text(info, civ, false).split("\n", true, 1)[-1]
+	elif tab == "Family":
+		text = _family_text(_drawer_civ)
 	elif tab == "Army":
 		text = _army_text(civ)
 	elif tab == "Diplomacy":
 		text = "[b]%s's relations[/b]\n%s\n\n%s" % [info["name"], _diplomacy_text(_drawer_civ, civ),
 			_diplomacy_text_panel(_last_data) if not _last_data.is_empty() else ""]
 	_drawer_text.text = text
+
+
+## The ruler of a civ, as "King Edric Valedorn (56), heir Cedric", or "" if unknown.
+func _ruler_line(civ_id: int, before: String) -> String:
+	if not _families.has(civ_id):
+		return ""
+	var house: Dictionary = _families[civ_id]
+	var ruler := ""
+	var heir := ""
+	for member: Dictionary in house["members"]:
+		if member["ruler"] and member["alive"]:
+			ruler = "%s %s %s (%d)" % [member["title"], member["name"], house["house"], int(member["age"])]
+		elif member["heir"]:
+			heir = member["name"]
+	if ruler == "":
+		return ""
+	return before + ruler + ("  ·  heir %s" % heir if heir != "" else "") + ("  ·  [unsettled]" if house["unrest"] else "")
+
+
+## A civ plans by its ruler's personality: it changes with each new ruler.
+func _personality(civ_id: int) -> String:
+	if _families.has(civ_id):
+		for member: Dictionary in _families[civ_id]["members"]:
+			if member["ruler"] and member["alive"] and str(member.get("personality", "")) != "":
+				return str(member["personality"])
+	return str(_civ_info[civ_id]["personality"]) if _civ_info.has(civ_id) else ""
+
+
+const FAMILY_COLUMNS := 4
+
+## The drawer's Family tab: a portrait for each living member (the ruler first, the heir
+## marked), then the dead in grey with when and how they died.
+func _family_text(civ_id: int) -> String:
+	if not _families.has(civ_id):
+		return "[color=#8a93a0]No ruling house[/color]"
+	var house: Dictionary = _families[civ_id]
+	var living: Array = house["members"].filter(func(m: Dictionary) -> bool: return m["alive"])
+	var dead: Array = house["members"].filter(func(m: Dictionary) -> bool: return not m["alive"])
+	var text := "[b]House %s[/b]%s\n" % [house["house"],
+		"  [color=#c9a23a](a new ruler, not yet settled)[/color]" if house["unrest"] else ""]
+	text += _portrait_table(living, str(house.get("crest", "")), false)
+	if not dead.is_empty():
+		text += "\n[color=#8a93a0]Gone before[/color]\n" + _portrait_table(dead, str(house.get("crest", "")), true)
+	return text
+
+
+func _portrait_table(members: Array, crest: String, dead: bool) -> String:
+	var text := "[table=%d]" % FAMILY_COLUMNS
+	for member: Dictionary in members:
+		var picture := str(member["portrait"])
+		if picture == "" or not ResourceLoader.exists(picture):
+			picture = crest
+		var face := ""
+		if picture != "" and ResourceLoader.exists(picture):
+			face = "[img=80x100%s]%s[/img]\n" % [" color=#8c8c8c" if dead else "", picture]
+		var role := ""
+		if member["ruler"]:
+			role = "[color=#e8b84a]♛ rules[/color]\n"
+		elif member["heir"]:
+			role = "[color=#e8b84a]heir[/color]\n"
+		var about := ""
+		if dead:
+			if member["died"] != null:
+				about = "[color=#8a93a0]died day %d, aged %d\n%s[/color]" % [int(member["died"]), int(member["age"]), member["cause"]]
+			else:
+				about = "[color=#8a93a0]%s[/color]" % member["cause"]
+		else:
+			var notes: Array[String] = ["%d" % int(member["age"])]
+			if member["ill"]:
+				notes.append("[color=#c9a23a]ill[/color]")
+			if int(member["wounds"]) > 0:
+				notes.append("[color=#d98a5a]wounded[/color]")
+			if member["commanding"]:
+				notes.append("commands")
+			if str(member.get("born", "")) != "":
+				notes.append("née %s" % member["born"] if member["sex"] == "f" else "of %s" % member["born"])
+			about = "[color=#8a93a0]%s[/color]" % " · ".join(notes)
+		text += "[cell][center]%s%s[font_size=12]%s %s[/font_size]\n[font_size=11]%s[/font_size][/center][/cell]" % [
+			face, role, member["title"], member["name"], about]
+	return text + "[/table]\n"
+
+
+## A death, a murder, a succession or a marriage between ruling houses: a banner like a war's.
+func _announce_family(tick: int, event: Dictionary, family: Dictionary, color: String) -> void:
+	var kind := str(family["type"])
+	var icon: String = "res://assets/icons/%s.svg" % {"assassination": "dagger", "marriage": "rings"}.get(kind, "crown")
+	var title: String = {"death": "A death in the house", "succession": "The crown passes",
+		"assassination": "Murder!", "marriage": "A royal wedding"}.get(kind, "News of the court")
+	var portrait := str(family.get("portrait", ""))
+	if portrait == "":
+		portrait = str(family.get("crest", ""))
+	_banners.announce(tick, "[b][color=%s]%s[/color][/b]  %s" % [color, _civ_info[int(event["civ"])]["name"], title],
+		Color.html(color), str(family.get("line", "")), str(event["text"]), icon, portrait, bool(family.get("dead", false)))
 
 
 func toggle_card(civ_id: int) -> void:
@@ -1258,7 +1371,9 @@ func _status_line(civ_id: int, civ: Dictionary) -> String:
 func _card_text(info: Dictionary, civ: Dictionary, with_army := true) -> String:
 	var lines: Array[String] = []
 	lines.append("[font_size=17][b][color=%s]%s[/color][/b][/font_size]  [color=#8a93a0]%s[/color]"
-			% [info["color"], info["name"], info["personality"]])
+			% [info["color"], info["name"], _personality(int(info.get("id", -1)))])
+	if _families.has(int(info.get("id", -1))):
+		lines.append("[color=#c9b48a]%s[/color]" % _ruler_line(int(info["id"]), ""))
 	if not civ["alive"]:
 		lines.append("[color=#e07a6a]Destroyed: its last capital has fallen[/color]")
 		return "\n".join(lines)

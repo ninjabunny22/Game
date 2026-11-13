@@ -30,7 +30,7 @@ from ..simulation import Simulation
 from ..config import HEADCOUNT, MAP_SIZES, MAPS, civ_counts, civ_range
 from ..diplomacy import rules
 
-PROTOCOL_VERSION = 20
+PROTOCOL_VERSION = 21
 RULER_COMMANDS = ("take_control", "release_control", "set_stance", "set_focus", "set_research", "set_build",
                   "answer_proposal", "start_rally", "cancel_rally", "reinforce_ally", "recall_reinforcement")
 GAME_COMMANDS = ("new_game", "end_game")  # start a game from the menu; go back to the menu
@@ -164,6 +164,8 @@ def init_message(sim: Simulation, lobby: bool = False) -> str:
              "capital_name": civ.capital.name}
             for civ in sim.civs
         ],
+        # The ruling houses (civ/family.py): every member, living and dead, with their portrait.
+        "families": sim.families.describe(sim.tick),
     }
     return encode("init", sim.tick, data)
 
@@ -431,6 +433,9 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
         ],
         "events": sim.events,
     }
+    # The ruling houses, on a day something in them changed and once a month for their ages.
+    if sim.families.changed == sim.tick or sim.tick % 30 == 0:
+        data["families"] = sim.families.describe(sim.tick)
     return encode("tick", sim.tick, data)
 
 

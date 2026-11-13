@@ -79,7 +79,7 @@ The overlay is built for watching:
   sim is paused.
 - **A civ's drawer** (while watching): click a chip, or press `1`–`5`, to open one panel on the
   right about that civ, with tabs for its Overview (era, points, goal, plans, what it is
-  short of), Army, Diplomacy (its own wars and deals, then the whole world's) and Tech (opens
+  short of), Family (portraits of the house, the ruler and heir marked, the dead below), Army, Diplomacy (its own wars and deals, then the whole world's) and Tech (opens
   the tree on its path). **Follow** keeps the camera on its largest army in the field (else
   its capital); **Rule it** takes control. Click the chip again, its X or `Esc` to close.
 - **The ticker and the chronicle** (while watching): the newest headline (wars, peace,
@@ -134,6 +134,30 @@ The overlay is built for watching:
 
   Each map has fixed start slots for each number of civs; the seed only decides which civ
   takes which slot, and who the civs are.
+- **Royal houses.** Each civ is ruled by a house from the portrait boards (Valedorn, Ashbourne,
+  Thornwick, Frostmere, Greythorne, Silvermere; others only marry in), with the ages printed on
+  the boards.
+  - **Ageing:** everyone is one year older every 365 days, exactly.
+  - **Natural death:** on each birthday a character faces a check whose chance rises with
+    every year of age: 0.2% a year at 30, 0.7% at 45, 2% at 60, 4.4% at 70, 9% at 80, 20%
+    at 90. Frail health, an illness (for a year) or old wounds make it worse.
+  - **Sudden death,** on any day and at any age: a stroke or the heart (more likely with age),
+    a fever, a fall, plague in a sick realm, and, for a ruler or heir whose realm has enemies,
+    poison or an assassin (which leaves a grudge against the killer's realm).
+  - **What that means:** of characters who start the game at 25, about 9% die within
+    6,000 days (16 years) and 20% within 10,000; at 45, 26% and 57%; at 70, 85% and 99%.
+    About 4% of the young die suddenly.
+  - **Marriages and births:** unmarried adults marry (sometimes into another ruling house,
+    which warms their realms to each other), and couples have children; a child shows a
+    child's face until 16, then the same face grown up.
+  - **Princes in war:** princes can command armies, and fall, be wounded or be taken in battle.
+  - **Succession:** when a ruler dies, the eldest son (then daughter) and their line follow,
+    then the ruler's brothers and sisters, then a cousin. The heir rules by their own
+    personality, and for 60 days the realm is unsettled: it starts no war, and rivals see it
+    as exposed.
+  - **Where you see it:** deaths, murders, successions and royal weddings are proclaimed in a
+    banner like a war's, and every family event is in the chronicle. A civ's drawer has a
+    Family tab with portraits.
 - **Sickness.** A civ at war for 250 days or more may be struck by sickness: it loses people
   at once and for 150 days fights worse and grows slower. Neighbours see it; enemies press
   harder and a warlike ally may turn on it.

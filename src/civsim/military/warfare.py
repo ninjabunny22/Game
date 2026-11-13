@@ -154,6 +154,7 @@ class Military:
         self.next_id = next_id
         self._battles: dict[tuple[int, int], int] = {}  # (army id, army id) -> tick the battle began
         self.engagements = Engagements()  # every fight as a spectator follows it (engagements.py)
+        self.families = None  # civ/family.py, set by the simulation: princes take commands
         self._rally: dict[int, int] = {}  # army id -> tick until which it rests after a rout
         self.rallies: list[Rally] = []  # rallies gathering or on the march
         self._called: dict[int, int] = {}  # civ -> tick before which it calls no new rally
@@ -471,7 +472,22 @@ class Military:
         name = COMMANDER_NAMES[self._names.randrange(len(COMMANDER_NAMES))]
         commander = Commander(f"{name} of {civ.name}" if self._named <= len(COMMANDER_NAMES) else f"{name} {self._named}")
         commander.experience = XP_PER_LEVEL_STEP * levels ** 2
+        # Now and then a prince of the ruling house takes the command instead.
+        prince = self.families.free_prince(civ.id, self.diplomacy.now) if self.families is not None else None
+        if prince is not None:
+            commander.name = self.families.full_name(prince)
+            commander.person = prince.id
+            prince.commanding = True
         return commander
+
+    def lose_prince(self, person: int, tick: int) -> None:
+        """A prince in command has died: his army is leaderless until a new commander comes."""
+        for civ in self.civs.values():
+            civ.commanders = [c for c in civ.commanders if c.person != person]
+            for army in civ.armies:
+                if army.commander is not None and army.commander.person == person:
+                    army.commander = None
+                    army.leaderless_until = tick + REPLACEMENT_TICKS
 
     # -- capitals --------------------------------------------------------------
 
@@ -516,12 +532,19 @@ class Military:
         """Roll a beaten commander's fate. Returns what befell him, or "" if he escaped; a captured
         commander is handed to the victor here, and the caller removes him from where he was."""
         roll = self.rng.random()
+        prince = self.families.people.get(commander.person) if self.families and commander.person else None
         if roll < COMMANDER_DEATH_CHANCE:
+            if prince is not None:
+                prince.commanding = False
+                self.families.die(prince, tick, self.families.later, "battle")
             return "is killed"
         if roll >= COMMANDER_DEATH_CHANCE + CAPTURE_CHANCE:
+            if prince is not None:
+                self.families.wound(prince.id, tick)
             return ""
         commander.post = None
-        if self.rng.random() < SWITCH_SIDES_CHANCE and self.roster(winning) < ROSTER_CAP:
+        switch = self.rng.random() < SWITCH_SIDES_CHANCE
+        if switch and prince is None and self.roster(winning) < ROSTER_CAP:  # a prince never turns
             winning.commanders.append(commander)
             return "is captured and changes sides"
         winning.captives.append(Captive(commander, losing.id, tick))

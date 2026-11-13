@@ -97,6 +97,13 @@ Plan (agreed 2026-11-13): war on the AI's own judgement with a home guard; fight
   ruler mode, if wanted. Note: `check_assets.gd` does not load `hud.gd`; check it with
   `--check-only --script res://scripts/hud.gd`.
 
+- **Royal houses** (plan agreed 2026-11-13): `civ/family.py` with exact ageing, a Gompertz
+  mortality curve calibrated on 2,000 lives per start age (README table), sudden deaths,
+  murder by enemies, marriages, births, princes commanding armies, succession with a new
+  personality and 60 days of unrest; portraits cut from the boards (`tools/cut_portraits.py`);
+  a Family tab in the drawer, family banners and chronicle lines; protocol 21. The
+  "Noble Houses Collage" board is not used (it contradicts the single-house boards).
+
 ## Balance batch (2026-11-13)
 
 5 games per civ for every map and civ count (`civsim.balance`, 90% intervals). A slot is

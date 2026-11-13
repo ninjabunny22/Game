@@ -59,6 +59,17 @@ ICONS = {
               f'<circle cx="4" cy="18" r="2" fill="{INK}"/><circle cx="20" cy="18" r="2" fill="{INK}"/>'),
     "resources": (f'<path d="M7 5 H17 L21 10 L12 20 L3 10 Z" fill="{GOLD}"/>'
                   f'<path d="M3 10 H21 M9 5 L12 10 L15 5 M12 10 L12 20" stroke="#8a6a1f" stroke-width="1.1" fill="none"/>'),
+    # The royal houses: a crown (a death or the crown passing), a dagger (murder), rings (a wedding).
+    "crown": (f'<path d="M3 8 L7.5 12 L12 5 L16.5 12 L21 8 L19 18 H5 Z" fill="{GOLD}" stroke="#8a6a1f" stroke-width="1"/>'
+              f'<rect x="5" y="18.5" width="14" height="2.2" rx="1" fill="{GOLD}"/>'
+              f'<circle cx="12" cy="13.5" r="1.4" fill="{RED}"/>'),
+    "dagger": (f'<path d="M12 2 L14 13 H10 Z" fill="{STEEL}"/>'
+               f'<rect x="7" y="13" width="10" height="2" rx="1" fill="{GOLD}"/>'
+               f'<rect x="11" y="15" width="2" height="5" fill="{WOOD}"/><circle cx="12" cy="21" r="1.4" fill="{GOLD}"/>'
+               f'<path d="M15 16 Q17 19 15.5 22" stroke="{RED}" stroke-width="1.4" fill="none"/>'),
+    "rings": (f'<circle cx="9" cy="13" r="5.2" fill="none" stroke="{GOLD}" stroke-width="2"/>'
+              f'<circle cx="15" cy="13" r="5.2" fill="none" stroke="{GOLD}" stroke-width="2"/>'
+              f'<path d="M15 5 L16.5 6.8 L15 8.6 L13.5 6.8 Z" fill="{BLUE}"/>'),
     "close": f'<path d="M6 6 L18 18 M18 6 L6 18" stroke="{INK}" stroke-width="2.4" stroke-linecap="round"/>',
 }
 

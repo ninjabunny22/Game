@@ -17,3 +17,5 @@ logs/
 
 # Source art packs as downloaded (fbx, obj and gltf of everything); the game copies what it uses into godot/assets
 /art/
+# The royal portrait boards (tools/cut_portraits.py cuts what the game uses into godot/assets/portraits)
+/portraits_royalty/

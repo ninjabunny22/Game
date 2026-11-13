@@ -1,0 +1,116 @@
+{
+  "_comment": "The royal houses, from the portrait boards in portraits_royalty/ (portraits cut by tools/cut_portraits.py into godot/assets/portraits/<key>/<id>.png). Houses that play rule a civ each; the others only marry in. Ages are those printed on the boards; where a board prints none (Silvermere and the two group boards) they are set here to fit each one's place in the family. Members with no age are dead before the game begins and are kept as history. 'born' names the house a spouse came from.",
+  "houses": {
+    "valedorn": {"name": "Valedorn", "plays": true, "members": [
+      {"id": "aldric", "name": "Aldric", "sex": "m", "dead": "the former patriarch", "ruled": true},
+      {"id": "edric", "name": "Edric", "sex": "m", "age": 56, "role": "ruler", "parent": "aldric", "spouse": "isolde"},
+      {"id": "isolde", "name": "Isolde", "sex": "f", "age": 52, "born": "Ravenshade", "spouse": "edric"},
+      {"id": "cedric", "name": "Cedric", "sex": "m", "age": 29, "parent": "edric"},
+      {"id": "elara", "name": "Elara", "sex": "f", "age": 25, "parent": "edric"},
+      {"id": "rowan", "name": "Rowan", "sex": "m", "age": 19, "parent": "edric"},
+      {"id": "maerwynn", "name": "Maerwynn", "sex": "f", "dead": "married into House Ashbourne", "parent": "aldric"}
+    ]},
+    "ashbourne": {"name": "Ashbourne", "plays": true, "members": [
+      {"id": "osric", "name": "Osric", "sex": "m", "dead": "the old duke", "ruled": true},
+      {"id": "theobald", "name": "Theobald", "sex": "m", "age": 58, "role": "ruler", "parent": "osric", "spouse": "evelyne"},
+      {"id": "evelyne", "name": "Evelyne", "sex": "f", "age": 44, "born": "Ravenshade", "spouse": "theobald"},
+      {"id": "garrick", "name": "Garrick", "sex": "m", "age": 32, "parent": "theobald"},
+      {"id": "mirabel", "name": "Mirabel", "sex": "f", "age": 27, "parent": "theobald"},
+      {"id": "owyn", "name": "Owyn", "sex": "m", "age": 21, "parent": "theobald"},
+      {"id": "aveline", "name": "Aveline", "sex": "f", "age": 53, "parent": "osric"}
+    ]},
+    "thornwick": {"name": "Thornwick", "plays": true, "members": [
+      {"id": "merek", "name": "Merek", "sex": "m", "dead": "the old king", "ruled": true},
+      {"id": "garran", "name": "Garran", "sex": "m", "age": 47, "role": "ruler", "parent": "merek"},
+      {"id": "vaelor", "name": "Vaelor", "sex": "m", "age": 43, "parent": "merek"},
+      {"id": "silas", "name": "Silas", "sex": "m", "age": 26, "parent": "garran"},
+      {"id": "ysella", "name": "Ysella", "sex": "f", "age": 23, "parent": "garran"},
+      {"id": "dorian", "name": "Dorian", "sex": "m", "age": 17, "parent": "garran"}
+    ]},
+    "frostmere": {"name": "Frostmere", "plays": true, "members": [
+      {"id": "alaric", "name": "Alaric", "sex": "m", "dead": "the old king", "ruled": true},
+      {"id": "hadrien", "name": "Hadrien", "sex": "m", "dead": "the late king", "ruled": true, "parent": "alaric", "spouse": "elswyth"},
+      {"id": "elswyth", "name": "Elswyth", "sex": "f", "age": 48, "role": "ruler", "spouse": "hadrien"},
+      {"id": "cadan", "name": "Cadan", "sex": "m", "age": 45, "parent": "alaric"},
+      {"id": "alistair", "name": "Alistair", "sex": "m", "age": 27, "parent": "hadrien"},
+      {"id": "freya", "name": "Freya", "sex": "f", "age": 24, "parent": "hadrien"},
+      {"id": "eamon", "name": "Eamon", "sex": "m", "age": 20, "parent": "hadrien"}
+    ]},
+    "greythorne": {"name": "Greythorne", "plays": true, "members": [
+      {"id": "varen", "name": "Varen", "sex": "m", "dead": "the old king", "ruled": true},
+      {"id": "roderic", "name": "Roderic", "sex": "m", "age": 52, "role": "ruler", "parent": "varen", "spouse": "lysandra"},
+      {"id": "lysandra", "name": "Lysandra", "sex": "f", "age": 47, "spouse": "roderic"},
+      {"id": "dorian", "name": "Dorian", "sex": "m", "age": 26, "parent": "roderic"},
+      {"id": "seraphina", "name": "Seraphina", "sex": "f", "age": 24, "parent": "roderic"},
+      {"id": "callum", "name": "Callum", "sex": "m", "age": 18, "parent": "roderic"},
+      {"id": "marrek", "name": "Marrek", "sex": "m", "age": 49, "parent": "varen"}
+    ]},
+    "silvermere": {"name": "Silvermere", "plays": true, "members": [
+      {"id": "edrin", "name": "Edrin", "sex": "m", "dead": "the old king", "ruled": true},
+      {"id": "alaric", "name": "Alaric", "sex": "m", "age": 58, "role": "ruler", "parent": "edrin", "spouse": "maelis"},
+      {"id": "maelis", "name": "Maelis", "sex": "f", "age": 49, "spouse": "alaric"},
+      {"id": "lorcan", "name": "Lorcan", "sex": "m", "age": 28, "parent": "alaric"},
+      {"id": "cerys", "name": "Cerys", "sex": "f", "age": 24, "parent": "alaric"},
+      {"id": "rohan", "name": "Rohan", "sex": "m", "age": 16, "parent": "alaric"}
+    ]},
+    "ravenshade": {"name": "Ravenshade", "plays": false, "members": [
+      {"id": "seraphine", "name": "Seraphine", "sex": "f", "dead": "the old queen"},
+      {"id": "theron", "name": "Theron", "sex": "m", "age": 49}
+    ]},
+    "emberfall": {"name": "Emberfall", "plays": false, "members": [
+      {"id": "cassian", "name": "Cassian", "sex": "m", "age": 24},
+      {"id": "serilda", "name": "Serilda", "sex": "f", "age": 22},
+      {"id": "lucan", "name": "Lucan", "sex": "m", "age": 20}
+    ]},
+    "galenford": {"name": "Galenford", "plays": false, "members": [
+      {"id": "loras", "name": "Loras", "sex": "m", "age": 25},
+      {"id": "helena", "name": "Helena", "sex": "f", "age": 22},
+      {"id": "darian", "name": "Darian", "sex": "m", "age": 20},
+      {"id": "melisande", "name": "Melisande", "sex": "f", "age": 27}
+    ]},
+    "merewood": {"name": "Merewood", "plays": false, "members": [
+      {"id": "arlen", "name": "Arlen", "sex": "m", "age": 24},
+      {"id": "naelia", "name": "Naelia", "sex": "f", "age": 21},
+      {"id": "torren", "name": "Torren", "sex": "m", "age": 19}
+    ]},
+    "stonehart": {"name": "Stonehart", "plays": false, "members": [
+      {"id": "derrik", "name": "Derrik", "sex": "m", "age": 25},
+      {"id": "rowena", "name": "Rowena", "sex": "f", "age": 22},
+      {"id": "gareth", "name": "Gareth", "sex": "m", "age": 20},
+      {"id": "brienne", "name": "Brienne", "sex": "f", "age": 28}
+    ]},
+    "whitecrest": {"name": "Whitecrest", "plays": false, "members": [
+      {"id": "taland", "name": "Taland", "sex": "m", "age": 25},
+      {"id": "elys", "name": "Elys", "sex": "f", "age": 22},
+      {"id": "caelan", "name": "Caelan", "sex": "m", "age": 19}
+    ]},
+    "blackvale": {"name": "Blackvale", "plays": false, "members": [
+      {"id": "malric", "name": "Malric", "sex": "m", "age": 24},
+      {"id": "selene", "name": "Selene", "sex": "f", "age": 22},
+      {"id": "neran", "name": "Neran", "sex": "m", "age": 20},
+      {"id": "isolde", "name": "Isolde", "sex": "f", "age": 26}
+    ]},
+    "willowsong": {"name": "Willowsong", "plays": false, "members": [
+      {"id": "lyrin", "name": "Lyrin", "sex": "m", "age": 23},
+      {"id": "caelia", "name": "Caelia", "sex": "f", "age": 21},
+      {"id": "naren", "name": "Naren", "sex": "m", "age": 19},
+      {"id": "thalia", "name": "Thalia", "sex": "f", "age": 25}
+    ]},
+    "stormhold": {"name": "Stormhold", "plays": false, "members": [
+      {"id": "xeon", "name": "Xeon", "sex": "m", "age": 22},
+      {"id": "nyra", "name": "Nyra", "sex": "f", "age": 20},
+      {"id": "vale", "name": "Vale", "sex": "m", "age": 18}
+    ]},
+    "starhollow": {"name": "Starhollow", "plays": false, "members": [
+      {"id": "orien", "name": "Orien", "sex": "m", "age": 24},
+      {"id": "selene", "name": "Selene", "sex": "f", "age": 21},
+      {"id": "aurel", "name": "Aurel", "sex": "m", "age": 19},
+      {"id": "cassian", "name": "Cassian", "sex": "m", "age": 27}
+    ]}
+  },
+  "names": {
+    "m": ["Aldwin", "Bertram", "Cael", "Corwin", "Desmond", "Edmund", "Florian", "Gawain", "Harald", "Ivo", "Jory", "Kendric", "Leoric", "Marius", "Nolan", "Osmund", "Percival", "Quentin", "Roland", "Sebastian", "Tristan", "Ulric", "Wystan", "Alden", "Baldric", "Emeric", "Godfrey", "Hugh", "Lambert", "Odo"],
+    "f": ["Adela", "Beatrix", "Cecily", "Delphine", "Edith", "Felicia", "Gwendolyn", "Hilde", "Ida", "Juliana", "Katherine", "Linnea", "Matilda", "Nesta", "Odette", "Philippa", "Rosamund", "Sybil", "Tamsin", "Ursula", "Wenna", "Alys", "Brisa", "Eleanor", "Isabeau", "Margery", "Orla", "Rhosyn", "Elowen", "Joan"],
+    "minor_houses": ["Ambry", "Brackwater", "Coldwell", "Dunmore", "Fairholt", "Harrowgate", "Kestrel", "Lindqvist", "Marsh", "Oakhurst", "Pennick", "Redfern", "Thistlewood", "Underhill", "Westmarch"]
+  }
+}

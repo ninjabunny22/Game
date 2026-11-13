@@ -483,7 +483,7 @@ def test_armies_never_harm_villagers(sim):
 # -- the whole thing ----------------------------------------------------------
 
 def test_long_game_keeps_armies_consistent():
-    sim = Simulation(SimConfig(seed=5))  # a seed on which the rule-based strategists go to war
+    sim = Simulation(SimConfig(seed=4))  # a seed on which the rule-based strategists go to war
     brain = RuleBrain()
     wars = 0
     for _ in range(1500):

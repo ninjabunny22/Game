@@ -357,11 +357,11 @@ class UtilityBrain:
                 friends_wars, need=0.0, player=None, difficulty="normal") -> tuple[float, str]:
         p = self.p
         self._motive = (None, None)
-        if not (can_declare and n["in_reach"]) or n["truce"] or you.get("sick"):
-            return 0.0, ""  # nor does a civ that is itself sick start anything
+        if not (can_declare and n["in_reach"]) or n["truce"] or you.get("sick") or you.get("unrest"):
+            return 0.0, ""  # nor does a civ that is itself sick, or whose new ruler is not yet settled, start anything
         sick = bool(n.get("sick"))
         # Caught off balance: its army is away, or has just been beaten.
-        exposed = bool(n.get("army_abroad")) or n.get("routed_ticks_ago") is not None
+        exposed = bool(n.get("army_abroad")) or n.get("routed_ticks_ago") is not None or bool(n.get("unrest"))
         swing = (p.SICK_EDGE if sick else 1.0) * (p.EXPOSED_EDGE if exposed else 1.0)
         edge, forecast = edge * swing, forecast * swing
         if n["relation"] == "alliance":

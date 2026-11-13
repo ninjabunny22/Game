@@ -38,6 +38,11 @@ def _abroad(sim, civ) -> bool:
     return civ.soldiers >= 1 and away > 0.5 * civ.soldiers
 
 
+def _unrest(sim, civ_id: int) -> bool:
+    families = getattr(sim, "families", None)
+    return families is not None and families.unrest(civ_id, sim.tick)
+
+
 def _since(sim, tick: int | None) -> int | None:
     return None if tick is None else sim.tick - tick
 
@@ -141,6 +146,8 @@ def stance_context(sim, civ) -> dict:
             "paid_you_ticks": _since(sim, diplomacy.tribute_paid.get((other_id, civ.id))),
             # Sickness is plain to see: a civ laid low by it fights worse until it passes.
             "sick": diplomacy.sick(other),
+            # A new ruler not yet settled on the throne (civ/family.py): a realm off balance.
+            "unrest": _unrest(sim, other_id),
             # True when you and they are the two strongest civs: each stands in the other's way.
             "rival": civ.id in top and other_id in top,
             "active_deal": deal_text,
@@ -176,6 +183,7 @@ def stance_context(sim, civ) -> dict:
                                                    if payer == civ.id), default=None)),
             "era": tree.eras[tree.era_of(civ.known_techs)],
             "sick": diplomacy.sick(civ),
+            "unrest": _unrest(sim, civ.id),
             # How long since it was last at war with anyone.
             "peace_ticks": sim.tick - civ.last_war,
             "population": int(civ.population),

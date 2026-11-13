@@ -291,6 +291,8 @@ func _on_init(data: Dictionary) -> void:
 		_hud.show_castle(int(castle[0]), int(castle[1]), _castle_anchor(Vector2i(int(castle[0]), int(castle[1]))))
 	if OS.get_environment("CIVSIM_CARD") != "":  # start with one civ's card (or drawer) open, by civ id
 		_hud.toggle_card.call_deferred(int(OS.get_environment("CIVSIM_CARD")))
+		if OS.get_environment("CIVSIM_TAB") != "":  # and on one of its drawer's tabs, by name
+			_hud.show_drawer_tab.call_deferred(OS.get_environment("CIVSIM_TAB"))
 	_territory_rev = -1
 	_ruled = -1
 	_ready_for_ticks = true

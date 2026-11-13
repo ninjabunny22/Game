@@ -12,6 +12,7 @@ import itertools
 import math
 import random
 
+from .civ.family import Families
 from .civ import FOCUSES, CivAI, Civilization, Settlement, Villages, assign_personalities, with_focus
 from .config import SimConfig
 from .diplomacy import Diplomacy, Natives
@@ -75,6 +76,10 @@ class Simulation:
         self.villages = Villages(self.world, self.civs, lambda: next(self._ids), self.config.seed)
         self.villages.update(0, [])  # the towns around the starting capitals
         self.diplomacy.natives = self.natives
+        # The ruling houses: their members age, marry, die and are succeeded (civ/family.py).
+        self.families = Families(self.civs, self.config.seed, self.diplomacy)
+        self.military.families = self.families
+        self.families.military = self.military
         # What each region is worth to each civ: one valuation for campaigns, war
         # targets, harbours and the strategist.
         self.geography = Geography(self.world, self.civs, self.diplomacy, self.military)
@@ -109,6 +114,7 @@ class Simulation:
             advance_construction(civ, mods, self.building_defs, events)
             advance_research(civ, self.tech_tree, events)
         self.diplomacy.update(self.tick, events)
+        self.families.update(self.tick, events)
         self.villages.update(self.tick, events)
         events.extend(self.ruler.notices())
         self._check_victory(events)

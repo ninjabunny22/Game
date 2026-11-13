@@ -1,5 +1,5 @@
 extends VBoxContainer
-## War declarations, proclaimed: when a civ declares war a banner stands in the middle of the
+## War declarations, deaths in the royal houses and the like, proclaimed: a banner stands in the middle of the
 ## screen, on a half-transparent ground, with the declarer's name in its colour, the war's name
 ## and what it proclaims ("Ossyria shall be punished for taking our lands!"). It stays for
 ## DAYS days or until its X is clicked; several stack, the newest on top. The words come from
@@ -28,6 +28,14 @@ func _process(_delta: float) -> void:
 
 ## A declaration: who declares, on whom, the war's name and the proclamation.
 func proclaim(day: int, declarer: String, color: Color, target: String, war_name: String, line: String) -> void:
+	announce(day, "[b][color=%s]%s[/color][/b] declares war on [b]%s[/b]" % [color.to_html(false), declarer, target],
+		color, line, "%s begins" % war_name, "res://assets/icons/battle.svg")
+
+
+## Any proclamation: a title, the words in quotes, a footer, an icon, and a portrait beside
+## the words if there is one (greyed for the dead).
+func announce(day: int, title_text: String, color: Color, line: String, footer: String, icon: String,
+		portrait: String = "", grey := false) -> void:
 	var panel := PanelContainer.new()
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color(0.07, 0.05, 0.05, 0.72)  # slightly see-through
@@ -44,7 +52,7 @@ func proclaim(day: int, declarer: String, color: Color, target: String, war_name
 	var header := HBoxContainer.new()
 	column.add_child(header)
 	var swords := TextureRect.new()
-	swords.texture = load("res://assets/icons/battle.svg")
+	swords.texture = load(icon)
 	swords.custom_minimum_size = Vector2(30, 30)
 	swords.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	swords.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
@@ -56,7 +64,7 @@ func proclaim(day: int, declarer: String, color: Color, target: String, war_name
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.add_theme_font_size_override("normal_font_size", 22)
 	title.add_theme_font_size_override("bold_font_size", 22)
-	title.text = "[b][color=%s]%s[/color][/b] declares war on [b]%s[/b]" % [color.to_html(false), declarer, target]
+	title.text = title_text
 	header.add_child(title)
 	var close := Button.new()
 	close.icon = load("res://assets/icons/close.svg")
@@ -66,15 +74,29 @@ func proclaim(day: int, declarer: String, color: Color, target: String, war_name
 	close.custom_minimum_size = Vector2(30, 30)
 	close.tooltip_text = "Close"
 	header.add_child(close)
+	var body := HBoxContainer.new()
+	body.add_theme_constant_override("separation", 14)
+	column.add_child(body)
+	if portrait != "" and ResourceLoader.exists(portrait):
+		var face := TextureRect.new()
+		face.texture = load(portrait)
+		face.custom_minimum_size = Vector2(96, 120)
+		face.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		face.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		if grey:
+			face.modulate = Color(0.62, 0.62, 0.62)
+		body.add_child(face)
 	var words := Label.new()
 	words.text = "“%s”" % line
 	words.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	words.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	words.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	words.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	words.add_theme_font_size_override("font_size", 26)
 	words.add_theme_color_override("font_color", Color(0.98, 0.93, 0.8))
-	column.add_child(words)
+	body.add_child(words)
 	var name_label := Label.new()
-	name_label.text = "%s begins  ·  day %d" % [war_name, day]
+	name_label.text = "%s  ·  day %d" % [footer, day]
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	name_label.add_theme_font_size_override("font_size", 14)
 	name_label.add_theme_color_override("font_color", Color(0.75, 0.7, 0.62))
