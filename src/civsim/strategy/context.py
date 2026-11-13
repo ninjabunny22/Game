@@ -49,7 +49,7 @@ def _march(sim, civ, other) -> tuple[int | None, float]:
     known = cache.get((civ.id, other.id))
     if known is not None and sim.tick - known[0] < MARCH_CACHE_TICKS:
         return known[1], known[2]
-    military, world = sim.military, sim.world
+    military = sim.military
     start = civ.capital.tile
     result: tuple[int | None, float] = (None, 0.0)
     for target in sorted((s.tile for s in other.settlements), key=lambda t: (military._gap(start, t), t)):

@@ -2,7 +2,6 @@
 
 import pytest
 
-from civsim.civ import Building
 from civsim.config import SimConfig
 from civsim.economy import compute_modifiers, produce
 from civsim.economy import rules as economy

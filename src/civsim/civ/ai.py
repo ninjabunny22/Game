@@ -35,7 +35,7 @@ from ..economy import (
     water_growth_factor,
 )
 from ..economy.rules import LAKE_WATER, RESOURCES, RIVER_WATER, SETTLEMENT_YIELDS, WORK_RATE
-from ..map import BIOME_INFO, BOAT_RANGE, Biome, WorldMap
+from ..map import BOAT_RANGE, Biome, WorldMap
 from ..tech import Tech, TechTree
 from .civilization import Building, Civilization, Goal, Research
 

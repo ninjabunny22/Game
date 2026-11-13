@@ -150,7 +150,8 @@ class SimServer:
             try:
                 chosen = value.get("map")
                 level = value.get("difficulty")
-                sim = Simulation(game_config(value.get("size", "medium"), value.get("civs"), seed,
+                size = value.get("size")
+                sim = Simulation(game_config(size if isinstance(size, str) else "medium", value.get("civs"), seed,
                                              chosen if isinstance(chosen, str) and chosen else None,
                                              difficulty=level if level in DIFFICULTIES else "normal"))
             except ValueError as exc:

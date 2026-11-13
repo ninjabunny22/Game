@@ -94,3 +94,15 @@ def test_ruler_commands_go_through_the_protocol():
     assert protocol.parse_command('{"type": "command", "data": {"action": "release_control"}}') == ("release_control", {})
     with pytest.raises(protocol.ProtocolError):
         protocol.parse_command('{"type": "command", "data": {"action": "set_focus", "value": 3}}')
+
+
+BAD_VALUES = [None, 3, "x", [], {}, {"civ": "a"}, {"civ": None}, {"civ": 99}, {"civ": [1]}, {"civ": True},
+              {"civ": 1, "other": "z"}, {"tech": 5}, {"building": None}, {"focus": 7}, {"stance": {}}]
+
+
+@pytest.mark.parametrize("action", protocol.RULER_COMMANDS)
+def test_a_malformed_order_is_refused_not_a_crash(sim, action):
+    for value in BAD_VALUES:
+        sim.ruler.command("take_control", {"civ": sim.civs[0].id})
+        problem = sim.ruler.command(action, value)
+        assert problem is None or isinstance(problem, str)

@@ -10,7 +10,7 @@ from civsim.military import Captive, Commander
 from civsim.military import warfare
 from civsim.simulation import Simulation
 
-from test_military import face_off, field, update
+from test_military import face_off
 
 
 @pytest.fixture

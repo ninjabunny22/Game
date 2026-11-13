@@ -27,7 +27,7 @@ import random
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import fields
 
-from .config import MAP_SIZES, game_config
+from .config import game_config
 from .simulation import Simulation
 from .strategy.utility import DEFAULT, Params, UtilityBrain
 

@@ -73,6 +73,7 @@ def test_the_menu_starts_a_game_and_leaving_it_returns_to_the_menu():
             first = await next_init(ws)
             assert [size["id"] for size in first["lobby"]["sizes"]] == ["small", "medium", "large"]
             await ws.send(command("new_game", {"size": "small", "civs": 9}))  # refused: nothing changes
+            await ws.send(command("new_game", {"size": ["small"], "civs": 9}))  # malformed: refused, still connected
             await ws.send(command("new_game", {"size": "large", "civs": 5, "seed": 7, "mode": "rule"}))
             game = await next_init(ws)
             assert game["lobby"] is None and game["seed"] == 7

@@ -3,7 +3,6 @@ bed for die. An army fills its ranks only in one of its civ's capitals."""
 
 import pytest
 
-from civsim.civ import Building
 from civsim.config import SimConfig
 from civsim.economy import compute_modifiers
 from civsim.economy import rules as economy

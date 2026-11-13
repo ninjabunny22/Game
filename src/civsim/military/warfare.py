@@ -682,7 +682,7 @@ class Military:
         """Call a rally against an enemy: the civ's own armies make for the city nearest the
         enemy capital that is cheapest to take, and its allies have RALLY_GATHER days to join
         them there. Returns the rally, or what is wrong."""
-        enemy = self.civs.get(enemy_id)
+        enemy = self.civs.get(enemy_id) if isinstance(enemy_id, int) else None
         war = self.diplomacy.relation(civ.id, enemy_id).war if enemy is not None and enemy.alive else None
         if war is None:
             return "you are not at war with that civ"

@@ -10,7 +10,7 @@ from civsim.military import Commander, warfare
 from civsim.simulation import Simulation
 from civsim.strategy import RuleBrain
 
-from test_military import face_off, field, go_to_war, update
+from test_military import face_off, go_to_war
 from test_pursuit import Fixed
 
 
@@ -134,7 +134,6 @@ def test_reserve_commanders_hold_the_capitals_nearest_the_enemy(sim):
     a, b = sim.civs[0], sim.civs[1]
     go_to_war(sim, a, b)
     sim.military._station(b)
-    best = max(b.commanders, key=lambda c: (c.experience, c.name))
     capitals = [s.tile for s in b.settlements]
     threats = [r.capital for r in sim.world.regions if r.owner == a.id]
     nearest = min(capitals, key=lambda t: (min(sim.military._gap(t, x) for x in threats), t))
