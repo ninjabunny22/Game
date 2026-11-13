@@ -1041,7 +1041,7 @@ class Military:
             civ.armies.append(force)
             self._stay[force.id] = tick + HOLD_STAY
             self.diplomacy._log(tick, events, "war", [civ],
-                                f"{army.commander.name} of {civ.name} leaves {round(count * HEADCOUNT)} "
+                                f"{army.commander.name} leaves {round(count * HEADCOUNT)} "
                                 f"soldiers to hold {settlement.name}")
             return  # one at a time
 
@@ -1338,7 +1338,8 @@ class Military:
 
     def _rout(self, loser: Army, winner: Army, tick: int, events: list) -> None:
         losing, winning = self.civs[loser.civ], self.civs[winner.civ]
-        x, y = self.world.xy(loser.tile)
+        region = self.world.region_of[loser.tile]
+        near = f"near {self.world.regions[region].name}" if region >= 0 else "in the open field"
         led = f" under {winner.commander.name}" if winner.commander else ""
         if winner.commander:
             winner.commander.battles += 1
@@ -1362,7 +1363,7 @@ class Military:
         self._battles.pop((loser.id, winner.id), None)
         self._battles.pop((winner.id, loser.id), None)
         events.append({"civ": winning.id, "kind": "war",
-                       "text": f"{winning.name}'s army{led} routs {losing.name}'s at ({x}, {y}){fate}"})
+                       "text": f"{winning.name}'s army{led} routs {losing.name}'s {near}{fate}"})
         self.engagements.end(self._battle_key(loser, winner), tick,
                              f"{losing.name}'s army breaks and runs{fate}")
         self.diplomacy.history.append({"tick": tick, "civs": [winning.id, losing.id],

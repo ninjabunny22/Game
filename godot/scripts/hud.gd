@@ -37,6 +37,17 @@ var _drawer_text: RichTextLabel
 var _follow_button: Button
 var _following := -1
 var _last_data := {}
+# The ticker (the newest headline, at the bottom) and the chronicle (every headline, by civ).
+var _ticker: PanelContainer
+var _ticker_text: RichTextLabel
+var _ticker_age := 0.0
+var _chronicle: PanelContainer
+var _chronicle_text: RichTextLabel
+var _chronicle_filter: OptionButton
+var _chronicle_entries: Array = []  # [civ ids involved, bbcode line]
+var _routine_footer := ""
+const CHRONICLE_LIMIT := 400
+const TICKER_BRIGHT := 6.0  # seconds a new headline stays bright before it dims
 var _pause_button: Button
 var _tech_tree: PanelContainer  # tech_tree.gd: the tree as the civs climb it, while spectating
 var _tech_button: PanelContainer
@@ -199,6 +210,8 @@ func _ready() -> void:
 	_log.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_log.add_theme_font_size_override("normal_font_size", 13)
 	log_panel.add_child(_log)
+
+	_build_ticker(root)
 
 	# Civ cards: two lines each, so all of them always fit; one at a time opens to full detail.
 	var side := _panel(root)
@@ -574,6 +587,13 @@ func setup(init: Dictionary) -> void:
 	_tech_tree.setup(init)
 	_banners.clear()
 	_make_chips()
+	_chronicle_entries.clear()
+	_ticker_text.text = ""
+	_ticker.visible = false
+	_chronicle_filter.clear()
+	_chronicle_filter.add_item("Every civ", -1)
+	for civ_id: int in _civ_info:
+		_chronicle_filter.add_item(str(_civ_info[civ_id]["name"]), civ_id)
 	_drawer_civ = -1
 	_following = -1
 	_drawer.visible = false
@@ -608,6 +628,10 @@ func update(tick: int, data: Dictionary) -> void:
 		if not watching:
 			select_civ(-1)
 	_chips.visible = _spectating
+	_log_panel.visible = not _spectating
+	_ticker.visible = _spectating and _ticker_text.text != "" and not _chronicle.visible
+	if not _spectating:
+		_chronicle.visible = false
 	_side.visible = not _spectating
 	_ruler_panel.visible = not _spectating
 	_refresh_chips()
@@ -635,14 +659,22 @@ func update(tick: int, data: Dictionary) -> void:
 	for event: Dictionary in data["events"]:
 		if event["kind"] in HEADLINE_KINDS:
 			var color: String = _civ_info[int(event["civ"])]["color"]
-			_log_lines.append("[color=#8a93a0]Day %d[/color]  [color=%s]%s[/color]" % [tick, color, event["text"]])
+			var line := "[color=#8a93a0]Day %d[/color]  [color=%s]%s[/color]" % [tick, color, event["text"]]
+			_log_lines.append(line)
+			var involved := [int(event["civ"])]
+			if event.has("target"):
+				involved.append(int(event["target"]))
 			if event.has("proclamation"):
-				_log_lines.append("        [color=%s][i]“%s”[/i][/color]" % [color, event["proclamation"]])
+				var words := "        [color=%s][i]“%s”[/i][/color]" % [color, event["proclamation"]]
+				_log_lines.append(words)
+				line += "\n" + words
 				# A banner while watching, and when you rule, for a war on or by your civ.
 				var mine := ruled == null or int(ruled["civ"]) in [int(event["civ"]), int(event.get("target", -1))]
 				if mine:
 					_banners.proclaim(tick, str(_civ_info[int(event["civ"])]["name"]), Color.html(color),
 						str(_civ_info[int(event["target"])]["name"]), str(event.get("war_name", "")), str(event["proclamation"]))
+			_chronicle_entries.append([involved, line])
+			_show_on_ticker(line)
 		elif ROUTINE_LABELS.has(event["kind"]):
 			_routine.append([tick, event["kind"]])
 	if _log_lines.size() > MAX_HEADLINES:
@@ -659,6 +691,11 @@ func update(tick: int, data: Dictionary) -> void:
 	var footer := "[color=#8a93a0]Last %d days: %s[/color]" % [
 		ROUTINE_WINDOW, ", ".join(summary) if not summary.is_empty() else "quiet"]
 	_log.text = "\n".join(_log_lines + [footer])
+	_routine_footer = footer
+	if _chronicle_entries.size() > CHRONICLE_LIMIT:
+		_chronicle_entries = _chronicle_entries.slice(_chronicle_entries.size() - CHRONICLE_LIMIT)
+	if _chronicle.visible:
+		_refresh_chronicle()
 
 
 ## One tick is one day.
@@ -696,8 +733,11 @@ func show_castle(x: int, y: int, anchor := Vector3.INF) -> void:
 	_place_castle_panel()
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	_place_castle_panel()
+	_ticker_age += delta
+	if _ticker != null:  # a new headline is bright for a few seconds, then stays, dimmed
+		_ticker.modulate.a = 1.0 if _ticker_age < TICKER_BRIGHT else maxf(0.45, 1.0 - (_ticker_age - TICKER_BRIGHT) * 0.25)
 
 
 ## Keeps the castle panel beside its castle on screen, to the right of it (to the left when
@@ -770,6 +810,96 @@ func toggle_tech_tree() -> void:
 	if _spectating:
 		_tech_tree.pick(_drawer_civ)
 		_tech_tree.toggle()
+
+
+# -- the watch layout: the ticker and the chronicle --------------------------------------
+
+func _build_ticker(root: Control) -> void:
+	_ticker = _panel(root)
+	_ticker.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	_ticker.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_ticker.offset_left = 10
+	_ticker.offset_top = -10
+	_ticker.offset_bottom = -10
+	_ticker.visible = false
+	_ticker.mouse_filter = Control.MOUSE_FILTER_STOP
+	_ticker.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	_ticker.tooltip_text = "The chronicle: every headline so far  (L)"
+	_ticker.gui_input.connect(func(event: InputEvent) -> void:
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			toggle_chronicle())
+	_ticker_text = RichTextLabel.new()
+	_ticker_text.bbcode_enabled = true
+	_ticker_text.fit_content = true
+	_ticker_text.scroll_active = false
+	_ticker_text.custom_minimum_size = Vector2(560, 0)
+	_ticker_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_ticker_text.add_theme_font_size_override("normal_font_size", 14)
+	_ticker.add_child(_ticker_text)
+
+	_chronicle = _panel(root)
+	_chronicle.anchor_bottom = 1.0
+	_chronicle.offset_left = 10
+	_chronicle.offset_top = 70
+	_chronicle.offset_right = 460  # clear of the battle alert at the top centre
+	_chronicle.offset_bottom = -70
+	_chronicle.visible = false
+	(_chronicle.get_theme_stylebox("panel") as StyleBoxFlat).bg_color.a = 0.94
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 8)
+	_chronicle.add_child(column)
+	var header := HBoxContainer.new()
+	column.add_child(header)
+	var title := Label.new()
+	title.text = "Chronicle"
+	title.add_theme_font_size_override("font_size", 18)
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(title)
+	_chronicle_filter = OptionButton.new()
+	_chronicle_filter.focus_mode = Control.FOCUS_NONE
+	_chronicle_filter.tooltip_text = "Only the headlines about one civ"
+	_chronicle_filter.item_selected.connect(func(_index: int) -> void: _refresh_chronicle())
+	header.add_child(_chronicle_filter)
+	_icon_button(header, "close", "Close  (Esc)", toggle_chronicle).custom_minimum_size = Vector2(32, 30)
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	column.add_child(scroll)
+	_chronicle_text = RichTextLabel.new()
+	_chronicle_text.bbcode_enabled = true
+	_chronicle_text.fit_content = true
+	_chronicle_text.scroll_active = false
+	_chronicle_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_chronicle_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_chronicle_text.add_theme_font_size_override("normal_font_size", 13)
+	scroll.add_child(_chronicle_text)
+
+
+func _show_on_ticker(line: String) -> void:
+	_ticker_text.text = line
+	_ticker_age = 0.0
+	_ticker.visible = _spectating and not _chronicle.visible
+
+
+func toggle_chronicle() -> void:
+	_chronicle.visible = not _chronicle.visible and _spectating
+	_ticker.visible = _spectating and _ticker_text.text != "" and not _chronicle.visible  # it would repeat the top line
+	if _chronicle.visible:
+		_chronicle.move_to_front()
+		_refresh_chronicle()
+
+
+## Every headline so far, newest first, for every civ or the one chosen; the routine counts last.
+func _refresh_chronicle() -> void:
+	var only := _chronicle_filter.get_selected_id() if _chronicle_filter.selected >= 0 else -1
+	var lines: Array[String] = []
+	for i in range(_chronicle_entries.size() - 1, -1, -1):
+		var entry: Array = _chronicle_entries[i]
+		if only < 0 or only in entry[0]:
+			lines.append(entry[1])
+	if lines.is_empty():
+		lines.append("[color=#8a93a0]Nothing yet.[/color]")
+	_chronicle_text.text = "\n".join(lines) + "\n\n" + _routine_footer
 
 
 # -- the watch layout: scoreboard chips and the civ drawer ------------------------------
@@ -967,6 +1097,9 @@ func _first_alive() -> int:
 
 ## Esc: close what is open, the most recent first.
 func close_top() -> bool:
+	if _chronicle.visible:
+		_chronicle.visible = false
+		return true
 	if _tech_tree.visible:
 		_tech_tree.visible = false
 		return true

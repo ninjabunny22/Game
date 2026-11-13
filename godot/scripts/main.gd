@@ -149,6 +149,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			_hud.toggle_help()
 		KEY_T:
 			_hud.toggle_tech_tree()
+		KEY_L:
+			_hud.toggle_chronicle()
 		KEY_BRACKETLEFT:
 			_set_ui_scale(get_window().content_scale_factor - UI_SCALE_STEP)
 		KEY_BRACKETRIGHT:
@@ -243,6 +245,8 @@ func _on_init(data: Dictionary) -> void:
 		_camera.focus(_terrain.tile_position(int(view[0]), int(view[1])), view[2])
 	if OS.get_environment("CIVSIM_DIPLOMACY") == "1":  # start with the diplomacy panel open
 		_hud.toggle_diplomacy()
+	if OS.get_environment("CIVSIM_CHRONICLE") == "1":  # start with the chronicle open
+		_hud.toggle_chronicle.call_deferred()
 	if OS.get_environment("CIVSIM_TECH") == "1":  # start with the tech tree open
 		_hud.toggle_tech_tree.call_deferred()
 	var castle := OS.get_environment("CIVSIM_CASTLE").split_floats(",", false)

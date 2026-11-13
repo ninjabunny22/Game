@@ -87,6 +87,14 @@ Plan (agreed 2026-11-13): war on the AI's own judgement with a home guard; fight
   real reason or their history. Three check games: wars were started for 5-8 different reasons
   a game (grudges, bullying, gates, an ally's war, a runaway leader...); "no room to grow"
   named most of Highgate's wars until it was made to give way to more specific reasons.
+- **A decluttered watch mode** (plan agreed 2026-11-13, four phases; ruler mode unchanged):
+  1–2 done: one bar across the top with a scoreboard chip per civ, and one drawer per civ
+  (Overview, Army, Diplomacy, Tech tabs; Follow; Rule it) in place of the civ cards, the
+  "Rule a civ" panel and the diplomacy panel. 3 done: a fading ticker with the newest
+  headline, and a chronicle (`L`) with every headline, filtered by civ. Next, 4: a calmer
+  map (smaller labels, lines and deposit cubes by zoom, one fight box at a time, layer toggles
+  by the minimap). Note: `check_assets.gd` does not load `hud.gd`; check it with
+  `--check-only --script res://scripts/hud.gd`.
 
 ## Balance batch (2026-11-13)
 

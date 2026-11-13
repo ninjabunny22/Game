@@ -65,16 +65,28 @@ Then open `godot/` in Godot 4.7 or newer and press Play (or
 viewer reconnects on its own.
 
 Viewer controls: drag to pan, right-drag to orbit, wheel to zoom, `Space` to
-pause, `.` to step one tick, `-` / `=` to change speed, `Tab` diplomacy, `T` the tech tree,
-`H` the keys.
+pause, `.` to step one tick, `-` / `=` to change speed, `1`–`5` a civ's drawer, `Tab`
+diplomacy, `T` the tech tree, `L` the chronicle, `Esc` closes the top panel, `H` the keys.
 
 The overlay is built for watching:
 
-- **The bar** (top left): the day (one tick is one day), the pace in days per minute and the
-  map, over one row of icons: pause/resume, one day on, slower, faster, diplomacy, what the
-  lines between castles mean, the keys, and back to the menu. Resting the mouse on an icon
-  says what it does and its key (icons made by `tools/make_icons.py`). A banner appears
-  while the sim is paused.
+- **The bar** (across the top): the day (one tick is one day) and the pace in days per
+  minute (the map on hover), one row of icons (pause/resume, one day on, slower, faster,
+  diplomacy, the keys, back to the menu; resting the mouse on one says what it does and its
+  key; icons made by `tools/make_icons.py`), and while watching a **scoreboard**: one chip
+  per civ in its colour with its region points, crossed swords while it is at war, dimmed
+  once it has fallen. Resting on a chip gives a short summary. A banner appears while the
+  sim is paused.
+- **A civ's drawer** (while watching): click a chip, or press `1`–`5`, to open one panel on the
+  right about that civ, with tabs for its Overview (era, points, goal, plans, what it is
+  short of), Army, Diplomacy (its own wars and deals, then the whole world's) and Tech (opens
+  the tree on its path). **Follow** keeps the camera on its largest army in the field (else
+  its capital); **Rule it** takes control. Click the chip again, its X or `Esc` to close.
+- **The ticker and the chronicle** (while watching): the newest headline (wars, peace,
+  castles taken, alliances, eras, with a war's proclamation) shows at the bottom left and
+  fades after a few seconds. Click it, or press `L`, for the chronicle: every headline so far,
+  newest first, filtered by civ if you like, with the last 100 days' routine changes counted
+  at the end. When you rule a civ, the old event log stays in its place.
 - **Fights you can follow** (while watching, not when you rule a civ). Over every battle,
   siege or assault on a native capital on screen floats a box: a headline ("General Varen of
   Zhanlu assaults Dunlinby with 122 soldiers"), a bar per side (soldiers left of what it
@@ -83,10 +95,10 @@ The overlay is built for watching:
   open its box. When fights are going on and none is on screen, a crossed-swords button at
   the top says how many; click it to go to the largest, again for the next. A finished
   fight's box stays a few days with how it ended.
-- **Tech tree** (while watching; the tree button beside the civ cards, or `T`): one column per
+- **Tech tree** (while watching; a drawer's Tech tab, or `T`): one column per
   era, a dot in each civ's colour on every tech it knows, and a frame and progress bar on what
   each is learning now. Resting the mouse on a tech says what it does, its cost and who knows
-  it; with a civ's card open, the tree shows that civ's path.
+  it; with a civ's drawer open, the tree shows that civ's path.
 - **Text size.** The whole overlay is drawn 35% larger than Godot's default;
   `[` and `]` make it smaller or larger while watching.
 - **Sieges.** A civ's capital does not fall the moment an army breaks in: the army
