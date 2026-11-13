@@ -101,3 +101,8 @@ state is in CIVSIM_STATUS.md.
   region passes to it that day. Then re-check balance (castles change hands faster; the home
   guard and peace terms were tuned with the hold) in 3 games, and update the README and the
   map's hold display.
+- **To do (asked for 2026-11-13): tech tree hover.** Hovering a tech already lists its
+  description, cost, the civs that know it and who is learning it (`tech_tree.gd`,
+  `_tooltip_at`). Check the hover shows reliably in a real game, and make it clearer: the
+  exact bonuses in numbers (from the tech's effects, not only its description) and the civs
+  that have it in their colours.
