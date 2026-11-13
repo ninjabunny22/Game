@@ -13,8 +13,12 @@ extends Node3D
 ##
 ## How much is drawn follows the zoom. From afar a field army is a single marker in its
 ## civ's colour with its size and its general's name; garrisons and villagers are left out.
-## Closer in, the general and the first few of the ranks; closest, all of them, the full
-## caption, and the generals in reserve standing at the gates of the capitals they hold.
+## Closer in, the general and the first few of the ranks; closest, all of them and the full
+## caption.
+##
+## Nobody inside a castle is drawn: villagers, riders and armies the simulation marks
+## `in_castle`, the garrison and the generals in reserve are counted in the castle's panel
+## instead (click the castle).
 
 # Everything is drawn to fit the tile grid: figures stand well under a tile tall, beside
 # buildings that fill one tile.
@@ -23,7 +27,6 @@ const COMMANDER_HEIGHT := 0.8  # in tiles: the old placeholder
 const GENERAL_HEIGHT := 0.74  # a general of the Adventurers pack, a head taller than his soldiers
 const FOOT_HEIGHT := 0.56  # a foot soldier of the same pack
 const MID_RANKS := 3  # rank figures shown at middle zoom: enough to read as an army
-const POSTED_SPOT := Vector3(-0.85, 0, 1.0)  # where a general in reserve stands: in the castle's front court
 const VILLAGER_HEIGHT := 0.45
 const RIDER_HEIGHT := 0.62
 const SOLDIER_HEIGHT := 0.58  # a man-at-arms: the commander's model, smaller
@@ -48,8 +51,6 @@ const ROWING_ON := 1.5  # seconds the oars keep going after the boat last moved
 ## Siege engines an army brings up to an enemy capital's walls: [model, size, where (behind the leader)].
 const SIEGE_ENGINES := [["civsim_ram", 0.55, Vector3(0.0, 0, 0.45)], ["civsim_catapult", 0.5, Vector3(0.55, 0, -0.65)]]
 const SIEGE_REACH := 3  # tiles from an enemy capital within which a besieging army has its engines up
-const GARRISON_SPOT := Vector3(0.8, 0, 1.15)  # the garrison is drawn up in the castle's front court
-const AT_THE_GATE := Vector3(0, 0, 2.9)  # a field army in one of its own capitals waits outside the gate
 const AT_ARMS := ["fighting", "besieging"]  # army states shown as striking
 const MOVE_SPEED := 6.0  # how fast figures glide toward their tile, in tiles per second
 const SKIN := Color(0.87, 0.72, 0.58)
@@ -68,7 +69,6 @@ var _clock := 0.0
 var _characters: RefCounted  # characters.gd
 var _adventurers: RefCounted  # adventurers.gd
 var _models: RefCounted  # models.gd: the ship and the siege engines
-var _posted := {}  # "civ:name" -> {"node", "look", "target"}: generals in reserve, at their capitals
 var _capitals := {}  # "x,y" -> civ id, of every capital a civ holds (from the last tick)
 
 
@@ -81,7 +81,6 @@ func setup(terrain: Node3D, init: Dictionary, civ_colors: Array, characters: Ref
 		child.queue_free()
 	_armies.clear()
 	_villagers.clear()
-	_posted.clear()
 	_terrain = terrain
 	_civ_colors = civ_colors
 	_unit_names.clear()
@@ -108,6 +107,7 @@ func update(armies: Array, villagers: Array) -> void:
 		entry["field"] = army["role"] == "field"
 		entry["state"] = str(army["state"])
 		entry["afloat"] = bool(army.get("boat", false))
+		entry["in_castle"] = bool(army.get("in_castle", false))
 		if entry["afloat"] and not entry.has("boat"):
 			var boat: Node3D = _models.instance("civsim_ship", _models.tinted_material(_civ_colors[civ]), BOAT_LENGTH)
 			if boat != null:
@@ -122,12 +122,7 @@ func update(armies: Array, villagers: Array) -> void:
 		entry["size_text"] = str(entry["size"]) if counted else "~%d" % (maxi(1, roundi(entry["size"] / 50.0)) * 50)
 		entry["caption"] = _army_caption(army) if counted else "About %s soldiers" % str(entry["size_text"]).substr(1)
 		_show_army(entry)
-		var offset := Vector3.ZERO
-		if army["role"] == "garrison":
-			offset = GARRISON_SPOT
-		elif int(_capitals.get("%d,%d" % [int(army["x"]), int(army["y"])], -1)) == civ:
-			offset = AT_THE_GATE  # not standing on the keep
-		_aim(entry, _spot(int(army["x"]), int(army["y"]), offset))
+		_aim(entry, _spot(int(army["x"]), int(army["y"]), Vector3.ZERO))
 	_drop_missing(_armies, seen)
 
 	seen = {}
@@ -159,6 +154,7 @@ func update(armies: Array, villagers: Array) -> void:
 		var fan := Vector3(-0.3 + 0.3 * (n % 3), 0, 0.3 - 0.3 * (n / 3 % 3))
 		_aim(_villagers[id], _spot(int(villager["x"]), int(villager["y"]), fan))
 		_villagers[id]["afloat"] = afloat
+		_villagers[id]["in_castle"] = bool(villager.get("in_castle", false))
 		# On water a villager crosses in a fishing boat, shown alone like an army's ship: it
 		# comes and goes with the water.
 		if afloat and not _villagers[id].has("skiff"):
@@ -170,7 +166,7 @@ func update(armies: Array, villagers: Array) -> void:
 		elif not afloat and _villagers[id].has("skiff"):
 			_villagers[id]["skiff"]["node"].queue_free()
 			_villagers[id].erase("skiff")
-		_villagers[id]["node"].visible = not afloat
+		_villagers[id]["node"].visible = _villager_shown(_villagers[id])
 		# What it does once it has stopped walking.
 		var doing := "idle"
 		if villager["at_work"] and villager["task"] == "build":
@@ -187,10 +183,12 @@ func set_detail(detail: int) -> void:
 	for entry: Dictionary in _armies.values():
 		_show_army(entry)
 	for entry: Dictionary in _villagers.values():
-		entry["node"].visible = not entry.get("afloat", false)
-	for entry: Dictionary in _posted.values():
-		entry["node"].visible = detail >= 2
-		_characters.set_active(entry["node"], detail >= 2)
+		entry["node"].visible = _villager_shown(entry)
+
+
+## A villager walking on land outside any castle's walls; afloat, only his boat is drawn.
+func _villager_shown(entry: Dictionary) -> bool:
+	return not entry.get("afloat", false) and not entry.get("in_castle", false)
 
 
 ## Far: field armies are a marker and a number, garrisons are hidden. Closer: the
@@ -200,9 +198,9 @@ func _show_army(entry: Dictionary) -> void:
 	var figure: Node3D = entry["figure"]
 	var marker: Node3D = entry["marker"]
 	var label: Label3D = entry["label"]
-	entry["node"].visible = is_field or _detail >= 1
+	entry["node"].visible = (is_field or _detail >= 1) and not entry.get("in_castle", false)
 	var afloat: bool = entry.get("afloat", false) and entry.has("boat")
-	figure.visible = _detail >= 1 and not afloat
+	figure.visible = _detail >= 1 and not afloat and not entry.get("in_castle", false)
 	var figures: Array = entry["figures"]
 	for i in figures.size():
 		# The general and a few of the ranks closer in; every rank only up close.
@@ -237,7 +235,7 @@ func _show_army(entry: Dictionary) -> void:
 
 func _process(delta: float) -> void:
 	_clock += delta
-	for group: Dictionary in [_armies, _villagers, _posted]:
+	for group: Dictionary in [_armies, _villagers]:
 		for entry: Dictionary in group.values():
 			var node: Node3D = entry["node"]
 			var target: Vector3 = entry["target"]
@@ -306,7 +304,7 @@ func _spot(x: int, y: int, offset: Vector3) -> Vector3:
 
 
 func _drop_missing(group: Dictionary, seen: Dictionary) -> void:
-	for id: Variant in group.keys():  # army and villager ids, or "civ:name" for a posted general
+	for id: Variant in group.keys():  # army and villager ids
 		if not seen.has(id):
 			if group[id].has("skiff"):
 				group[id]["skiff"]["node"].queue_free()
@@ -465,36 +463,14 @@ func _soldier(unit_id: String, color: Color) -> Node3D:
 	return soldier
 
 
-## Generals in reserve, stationed at capitals: each stands before the castle he holds, seen
-## only up close. `civs` is the tick's list of civs.
-func update_posted(civs: Array) -> void:
-	var seen := {}
+## Which civ holds each capital, for siege engines at another civ's walls. `civs` is the
+## tick's list of civs. Generals in reserve stand inside the castles they hold and are not
+## drawn: the castle's panel names them.
+func update_capitals(civs: Array) -> void:
 	_capitals.clear()
 	for civ: Dictionary in civs:
-		var civ_id := int(civ["id"])
 		for settlement: Dictionary in civ.get("settlements", []):
-			_capitals["%d,%d" % [int(settlement["x"]), int(settlement["y"])]] = civ_id
-		var crowd := {}  # capital -> generals already standing there
-		for commander: Dictionary in civ.get("commanders_in_reserve", []):
-			if commander.get("x") == null:
-				continue  # not posted anywhere
-			var key := "%d:%s" % [civ_id, commander["name"]]
-			seen[key] = true
-			if not _posted.has(key):
-				var figure: Node3D = _adventurers.instance(_adventurers.general_for(civ_id, str(commander["name"])),
-					_civ_colors[civ_id], GENERAL_HEIGHT)
-				if figure == null:
-					continue
-				add_child(figure)
-				_posted[key] = {"node": figure, "look": key, "target": Vector3.ZERO}
-			var at := "%d,%d" % [int(commander["x"]), int(commander["y"])]
-			var n: int = crowd.get(at, 0)
-			crowd[at] = n + 1
-			var entry: Dictionary = _posted[key]
-			_aim(entry, _spot(int(commander["x"]), int(commander["y"]), POSTED_SPOT + Vector3(0.35 * n, 0, 0)))
-			entry["node"].visible = _detail >= 2
-			_characters.set_active(entry["node"], _detail >= 2)
-	_drop_missing(_posted, seen)
+			_capitals["%d,%d" % [int(settlement["x"]), int(settlement["y"])]] = int(civ["id"])
 
 
 func _make_villager(civ: int, task: String, look: String, mounted: bool) -> Dictionary:

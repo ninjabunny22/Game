@@ -20,6 +20,7 @@ Client -> server
 
 import json
 
+from ..economy.buildings import castle_square
 from ..economy.production import soldier_cost
 from ..economy.rules import RESOURCES
 from ..map import BIOME_INFO, DEPOSIT_TYPES, Biome, load_faction
@@ -29,7 +30,7 @@ from ..simulation import Simulation
 from ..config import HEADCOUNT, MAP_SIZES, MAPS, civ_counts, civ_range
 from ..diplomacy import rules
 
-PROTOCOL_VERSION = 19
+PROTOCOL_VERSION = 20
 RULER_COMMANDS = ("take_control", "release_control", "set_stance", "set_focus", "set_research", "set_build",
                   "answer_proposal", "start_rally", "cancel_rally", "reinforce_ally", "recall_reinforcement")
 GAME_COMMANDS = ("new_game", "end_game")  # start a game from the menu; go back to the menu
@@ -164,18 +165,54 @@ def init_message(sim: Simulation, lobby: bool = False) -> str:
     return encode("init", sim.tick, data)
 
 
+def _castles(sim: Simulation) -> dict[int, int]:
+    """Every tile a capital's castle stands on (economy.castle_ground), mapped to that capital's tile."""
+    return {tile: capital for capital in sim.world.capital_tiles for tile in castle_square(sim.world, capital)}
+
+
+def _in_castle(sim: Simulation, castles: dict[int, int], civ_id: int, tile: int) -> bool:
+    """Whether someone of `civ_id` on `tile` is inside a castle: on the castle ground of a capital
+    held by its own civ or an ally. An army at an enemy's or the natives' walls is besieging it,
+    not inside, and stays in sight."""
+    capital = castles.get(tile)
+    if capital is None:
+        return False
+    holder = sim.world.regions[sim.world.capital_tiles[capital]].owner
+    if holder is None:
+        return False
+    return holder == civ_id or sim.diplomacy.relation(civ_id, holder).status == "alliance"
+
+
 def _settlement(sim: Simulation, civ, settlement, watcher) -> dict:
     """A capital as the viewer may see it: where it is, and who holds its castle."""
     world, military = sim.world, sim.military
     entry = {"name": settlement.name, "x": settlement.tile % world.width, "y": settlement.tile // world.width}
     actual = heads(military.castle_defenders(civ, settlement.tile))  # its garrison, and any force holding it
-    if watcher is None or military.garrison_known(watcher, settlement.tile):
+    known = watcher is None or military.garrison_known(watcher, settlement.tile)
+    if known:
         entry["garrison"] = actual
     else:
         entry["about"] = military.garrison_guess(watcher, settlement.tile, actual)
     # Its generals in reserve, its hospital (all the civ's wounded and beds, spread through its
     # castles) and, if an enemy has broken in, who and how far the hold has gone.
     entry["generals"] = [{"name": c.name, "level": c.level} for c in civ.commanders if c.post == settlement.tile]
+    # Who is inside its walls, none of whom is drawn on the map: the civ's villagers on its
+    # castle ground, its soldiers (the garrison's share and the civ's armies standing there) and
+    # its generals (those in reserve, and those leading the armies inside). For another civ's
+    # castle the player has not counted, the soldiers are only "about" as many, and the
+    # generals leading armies inside are left out, as their armies are.
+    ground = set(castle_square(world, settlement.tile))
+    inside_armies = [a for a in civ.armies if a.role != "garrison" and a.size >= 0.5 and a.tile in ground]
+    soldiers = heads(military.castle_garrison(civ) + sum(a.size for a in inside_armies))
+    generals = list(entry["generals"])
+    if known:
+        generals += [{"name": a.commander.name, "level": a.commander.level} for a in inside_armies if a.commander]
+    entry["inside"] = {
+        "villagers": sum(1 for v in civ.villagers if v.tile in ground),
+        "soldiers": soldiers if known else military.garrison_guess(watcher, settlement.tile, soldiers),
+        "about": not known,
+        "generals": generals,
+    }
     entry["beds"] = heads(military.beds(civ) / max(1, len(civ.settlements)))
     entry["wounded"] = heads(civ.wounded / max(1, len(civ.settlements)))
     region = world.regions[world.capital_tiles[settlement.tile]] if settlement.tile in world.capital_tiles else None
@@ -287,6 +324,7 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
         })
     armies = []
     villagers = []
+    castles = _castles(sim)
     for civ in sim.civs:
         for army in civ.armies:
             if army.size < 0.5:
@@ -317,6 +355,8 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
                 # having put out from near one of its civ's harbours; drawn as a ship until it lands.
                 "afloat": world.is_boat_water(army.tile),
                 "boat": army.boat,
+                # Inside a castle of its own civ or an ally: not drawn (click the castle to count it).
+                "in_castle": _in_castle(sim, castles, civ.id, army.tile),
                 "strength": round(sim.military.army_strength(army), 1),
                 "commander": {"name": commander.name, "level": commander.level, "battles": commander.battles,
                               "wins": commander.wins} if commander else None,
@@ -329,7 +369,9 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
                               "gathers": villager.gathers, "at_work": villager.tile == villager.target,
                               "mounted": villager.mounted,
                               # On open water it is aboard a ship and is not drawn.
-                              "afloat": world.is_boat_water(villager.tile)})
+                              "afloat": world.is_boat_water(villager.tile),
+                              # Inside a castle's walls: not drawn.
+                              "in_castle": _in_castle(sim, castles, civ.id, villager.tile)})
     relations = []
     for (a, b), relation in diplomacy.relations.items():
         war = relation.war
@@ -345,7 +387,7 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
                 "defending": war.defending,  # set if one side was drawn in by an alliance
                 "betrayer": war.betrayer,  # set if the declarer broke an alliance to attack
                 "surprise": sim.tick < war.surprise_until,
-                "tiles_taken": {str(civ_id): count for civ_id, count in war.tiles_taken.items()},
+                "regions_taken": {str(civ_id): count for civ_id, count in war.regions_taken.items()},
                 "casualties": {str(civ_id): round(lost) for civ_id, lost in war.casualties.items()},
             } if war else None,
         })

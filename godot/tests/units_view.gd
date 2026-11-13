@@ -72,7 +72,7 @@ func _init() -> void:
 	_units.setup(flat, {"unit_types": {"swordsman": {"name": "Swordsmen"}, "spearman": {"name": "Spearmen"}}},
 		colors, Characters.new(), Adventurers.new(), _models)
 	# Civ 1 holds a capital at (20, 20); civ 0's army besieges it from (18, 20).
-	_units.update_posted([{"id": 1, "settlements": [{"x": 20, "y": 20}], "commanders_in_reserve": []}])
+	_units.update_capitals([{"id": 1, "settlements": [{"x": 20, "y": 20}], "commanders_in_reserve": []}])
 	var general := {"name": "Aldric", "level": 3, "battles": 4, "wins": 3}
 	_armies = [
 		_army(1, 0, 18, 20, "besieging", general, false),

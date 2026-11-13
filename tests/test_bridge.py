@@ -115,3 +115,39 @@ def test_the_clock_waits_for_a_strategist_who_has_not_answered():
     assert sim.waiting_for() == [], "answered: the clock may move again"
     status = json.loads(protocol.status_message(sim, False, 1.0))["data"]
     assert status == {"paused": False, "speed": 1.0, "waiting_for": []}
+
+
+def test_nobody_is_drawn_inside_a_castle_and_the_castle_says_who_is_in_it():
+    from civsim.economy import castle_ground
+    sim = Simulation(SimConfig(seed=3))
+    for _ in range(10):
+        sim.step()
+    world = sim.world
+    civ, other = sim.civs[0], sim.civs[1]
+    home = civ.settlements[0].tile
+    civ.villagers[0].tile = home + 1  # at work just inside its own castle's walls
+    other.villagers[0].tile = home - 1  # a stranger on its castle ground is not inside it
+    data = json.loads(protocol.tick_message(sim, False, 1.0))["data"]
+    for kind in ("villagers", "armies"):
+        for unit in data[kind]:
+            if unit["in_castle"]:
+                assert castle_ground(world, unit["y"] * world.width + unit["x"])
+    by_id = {(v["civ"], v["id"]): v for v in data["villagers"]}
+    assert by_id[(civ.id, civ.villagers[0].id)]["in_castle"]
+    assert not by_id[(other.id, other.villagers[0].id)]["in_castle"]
+    inside = data["civs"][0]["settlements"][0]["inside"]
+    assert inside["villagers"] >= 1 and not inside["about"], "anyone may count every castle while nobody rules"
+    assert inside["soldiers"] >= protocol.heads(sim.military.castle_garrison(civ)) - 1
+    assert inside["generals"] == data["civs"][0]["settlements"][0]["generals"], "no army stands inside yet"
+
+
+def test_another_civs_castle_is_counted_only_roughly_by_a_ruler():
+    sim = Simulation(SimConfig(seed=3))
+    sim.step()
+    sim.ruler.civ_id = 0
+    data = json.loads(protocol.tick_message(sim, False, 1.0))["data"]
+    own = data["civs"][0]["settlements"][0]
+    assert not own["inside"]["about"] and "garrison" in own
+    other = data["civs"][1]["settlements"][0]
+    assert other["inside"]["about"] and "about" in other
+    assert other["inside"]["soldiers"] % 10 == 0

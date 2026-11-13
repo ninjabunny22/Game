@@ -21,12 +21,16 @@ var _status: Label
 var _pause_button: Button
 var _log: RichTextLabel
 var _cards_box: VBoxContainer
+var _cards_scroll: ScrollContainer
+var _reserved_bottom_right := 0.0  # height kept clear at the bottom right (the minimap)
 var _diplomacy_panel: PanelContainer
 var _castle_panel: PanelContainer
 var _points_needed := 0  # region points that win by domination
 var _regions_at := {}  # capital tile -> the region it rules, from init
 var _castle_text: RichTextLabel
+var _castle_title: Label
 var _castle_at := Vector2i(-1, -1)  # the castle being looked at, by tile; (-1, -1) for none
+var _castle_anchor := Vector3.INF  # the point above that castle the panel stands beside, in the world
 var _diplomacy: RichTextLabel
 var _cards := {}  # civ id -> RichTextLabel
 var _expanded := -1  # civ whose card shows full detail, or -1
@@ -147,21 +151,35 @@ func _ready() -> void:
 	side.offset_left = -400
 	side.offset_right = -10
 	side.offset_top = 10
+	# The cards scroll when there are more than fit above the minimap.
+	_cards_scroll = ScrollContainer.new()
+	_cards_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	side.add_child(_cards_scroll)
 	_cards_box = VBoxContainer.new()
 	_cards_box.custom_minimum_size = Vector2(370, 0)
 	_cards_box.add_theme_constant_override("separation", 10)
-	side.add_child(_cards_box)
+	_cards_box.resized.connect(_fit_cards)
+	_cards_scroll.add_child(_cards_box)
 
-	# A castle clicked on the map: who holds it and with how many. Closed by clicking elsewhere.
+	# A castle clicked on the map: who holds it, who is inside and with how many. It stands
+	# beside the castle and follows it as the camera moves; closed by its X or a click elsewhere.
 	_castle_panel = _panel(root)
-	_castle_panel.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-	_castle_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	_castle_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	_castle_panel.offset_left = -10
-	_castle_panel.offset_right = -10
-	_castle_panel.offset_top = -10
-	_castle_panel.offset_bottom = -10
 	_castle_panel.visible = false
+	(_castle_panel.get_theme_stylebox("panel") as StyleBoxFlat).bg_color.a = 0.96  # drawn over the cards, it must not show them through
+	var castle_column := VBoxContainer.new()
+	castle_column.add_theme_constant_override("separation", 6)
+	_castle_panel.add_child(castle_column)
+	var title_bar := HBoxContainer.new()
+	castle_column.add_child(title_bar)
+	_castle_title = Label.new()
+	_castle_title.add_theme_font_size_override("font_size", 16)
+	_castle_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title_bar.add_child(_castle_title)
+	var close := _button(title_bar, "×", func() -> void: show_castle(-1, -1))
+	close.tooltip_text = "Close"
+	var rule := HSeparator.new()
+	rule.modulate = Color(1, 1, 1, 0.3)
+	castle_column.add_child(rule)
 	_castle_text = RichTextLabel.new()
 	_castle_text.bbcode_enabled = true
 	_castle_text.fit_content = true
@@ -170,7 +188,7 @@ func _ready() -> void:
 	_castle_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_castle_text.add_theme_font_size_override("normal_font_size", 13)
 	_castle_text.add_theme_font_size_override("bold_font_size", 13)
-	_castle_panel.add_child(_castle_text)
+	castle_column.add_child(_castle_text)
 
 	# Impossible to miss when the sim is paused.
 	_paused_banner = Label.new()
@@ -540,6 +558,19 @@ func _days(ticks: int) -> String:
 	return "%d day%s" % [ticks, "" if ticks == 1 else "s"]
 
 
+## Keep the bottom right clear for `height` pixels (the minimap): the cards stop above it.
+func reserve_bottom_right(height: float) -> void:
+	_reserved_bottom_right = height
+	_fit_cards()
+
+
+func _fit_cards() -> void:
+	if _cards_scroll == null:
+		return
+	var room := get_viewport().get_visible_rect().size.y - 10.0 - 30.0 - _reserved_bottom_right - 20.0
+	_cards_scroll.custom_minimum_size = Vector2(370, minf(_cards_box.get_combined_minimum_size().y, maxf(120.0, room)))
+
+
 func _refresh_cards() -> void:
 	for civ_id: int in _latest:
 		if _cards.has(civ_id):
@@ -547,11 +578,37 @@ func _refresh_cards() -> void:
 			_cards[civ_id].text = _card_text(_civ_info[civ_id], civ) if civ_id == _expanded else _compact_text(_civ_info[civ_id], civ)
 
 
-## Opens one civ's card to full detail, or closes it if it is already open.
-## Show the castle standing on tile (x, y), or close the panel if `x` is negative.
-func show_castle(x: int, y: int) -> void:
+## Show the castle standing on tile (x, y), or close the panel if `x` is negative. `anchor`
+## is the point in the world the panel stands beside (above the castle's keep).
+func show_castle(x: int, y: int, anchor := Vector3.INF) -> void:
 	_castle_at = Vector2i(x, y)
+	_castle_anchor = anchor
 	_refresh_castle()
+	_place_castle_panel()
+
+
+func _process(_delta: float) -> void:
+	_place_castle_panel()
+
+
+## Keeps the castle panel beside its castle on screen, to the right of it (to the left when
+## there is no room), and wholly on screen.
+func _place_castle_panel() -> void:
+	if not _castle_panel.visible:
+		return
+	var view := _castle_panel.get_viewport_rect().size
+	var size := _castle_panel.get_combined_minimum_size()
+	var at := Vector2(view.x - size.x - 10, view.y - size.y - 10)  # with nowhere to stand: bottom right
+	var camera := get_viewport().get_camera_3d()
+	if camera != null and _castle_anchor != Vector3.INF and not camera.is_position_behind(_castle_anchor):
+		var point := camera.unproject_position(_castle_anchor)
+		at = Vector2(point.x + 40, point.y - size.y * 0.5)
+		if at.x + size.x > view.x - 10:
+			at.x = point.x - 40 - size.x
+	at.x = clampf(at.x, 10, maxf(10, view.x - size.x - 10))
+	at.y = clampf(at.y, 10, maxf(10, view.y - size.y - 10))
+	_castle_panel.position = at
+	_castle_panel.size = size
 
 
 func _refresh_castle() -> void:
@@ -564,7 +621,8 @@ func _refresh_castle() -> void:
 				continue
 			var lines: Array[String] = []
 			var main: bool = civ["settlements"][0] == settlement
-			lines.append("[font_size=16][b]%s[/b][/font_size]  %s" % [str(settlement["name"]), _civ_name(int(civ["id"]))])
+			_castle_title.text = str(settlement["name"])
+			lines.append(_civ_name(int(civ["id"])))
 			lines.append("[color=#8a93a0]%s[/color]" % ("The capital of the realm" if main else "A regional capital"))
 			var region: Dictionary = _regions_at.get(_castle_at, {})
 			if not region.is_empty():
@@ -577,8 +635,15 @@ func _refresh_castle() -> void:
 				lines.append("[color=#8a93a0]Garrison:[/color] %d soldiers" % int(settlement["garrison"]))
 			else:
 				lines.append("[color=#8a93a0]Garrison:[/color] about %d soldiers [color=#8a93a0](attack it to count them)[/color]" % int(settlement["about"]))
+			# Who is inside its walls (none of them is drawn on the map), and the generals among them.
+			var inside: Dictionary = settlement.get("inside", {})
+			if not inside.is_empty():
+				var soldiers := int(inside["soldiers"])
+				lines.append("[color=#8a93a0]Inside:[/color] %d villager%s, %s%d soldier%s" % [
+					int(inside["villagers"]), "" if int(inside["villagers"]) == 1 else "s",
+					"about " if inside.get("about", false) else "", soldiers, "" if soldiers == 1 else "s"])
 			var generals: Array[String] = []
-			for general: Dictionary in settlement.get("generals", []):
+			for general: Dictionary in inside.get("generals", settlement.get("generals", [])):
 				generals.append("%s (level %d)" % [general["name"], int(general["level"])])
 			lines.append("[color=#8a93a0]Generals here:[/color] %s" % (", ".join(generals) if not generals.is_empty() else "none"))
 			lines.append("[color=#8a93a0]Hospital:[/color] %d of %d beds taken" % [int(settlement.get("wounded", 0)), int(settlement.get("beds", 0))])
@@ -645,8 +710,8 @@ func _diplomacy_text_panel(data: Dictionary) -> String:
 			elif war["betrayer"] != null:
 				note = "  [color=#e07a6a](betrayal)[/color]"
 			lines.append("  %s attacks %s%s" % [_civ_name(attacker), _civ_name(defender), note])
-			lines.append("  [color=#8a93a0]tiles taken %d / %d   losses %d / %d[/color]" % [
-				int(war["tiles_taken"][str(attacker)]), int(war["tiles_taken"][str(defender)]),
+			lines.append("  [color=#8a93a0]castles taken %d / %d   losses %d / %d[/color]" % [
+				int(war["regions_taken"][str(attacker)]), int(war["regions_taken"][str(defender)]),
 				int(war["casualties"][str(attacker)]), int(war["casualties"][str(defender)]),
 			])
 

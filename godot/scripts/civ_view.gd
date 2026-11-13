@@ -85,6 +85,7 @@ const YARD_EARTH := Color(0.55, 0.45, 0.32)  # ... and the packed earth inside a
 const WALL_SEGMENTS := {"main": 5, "town": 3}  # wall pieces along each side; the gate takes the middle one
 # A castle stands on its capital's tile and the two rings around it (5 x 5 tiles), where the
 # sim builds nothing.
+const CASTLE_REACH := 2  # tiles each way from a capital that its castle stands on (economy/buildings.py)
 const CAPITAL_FOOTPRINT := 4.4
 const TOWN_FOOTPRINT := 3.6
 ## Every castle has its hospital: a tent in the courtyard, and one more for each hospital tech.
@@ -223,7 +224,7 @@ func setup(terrain: Node3D, init: Dictionary, civ_colors: Array, models: RefCoun
 	_terrain = terrain
 	_building_defs = init["buildings"]
 	_civ_colors = civ_colors
-	_add_deposits(init["map"]["deposits"], init["deposit_types"])
+	_add_deposits(init["map"]["deposits"], init["deposit_types"], init["regions"])
 	_regions.clear()
 	_mines = init.get("mines", [])
 	_civ_names.clear()
@@ -848,7 +849,18 @@ func _make_capital(color: Color, caption: String, x: int, y: int, is_main: bool,
 	return root
 
 
-func _add_deposits(deposits: Array, deposit_types: Dictionary) -> void:
+## A marker on each deposit, except under a castle's walls (the capital's tile and those
+## within CASTLE_REACH of it), where nothing is ever worked.
+func _add_deposits(all_deposits: Array, deposit_types: Dictionary, regions: Array) -> void:
+	var deposits: Array = []
+	for deposit: Dictionary in all_deposits:
+		var walled := false
+		for region: Dictionary in regions:
+			if absi(int(deposit["x"]) - int(region["x"])) <= CASTLE_REACH and absi(int(deposit["y"]) - int(region["y"])) <= CASTLE_REACH:
+				walled = true
+				break
+		if not walled:
+			deposits.append(deposit)
 	var material := _flat_material(Color.WHITE)
 	material.vertex_color_use_as_albedo = true
 	material.vertex_color_is_srgb = true

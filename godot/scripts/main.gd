@@ -13,6 +13,7 @@ const Adventurers := preload("res://scripts/adventurers.gd")
 const CameraRig := preload("res://scripts/camera_rig.gd")
 const Hud := preload("res://scripts/hud.gd")
 const Menu := preload("res://scripts/menu.gd")
+const Minimap := preload("res://scripts/minimap.gd")
 
 const UI_SCALE := 1.35  # the whole overlay is drawn this much larger than Godot's default text size
 const UI_SCALE_STEP := 0.1
@@ -26,6 +27,7 @@ var _unit_view := UnitView.new()
 var _camera := CameraRig.new()
 var _hud := Hud.new()
 var _menu := Menu.new()
+var _minimap := Minimap.new()
 var _auto_started := false
 var _starting := ""  # the mode of the game just asked for from the menu: "watch" or "rule"
 var _models := Models.new()
@@ -52,6 +54,8 @@ func _ready() -> void:
 	add_child(_unit_view)
 	add_child(_camera)
 	add_child(_hud)
+	_hud.add_child(_minimap)  # shown and hidden with the rest of the overlay
+	_minimap.jump_requested.connect(_on_minimap_jump)
 	add_child(_menu)
 	_menu.start_requested.connect(_on_start_requested)
 	_menu.civ_chosen.connect(_on_civ_chosen)
@@ -72,7 +76,19 @@ func _unhandled_input(event: InputEvent) -> void:
 		_press_at = event.position
 	elif _press_at.distance_to(event.position) < CLICK_SLOP:
 		var tile: Vector2i = _castle_under(event.position)
-		_hud.show_castle(tile.x, tile.y)
+		_hud.show_castle(tile.x, tile.y, _castle_anchor(tile))
+
+
+## Where the castle panel stands beside a castle: above its keep.
+func _castle_anchor(tile: Vector2i) -> Vector3:
+	if tile.x < 0:
+		return Vector3.INF
+	return _terrain.tile_position(tile.x, tile.y) + Vector3(0, 1.4, 0)
+
+
+## A click on the minimap brings the camera over that place, as close as it was.
+func _on_minimap_jump(x: float, y: float) -> void:
+	_camera.focus(_terrain.tile_position(int(x), int(y)), _camera.distance())
 
 
 ## The tile of the capital whose castle is under the screen point, or (-1, -1).
@@ -152,6 +168,10 @@ func _process(delta: float) -> void:
 	# CIVSIM_QUIT_AT=<tick> closes the viewer once the game reaches that tick, for scripted runs.
 	var quit_at := OS.get_environment("CIVSIM_QUIT_AT")
 	if quit_at != "" and _tick >= int(quit_at):
+		# CIVSIM_SHOT=<file.png> saves what the window shows just before it closes.
+		var shot := OS.get_environment("CIVSIM_SHOT")
+		if shot != "":
+			get_viewport().get_texture().get_image().save_png(shot)
 		get_tree().quit()
 	var distance: float = _camera.distance()
 	_civ_view.set_view_distance(distance)
@@ -200,6 +220,8 @@ func _on_init(data: Dictionary) -> void:
 	_civ_view.setup(_terrain, data, _civ_colors, _models, _characters)
 	_unit_view.setup(_terrain, data, _civ_colors, _characters, _adventurers, _models)
 	_hud.setup(data)
+	_minimap.setup(data, _civ_colors)
+	_hud.reserve_bottom_right(_minimap.custom_minimum_size.y)
 	_camera.focus(_terrain.center(), maxf(_terrain.map_width, _terrain.map_height) * 1.15)
 	# CIVSIM_VIEW="x,y,distance" starts the camera on a tile instead of the whole map.
 	var view := OS.get_environment("CIVSIM_VIEW").split_floats(",", false)
@@ -209,7 +231,7 @@ func _on_init(data: Dictionary) -> void:
 		_hud.toggle_diplomacy()
 	var castle := OS.get_environment("CIVSIM_CASTLE").split_floats(",", false)
 	if castle.size() == 2:  # CIVSIM_CASTLE="x,y" starts with that castle's panel open
-		_hud.show_castle(int(castle[0]), int(castle[1]))
+		_hud.show_castle(int(castle[0]), int(castle[1]), _castle_anchor(Vector2i(int(castle[0]), int(castle[1]))))
 	if OS.get_environment("CIVSIM_CARD") != "":  # start with one civ's card open, by civ id
 		_hud.toggle_card(int(OS.get_environment("CIVSIM_CARD")))
 	_territory_rev = -1
@@ -265,10 +287,11 @@ func _on_tick(tick: int, data: Dictionary) -> void:
 	parts["civs"] = Time.get_ticks_usec() - clock
 	clock = Time.get_ticks_usec()
 	_unit_view.update(data["armies"], data["villagers"])
-	_unit_view.update_posted(data["civs"])
+	_unit_view.update_capitals(data["civs"])
 	parts["units"] = Time.get_ticks_usec() - clock
 	clock = Time.get_ticks_usec()
 	_hud.update(tick, data)
+	_minimap.update(data)
 	parts["hud"] = Time.get_ticks_usec() - clock
 	# CIVSIM_PERF=1 also names any part of a tick that took over 30 ms.
 	if timing:
