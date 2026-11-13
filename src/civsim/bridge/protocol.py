@@ -26,7 +26,7 @@ from ..map import BIOME_INFO, DEPOSIT_TYPES, Biome, load_faction
 from ..military import UNIT_TYPES
 from ..military.warfare import ROSTER_CAP
 from ..simulation import Simulation
-from ..config import HEADCOUNT, MAP_SIZES, MAPS, civ_range
+from ..config import HEADCOUNT, MAP_SIZES, MAPS, civ_counts, civ_range
 from ..diplomacy import rules
 
 PROTOCOL_VERSION = 19
@@ -75,6 +75,7 @@ def _lobby_map(size: str, entry: dict) -> dict:
     fewest, most = civ_range(size, entry)
     return {"id": entry["id"], "name": entry["name"], "width": entry.get("width", spec["side"]),
             "height": entry.get("height", spec["side"]), "min_civs": fewest, "max_civs": most,
+            "counts": civ_counts(size, entry),
             "best": entry.get("best", ""), "premise": entry.get("premise", "")}
 
 

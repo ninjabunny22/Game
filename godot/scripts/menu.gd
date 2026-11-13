@@ -289,12 +289,36 @@ func _set_map(id: String) -> void:
 
 func _set_civs(civs: int) -> void:
 	var limits := _limits()
-	_civs = clampi(civs, int(limits["min_civs"]), int(limits["max_civs"]))
+	var counts := _counts(limits)
+	# The nearest number the map takes, in the direction asked for (Highgate takes 2 or 4).
+	if not counts.has(civs):
+		var above := counts.filter(func(n: int) -> bool: return n > _civs)
+		var below := counts.filter(func(n: int) -> bool: return n < _civs)
+		if civs > _civs and not above.is_empty():
+			civs = above.min()
+		elif civs < _civs and not below.is_empty():
+			civs = below.max()
+	_civs = clampi(civs, counts[0], counts[-1])
 	_civ_count.text = str(_civs)
-	_fewer.disabled = _civs <= int(limits["min_civs"])
-	_more.disabled = _civs >= int(limits["max_civs"])
+	_fewer.disabled = _civs <= counts[0]
+	_more.disabled = _civs >= counts[-1]
 	var where := str(limits["name"]) if limits.has("width") else "a %s map" % str(limits["name"]).to_lower()
-	_civ_hint.text = "%d to %d on %s" % [int(limits["min_civs"]), int(limits["max_civs"]), where]
+	var which := "%d to %d" % [counts[0], counts[-1]]
+	if counts.size() < counts[-1] - counts[0] + 1:
+		which = " or ".join(counts.map(func(n: int) -> String: return str(n)))
+	_civ_hint.text = "%s on %s" % [which, where]
+
+
+## The numbers of civs a choice takes, smallest first.
+func _counts(limits: Dictionary) -> Array[int]:
+	var counts: Array[int] = []
+	if limits.has("counts"):
+		for n: Variant in limits["counts"]:
+			counts.append(int(n))
+	else:
+		for n in range(int(limits["min_civs"]), int(limits["max_civs"]) + 1):
+			counts.append(n)
+	return counts
 
 
 ## The chosen map's entry, or {} when one is to be picked at random.

@@ -91,7 +91,7 @@ The overlay is built for watching:
   |---|---|---|---|
   | The Gilded Isle | 72x72 | 2-4 | a ring of coast round a lagoon; the only gold is on the stronghold isle in the middle |
   | Confluence | 72x72 | 2-3 | three rivers cut the land into wedges round a rich heartland; one old bridge each |
-  | Highgate | 72x72 | 2-4 | a plateau of iron and gold walled in by peaks; one pass beside each start |
+  | Highgate | 72x72 | 2 or 4 | a plateau of iron and gold walled in by peaks; one pass beside each start |
   | Tidewalk Isles | 96x96 | 2-5 | five isles joined by long bridges over the shallows; iron isles and stone isles |
   | Emberwaste | 96x96 | 2-5 | fertile valleys round a desert that holds the gold; the Oasis of Kesh at the centre |
   | The Divide | 96x96 | 2-5 | a ridge of peaks splits the land; three passes, the Kingsgate fortress in the middle |

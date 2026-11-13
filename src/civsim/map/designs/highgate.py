@@ -63,9 +63,12 @@ def blueprint() -> Blueprint:
         best="2 or 4",
         land=[land], zones=zones, patches=patches,
         ridges=[Ridge(ring, width=2.6, flank=1.2, gaps=passes)],
-        deposits=deposits, scatter=[("fish", 10, None)], mines=[(32, 33), (40, 39)],
+        # Four mines round the keep, one on each diagonal, so no corner is nearer the gold.
+        deposits=deposits, scatter=[("fish", 10, None)], mines=[(33, 33), (39, 33), (33, 39), (39, 39)],
         regions=regions, links=links,
         starts={"NW": ("ashdale", "brackenford"), "NE": ("elmridge", "cragmouth"),
                 "SE": ("fernmoor", "southmouth"), "SW": ("greywood", "westmouth")},
-        sets={2: ["NW", "SE"], 3: ["NW", "NE", "SE"], 4: ["NW", "NE", "SE", "SW"]},
+        # No 3: one corner would always be squeezed between the other two (in play it fell in
+        # two games out of three).
+        sets={2: ["NW", "SE"], 4: ["NW", "NE", "SE", "SW"]},
     )

@@ -88,3 +88,11 @@ def test_the_menu_starts_a_game_and_leaving_it_returns_to_the_menu():
         task.cancel()
 
     asyncio.run(scenario())
+
+
+def test_a_map_can_take_only_some_numbers_of_civs():
+    with pytest.raises(ValueError, match="2 or 4"):
+        game_config("small", 3, map="highgate")
+    assert game_config("small", 4, map="highgate").num_civs == 4
+    for seed in range(6):  # a random small map for three civs is never one that refuses them
+        assert game_config("small", 3, seed=seed, map="random").map_name != "Highgate"

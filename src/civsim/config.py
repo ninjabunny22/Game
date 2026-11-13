@@ -45,7 +45,7 @@ MAPS = {
                "civs": (2, 3), "best": "3",
                "premise": "Three rivers cut the land into wedges round a rich heartland; each has one old bridge."},
               {"id": "highgate", "name": "Highgate", "file": True, "width": 72, "height": 72,
-               "civs": (2, 4), "best": "2 or 4",
+               "civs": (2, 4), "counts": (2, 4), "best": "2 or 4",
                "premise": "A plateau of iron and gold walled in by peaks; four passes lead in, one beside each start."}],
     "medium": [{"id": "tidewalk_isles", "name": "Tidewalk Isles", "file": True, "width": 96, "height": 96,
                 "civs": (2, 5), "best": "3 to 5",
@@ -76,7 +76,7 @@ def game_config(size: str = "medium", civs: int | None = None, seed: int = 0, ma
     asked = civs if isinstance(civs, int) and not isinstance(civs, bool) else None
     if size == "random":  # any map of any size
         sizes = [k for k in MAP_SIZES if asked is None or any(
-            civ_range(k, m)[0] <= asked <= civ_range(k, m)[1] for m in MAPS[k])] or list(MAP_SIZES)
+            asked in civ_counts(k, m) for m in MAPS[k])] or list(MAP_SIZES)
         size = sizes[seed % len(sizes)]
     if size not in MAP_SIZES:
         raise ValueError(f"map size must be one of {', '.join(MAP_SIZES)}")
@@ -84,23 +84,32 @@ def game_config(size: str = "medium", civs: int | None = None, seed: int = 0, ma
     pool = MAPS[size]
     if map in (None, "random"):
         # Any of the size's maps: one that takes the civs asked for, picked by the seed.
-        fitting = [m for m in pool if asked is None or civ_range(size, m)[0] <= asked <= civ_range(size, m)[1]] or pool
+        fitting = [m for m in pool if asked is None or asked in civ_counts(size, m)] or pool
         chosen = fitting[seed % len(fitting)]
     else:
         chosen = next((m for m in pool if m["id"] == map), None)
     if chosen is None:
         raise ValueError(f"the {size} maps are {', '.join(m['id'] for m in pool)}")
-    fewest, most = civ_range(size, chosen)
+    counts = civ_counts(size, chosen)
     if chosen.get("file"):
         kwargs = {"map_file": chosen["id"], "map_name": chosen["name"], **kwargs}
         width, height = chosen["width"], chosen["height"]
     else:
         kwargs = {"map_seed": chosen["seed"], "map_name": chosen["name"], **kwargs}
         width = height = spec["side"]
-    civs = min(max(spec["civs"], fewest), most) if civs is None else civs
-    if isinstance(civs, bool) or not isinstance(civs, int) or not fewest <= civs <= most:
-        raise ValueError(f"{chosen['name']} takes {fewest} to {most} civs")
+    civs = min(counts, key=lambda n: (abs(n - spec["civs"]), n)) if civs is None else civs
+    if isinstance(civs, bool) or not isinstance(civs, int) or civs not in counts:
+        raise ValueError(f"{chosen['name']} takes {' or '.join(str(n) for n in counts)} civs")
     return SimConfig(seed=seed, width=width, height=height, num_civs=civs, end_tick=spec["end_tick"], **kwargs)
+
+
+def civ_counts(size: str, entry: dict) -> list[int]:
+    """Every number of civs a map takes: its own list if it has one (Highgate takes 2 or 4),
+    else everything in its range."""
+    if "counts" in entry:
+        return list(entry["counts"])
+    fewest, most = civ_range(size, entry)
+    return list(range(fewest, most + 1))
 
 
 def civ_range(size: str, entry: dict) -> tuple[int, int]:
