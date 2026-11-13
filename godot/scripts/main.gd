@@ -249,13 +249,13 @@ func _on_connection_changed(connected: bool) -> void:
 
 
 ## The menu asks for a game: the sim builds it and sends its map, as for any game.
-func _on_start_requested(mode: String, size: String, civs: int, seed_text: String, map_id: String = "", difficulty: String = "normal") -> void:
+## A game from the menu: the one its preview showed (the sim reuses the preview's seed).
+func _on_start_requested(mode: String, size: String, civs: int, map_id: String = "",
+		difficulty: String = "normal", intrigue: String = "normal") -> void:
 	_starting = mode
-	var game := {"mode": mode, "size": size, "civs": civs, "difficulty": difficulty}
+	var game := {"mode": mode, "size": size, "civs": civs, "difficulty": difficulty, "intrigue": intrigue}
 	if map_id != "":
 		game["map"] = map_id
-	if seed_text.is_valid_int():
-		game["seed"] = int(seed_text)
 	_client.send_command("new_game", game)
 
 
@@ -307,19 +307,21 @@ func _on_init(data: Dictionary) -> void:
 	var lobby: Variant = data.get("lobby")
 	_hud.visible = lobby == null
 	_camera.auto_orbit = lobby != null
+	_camera.h_shift = -0.16 if lobby != null else 0.13  # the menu's panel is on the left, the game's on the right
 	if lobby != null:
 		_menu.show_menu(lobby)
 		_menu.set_world(data, _civ_colors)
-		# CIVSIM_PREVIEW="size,map,civs" opens the menu's preview of that choice, for scripted runs.
+		# CIVSIM_PREVIEW="size,map,civs[,mode]" picks that in the menu, for scripted runs.
 		var preview := OS.get_environment("CIVSIM_PREVIEW").split(",", false)
-		if preview.size() == 3 and not _previewed:
+		if preview.size() >= 3 and not _previewed:
 			_previewed = true
-			_menu.open_preview_for.call_deferred(preview[0], preview[1], int(preview[2]))
+			_menu.open_preview_for.call_deferred(preview[0], preview[1], int(preview[2]),
+				preview[3] if preview.size() > 3 else "watch")
 		# CIVSIM_START="mode,size,civs" starts that game straight from the menu, for scripted runs.
 		var start := OS.get_environment("CIVSIM_START").split(",", false)
 		if start.size() == 3 and not _auto_started:
 			_auto_started = true
-			_on_start_requested.call_deferred(start[0], start[1], int(start[2]), "")
+			_on_start_requested.call_deferred(start[0], start[1], int(start[2]))
 	elif _starting == "rule":
 		var civs: Array = []
 		for civ: Dictionary in data["civs"]:

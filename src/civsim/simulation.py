@@ -14,7 +14,7 @@ import random
 
 from .civ.family import Families
 from .civ import FOCUSES, CivAI, Civilization, Settlement, Villages, assign_personalities, with_focus
-from .config import SimConfig
+from .config import INTRIGUE, SimConfig
 from .diplomacy import Diplomacy, Natives
 from .economy import (
     advance_construction,
@@ -78,7 +78,8 @@ class Simulation:
         self.villages.update(0, [])  # the towns around the starting capitals
         self.diplomacy.natives = self.natives
         # The ruling houses: their members age, marry, die and are succeeded (civ/family.py).
-        self.families = Families(self.civs, self.config.seed, self.diplomacy)
+        self.families = Families(self.civs, self.config.seed, self.diplomacy,
+                                 INTRIGUE.get(self.config.intrigue, 1.0))
         self.military.families = self.families
         self.families.military = self.military
         self.families.spawn = self._spawn_rebel

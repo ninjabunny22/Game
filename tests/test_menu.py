@@ -123,9 +123,11 @@ def test_a_preview_puts_the_chosen_map_behind_the_menu_and_the_game_is_that_one(
             assert shown["lobby"] is not None and shown["map_name"] == "Tidewalk Isles" and len(shown["civs"]) == 3
             assert server.paused and server.sim.tick == 0, "the preview stays on the first day"
             starts = [civ["capital_name"] for civ in shown["civs"]]
-            await ws.send(command("new_game", {"size": "medium", "map": "tidewalk_isles", "civs": 3, "mode": "watch"}))
+            await ws.send(command("new_game", {"size": "medium", "map": "tidewalk_isles", "civs": 3, "mode": "watch",
+                                               "intrigue": "rare"}))
             game = await next_init(ws)
             assert game["lobby"] is None and game["seed"] == shown["seed"]
+            assert server.sim.config.intrigue == "rare" and server.sim.families.intrigue == 0.5
             assert [civ["capital_name"] for civ in game["civs"]] == starts
         task.cancel()
 

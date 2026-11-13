@@ -54,13 +54,18 @@ it weighs attacking, allying and trading with every neighbour from the civ's per
 and the situation, and says why. `--brain rules` uses the simpler policy the tests run on.
 
 **Main menu.** Started with nothing said about the game (`./Play\ CivSim.command`), the
-viewer opens on its main menu over a game playing itself. Choosing a map, or a number of civs,
-puts that map behind the menu on its first day; **Preview** steps the menu aside and shows the
-map in small with each civ's start marked, and the game then started (with the seed left blank)
-is exactly that one. The menu chooses whether to
-watch or to rule a civ, a map (any of the nine by name, a random one of a size, or a random
-one of any size) and how many civs, within what that map takes. A game to be ruled starts
-paused on a screen for choosing a civ. `--size`, `--map` and `--civs` choose the same from
+viewer opens on its main menu, a panel on the left over a game playing itself, in three steps:
+1. **How to play:** watch, or rule a civ.
+2. **Map:** a size (Small, Medium, Large, Any), then one of its maps by name or "Surprise me".
+   The map appears behind the menu as it will be on its first day, and a card at the bottom
+   right shows it in small with each civ's start marked.
+3. **Options** (once a map is picked): how many civs (within what the map takes), **court
+   intrigue** (Off, Rare, Normal, Frequent: how often plots, murders and rebellions happen;
+   Off leaves only ageing, deaths and successions) and, when ruling, how hard the other rulers
+   play.
+
+Start begins exactly the game shown. A game to be ruled starts paused on a screen for
+choosing a civ. `--size`, `--map` and `--civs` choose the same from
 the command line, and any of `--seed`, `--rule`, `--size`, `--map` or `--civs` skips the menu. The
 Menu button in a game goes back.
 

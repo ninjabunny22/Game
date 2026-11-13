@@ -1,31 +1,36 @@
 extends CanvasLayer
 ## The main menu, and the step after it where a ruler chooses a civ.
 ##
-## The menu sits over a game that is playing itself. It asks how to play (watch every civ
-## play itself, or rule one), on which of the three maps, and with how many civs: each map
-## suggests a number and limits the choice to what it has room for. A game to be ruled then
-## shows its civs, paused, for the player to pick one.
+## A slim panel on the left, over the game behind: (1) how to play (watch every civ play itself,
+## or rule one), (2) which map, (3) once a map is picked, the options (how many civs, court
+## intrigue, the rulers' difficulty) and Start. Picking a map puts it behind the menu on
+## its first day (the simulation starts it paused), and a card at the bottom right shows it in
+## small with each civ's start; the game then started is that very one. A game to be ruled
+## then shows its civs, paused, for the player to pick one.
 
-signal start_requested(mode: String, size: String, civs: int, seed_text: String, map_id: String, difficulty: String)
+signal start_requested(mode: String, size: String, civs: int, map_id: String, difficulty: String, intrigue: String)
 signal civ_chosen(civ_id: int)  # -1: watch after all
-## The game behind the menu should become the chosen map with this many civs, on its first day
-## (the simulation starts it paused; the game then started from the menu is that very one).
+## The game behind the menu should become the chosen map with this many civs, on its first day.
 signal preview_requested(size: String, map_id: String, civs: int)
 
 const Minimap := preload("res://scripts/minimap.gd")
-var _quiet := true  # while the menu is being built, choices do not ask for a new backdrop
-var _preview_timer: Timer
-var _preview_panel: PanelContainer
-var _preview_map: Control
-var _preview_list: RichTextLabel
-var _world_civs: Array = []  # the backdrop's civs, from its init message
-var _world_colors: Array = []
-
 const ACCENT := Color(0.36, 0.62, 1.0)
+const GOLD := Color(0.91, 0.74, 0.36)
+const GLASS := Color(0.05, 0.065, 0.095, 0.92)
+const PANEL_WIDTH := 430.0
 const MODES := [
-	["watch", "Watch a simulation", "Every civ plays itself.\nSit back and see who wins."],
-	["rule", "Rule a civ", "Take one civ in hand.\nThe others play against you."],
+	["watch", "Watch", "Every civ plays itself: sit back and see who wins."],
+	["rule", "Rule", "Take one civ in hand; the others play against you."],
 ]
+const INTRIGUE_LEVELS := [
+	["off", "Off", "No plots or murders: the houses only age, marry and die."],
+	["rare", "Rare", "A plot now and then."],
+	["normal", "Normal", "Plots, murders and now and then a rebellion."],
+	["frequent", "Frequent", "Courts full of knives: rebellions are common."],
+]
+const DIFFICULTY_LEVELS := [["easy", "Easy"], ["normal", "Normal"], ["hard", "Hard"]]
+## "Any size": a map of any size, picked at random.
+const ANY_SIZE := {"id": "random", "name": "Any", "civs": 4, "min_civs": 2, "max_civs": 5, "maps": []}
 
 var _root: Control
 var _menu: Control
@@ -34,22 +39,33 @@ var _sizes: Array = []
 var _mode := "watch"
 var _size := "medium"
 var _civs := 4
-var _mode_cards := {}
-var _difficulty := "normal"  # how hard the other civs go on a ruler
-var _difficulty_row: HBoxContainer
-var _difficulty_buttons := {}
 var _map := ""  # the map asked for by id, or "" for any of the size's
-var _map_row: HBoxContainer
+var _map_chosen := false  # the options and Start appear once a map is picked
+var _difficulty := "normal"  # how hard the other civs go on a ruler
+var _intrigue := "normal"
+var _mode_buttons := {}
+var _mode_hint: Label
+var _size_tabs := {}
+var _map_list: VBoxContainer
 var _map_buttons := {}
 var _premise: Label  # what the chosen map is about
-## "Any size": a map of any size, picked at random.
-const ANY_SIZE := {"id": "random", "name": "Random", "civs": 4, "min_civs": 2, "max_civs": 5, "maps": []}
-var _size_cards := {}
+var _options: Control
 var _civ_count: Label
 var _civ_hint: Label
 var _fewer: Button
 var _more: Button
-var _seed: LineEdit
+var _intrigue_buttons := {}
+var _intrigue_hint: Label
+var _difficulty_box: Control
+var _difficulty_buttons := {}
+var _start: Button
+var _quiet := true  # while the menu is being built, choices do not ask for a new backdrop
+var _preview_timer: Timer
+var _preview_panel: PanelContainer
+var _preview_map: Control
+var _preview_list: RichTextLabel
+var _world_civs: Array = []  # the backdrop's civs, from its init message
+var _world_colors: Array = []
 
 
 func _ready() -> void:
@@ -68,133 +84,108 @@ func show_menu(lobby: Dictionary) -> void:
 	_quiet = true
 	_sizes = lobby["sizes"]
 	_mode = "watch"  # each visit starts from watching, whatever the last game was
+	_map_chosen = false
 	_clear()
 	visible = true
-	# The game behind stays visible, darkened toward the edges of the panel.
-	var shade := ColorRect.new()
-	shade.color = Color(0.02, 0.04, 0.08, 0.5)
-	shade.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_root.add_child(shade)
-	var centre := CenterContainer.new()
-	centre.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_root.add_child(centre)
-	_menu = centre
-	var panel := _panel(Color(0.05, 0.065, 0.095, 0.9), 22, 26)
-	centre.add_child(panel)
+	var panel := _panel(GLASS, 18, 22)
+	panel.set_anchors_preset(Control.PRESET_LEFT_WIDE)
+	panel.offset_left = 16
+	panel.offset_top = 16
+	panel.offset_bottom = -16
+	panel.offset_right = 16 + PANEL_WIDTH
+	_root.add_child(panel)
+	_menu = panel
+	var outer := VBoxContainer.new()
+	outer.add_theme_constant_override("separation", 14)
+	panel.add_child(outer)
+	# Everything but Start scrolls, so Start stays in reach on a short window.
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	outer.add_child(scroll)
 	var column := VBoxContainer.new()
-	column.add_theme_constant_override("separation", 14)
-	panel.add_child(column)
+	column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	column.add_theme_constant_override("separation", 12)
+	scroll.add_child(column)
 
 	var title := Label.new()
-	title.text = "C I V S I M"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 44)
+	title.text = "CivSim"
+	title.add_theme_font_size_override("font_size", 32)
 	title.add_theme_color_override("font_color", Color(0.96, 0.9, 0.72))
-	title.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.6))
-	title.add_theme_constant_override("outline_size", 6)
 	column.add_child(title)
-	var tagline := Label.new()
-	tagline.text = "Civilizations rise, trade, ally and go to war. Watch them, or lead one."
-	tagline.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	tagline.add_theme_font_size_override("font_size", 14)
-	tagline.modulate = Color(1, 1, 1, 0.65)
-	column.add_child(tagline)
+	var tagline := _note(column, "Civilizations rise, trade, ally and go to war. Watch them, or lead one.")
+	tagline.modulate = Color(1, 1, 1, 0.6)
 
-	_heading(column, "How do you want to play?")
-	var modes := HBoxContainer.new()
-	modes.add_theme_constant_override("separation", 12)
-	column.add_child(modes)
-	_mode_cards.clear()
+	_step(column, 1, "How to play")
+	var modes := _segments(column)
+	_mode_buttons.clear()
 	for mode: Array in MODES:
-		_mode_cards[mode[0]] = _card(modes, mode[1], mode[2], Vector2(300, 96), func() -> void: _set_mode(mode[0]))
+		var id: String = mode[0]
+		_mode_buttons[id] = _segment(modes, str(mode[1]), func() -> void: _set_mode(id))
+	_mode_hint = _note(column, "")
 
-	_heading(column, "Map")
-	var sizes := HBoxContainer.new()
-	sizes.add_theme_constant_override("separation", 12)
-	column.add_child(sizes)
-	_size_cards.clear()
+	_step(column, 2, "Map")
+	var tabs := _segments(column)
+	_size_tabs.clear()
 	for size: Dictionary in _sizes + [ANY_SIZE]:
-		var detail := "%d maps · %d to %d civs" % [size["maps"].size(), int(size["min_civs"]), int(size["max_civs"])]
-		if size["id"] == "random":
-			detail = "Any of the %d maps" % _all_maps().size()
 		var id: String = size["id"]
-		_size_cards[id] = _card(sizes, str(size["name"]), detail, Vector2(150, 92), func() -> void: _set_size(id))
-	# Which of the size's maps to play on: one picked at random, or one by name.
-	_map_row = HBoxContainer.new()
-	_map_row.add_theme_constant_override("separation", 8)
-	_map_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	column.add_child(_map_row)
-	_premise = Label.new()
-	_premise.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_premise.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_premise.custom_minimum_size = Vector2(620, 0)
-	_premise.add_theme_font_size_override("font_size", 13)
-	_premise.modulate = Color(1, 1, 1, 0.75)
-	column.add_child(_premise)
+		_size_tabs[id] = _segment(tabs, str(size["name"]), func() -> void: _set_size(id))
+	_map_list = VBoxContainer.new()
+	_map_list.add_theme_constant_override("separation", 6)
+	column.add_child(_map_list)
+	_premise = _note(column, "")
 
-	_heading(column, "Civilizations")
+	# Step 3: the options, once a map is picked.
+	var options := VBoxContainer.new()
+	options.add_theme_constant_override("separation", 10)
+	column.add_child(options)
+	_options = options
+	_step(options, 3, "Options")
 	var count := HBoxContainer.new()
-	count.add_theme_constant_override("separation", 12)
-	count.alignment = BoxContainer.ALIGNMENT_CENTER
-	column.add_child(count)
+	count.add_theme_constant_override("separation", 10)
+	options.add_child(count)
+	var count_label := _label(count, "Civilizations")
+	count_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_fewer = _round_button(count, "−", func() -> void: _set_civs(_civs - 1))
 	_civ_count = Label.new()
-	_civ_count.custom_minimum_size = Vector2(60, 0)
+	_civ_count.custom_minimum_size = Vector2(36, 0)
 	_civ_count.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_civ_count.add_theme_font_size_override("font_size", 34)
+	_civ_count.add_theme_font_size_override("font_size", 24)
 	count.add_child(_civ_count)
 	_more = _round_button(count, "+", func() -> void: _set_civs(_civs + 1))
-	_civ_hint = Label.new()
-	_civ_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_civ_hint.add_theme_font_size_override("font_size", 13)
-	_civ_hint.modulate = Color(1, 1, 1, 0.6)
-	column.add_child(_civ_hint)
-
-	# How hard the other civs go on you; it only matters when you rule one.
-	_difficulty_row = HBoxContainer.new()
-	_difficulty_row.add_theme_constant_override("separation", 8)
-	_difficulty_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	column.add_child(_difficulty_row)
-	_difficulty_buttons.clear()
-	for level: Array in [["easy", "Easy"], ["normal", "Normal"], ["hard", "Hard"]]:
+	_civ_hint = _note(options, "")
+	_label(options, "Court intrigue")
+	var plots := _segments(options)
+	_intrigue_buttons.clear()
+	for level: Array in INTRIGUE_LEVELS:
 		var id: String = level[0]
-		var button := Button.new()
-		button.text = str(level[1])
-		button.focus_mode = Control.FOCUS_NONE
-		button.custom_minimum_size = Vector2(120, 34)
-		button.pressed.connect(func() -> void: _set_difficulty(id))
-		_difficulty_row.add_child(button)
-		_difficulty_buttons[id] = button
-	_set_difficulty(_difficulty)
+		_intrigue_buttons[id] = _segment(plots, str(level[1]), func() -> void: _set_intrigue(id))
+	_intrigue_hint = _note(options, "")
+	var difficulty := VBoxContainer.new()
+	difficulty.add_theme_constant_override("separation", 6)
+	options.add_child(difficulty)
+	_difficulty_box = difficulty
+	_label(difficulty, "How hard the other rulers play")
+	var levels := _segments(difficulty)
+	_difficulty_buttons.clear()
+	for level: Array in DIFFICULTY_LEVELS:
+		var id: String = level[0]
+		_difficulty_buttons[id] = _segment(levels, str(level[1]), func() -> void: _set_difficulty(id))
 
-	var last := HBoxContainer.new()
-	last.add_theme_constant_override("separation", 12)
-	last.alignment = BoxContainer.ALIGNMENT_CENTER
-	column.add_child(last)
-	_seed = LineEdit.new()
-	_seed.placeholder_text = "Seed (blank: new starts)"
-	_seed.custom_minimum_size = Vector2(230, 44)
-	_seed.max_length = 9
-	last.add_child(_seed)
-	var start := Button.new()
-	start.text = "Start"
-	start.custom_minimum_size = Vector2(230, 44)
-	start.add_theme_font_size_override("font_size", 20)
-	_style_button(start, ACCENT.darkened(0.1), ACCENT, 12)
-	start.pressed.connect(func() -> void: start_requested.emit(_mode, _size, _civs, _seed.text.strip_edges(), _map, _difficulty))
-	var look := Button.new()
-	look.text = "Preview"
-	look.tooltip_text = "Where each civ starts on this map, and how the map looks on the first day"
-	look.custom_minimum_size = Vector2(130, 44)
-	look.add_theme_font_size_override("font_size", 18)
-	_style_button(look, Color(1, 1, 1, 0.1), Color(1, 1, 1, 0.2), 12)
-	look.pressed.connect(_open_preview)
-	last.add_child(look)
-	last.add_child(start)
+	_start = Button.new()
+	_start.custom_minimum_size = Vector2(0, 52)
+	_start.focus_mode = Control.FOCUS_NONE
+	_start.add_theme_font_size_override("font_size", 20)
+	_style_button(_start, ACCENT.darkened(0.1), ACCENT, 12)
+	_start.pressed.connect(func() -> void:
+		start_requested.emit(_mode, _size, _civs, _map, _difficulty, _intrigue))
+	outer.add_child(_start)
 	_build_preview()
 
 	_set_mode(_mode)
-	_set_size(_size if _size_cards.has(_size) else str(_sizes[0]["id"]))
+	_set_intrigue(_intrigue)
+	_set_difficulty(_difficulty)
+	_set_size(_size if _size_tabs.has(_size) else str(_sizes[0]["id"]))
 	_quiet = false
 
 
@@ -256,63 +247,69 @@ func _clear() -> void:
 	_preview_list = null
 
 
-func _set_difficulty(level: String) -> void:
-	_difficulty = level
-	for key: String in _difficulty_buttons:
-		var chosen: bool = key == level
-		_style_button(_difficulty_buttons[key], ACCENT.darkened(0.25) if chosen else Color(1, 1, 1, 0.07),
-				ACCENT.darkened(0.1) if chosen else Color(1, 1, 1, 0.14), 10)
-
-
 func _set_mode(mode: String) -> void:
 	_mode = mode
-	if _difficulty_row != null:
-		_difficulty_row.visible = mode == "rule"
-	for id: String in _mode_cards:
-		_light(_mode_cards[id], id == mode)
+	for id: String in _mode_buttons:
+		_light(_mode_buttons[id], id == mode)
+	for entry: Array in MODES:
+		if entry[0] == mode:
+			_mode_hint.text = str(entry[2])
+	_difficulty_box.visible = mode == "rule"
+	_refresh_start()
 
 
+func _set_intrigue(level: String) -> void:
+	_intrigue = level
+	for id: String in _intrigue_buttons:
+		_light(_intrigue_buttons[id], id == level)
+	for entry: Array in INTRIGUE_LEVELS:
+		if entry[0] == level:
+			_intrigue_hint.text = str(entry[2])
+
+
+func _set_difficulty(level: String) -> void:
+	_difficulty = level
+	for id: String in _difficulty_buttons:
+		_light(_difficulty_buttons[id], id == level)
+
+
+## A size: its maps listed, none picked yet (so the options fold away until one is).
 func _set_size(size: String) -> void:
 	_size = size
-	for id: String in _size_cards:
-		_light(_size_cards[id], id == size)
-	for child in _map_row.get_children():
+	for id: String in _size_tabs:
+		_light(_size_tabs[id], id == size)
+	for child in _map_list.get_children():
 		child.queue_free()
 	_map_buttons.clear()
-	var choices: Array = [{"id": "", "name": "Random"}]
-	choices.append_array(_spec().get("maps", []))
-	for choice: Dictionary in choices:
-		var id := str(choice["id"])
-		var button := Button.new()
-		button.text = str(choice["name"])
-		if choice.has("width"):
-			button.text += "\n%d × %d · %d–%d civs" % [int(choice["width"]), int(choice["height"]),
-				int(choice["min_civs"]), int(choice["max_civs"])]
-		button.focus_mode = Control.FOCUS_NONE
-		button.custom_minimum_size = Vector2(130, 48)
-		button.pressed.connect(func() -> void: _set_map(id))
-		_map_row.add_child(button)
-		_map_buttons[id] = button
-	_map_row.visible = size != "random"
-	_set_map("")
-	_set_civs(int(_spec()["civs"]))  # each size starts on the number that suits it
+	var rows: Array = []
+	for entry: Dictionary in _spec().get("maps", []):
+		rows.append([str(entry["id"]), str(entry["name"]), "%d × %d  ·  %s civs" % [int(entry["width"]),
+			int(entry["height"]), _range_text(_counts(entry))]])
+	var any := "any of the %d maps" % _all_maps().size() if size == "random" else \
+		"any of the %s maps" % str(_spec()["name"]).to_lower()
+	rows.append(["", "Surprise me", any])
+	for row: Array in rows:
+		var id: String = row[0]
+		_map_buttons[id] = _row(_map_list, str(row[1]), str(row[2]), func() -> void: _set_map(id))
+	_map = ""
+	_map_chosen = false
+	_civs = int(_spec()["civs"])  # each size starts on the number that suits it
+	_premise.text = "Pick a map: it appears behind the menu as it will be on the first day."
+	_refresh_choice()
 
 
 func _set_map(id: String) -> void:
 	_map = id
-	for key: String in _map_buttons:
-		var chosen: bool = key == id
-		_style_button(_map_buttons[key], ACCENT.darkened(0.25) if chosen else Color(1, 1, 1, 0.07),
-				ACCENT.darkened(0.1) if chosen else Color(1, 1, 1, 0.14), 10)
+	_map_chosen = true
 	var entry := _map_entry()
 	if entry.is_empty():
-		_premise.text = "A map picked at random from the %s." % (
-			"nine" if _size == "random" else str(_spec()["name"]).to_lower() + " maps")
+		_premise.text = "A map picked at random from %s." % (
+			"all nine" if _size == "random" else "the " + str(_spec()["name"]).to_lower() + " maps")
 	else:
 		var best := str(entry.get("best", ""))
 		_premise.text = str(entry.get("premise", "")) + ("  Best with %s civs." % best if best != "" else "")
-	if _civ_count != null:
-		_set_civs(_civs)
+	_set_civs(_civs)
+	_refresh_choice()
 	_ask_preview()
 
 
@@ -332,22 +329,37 @@ func _set_civs(civs: int) -> void:
 	_fewer.disabled = _civs <= counts[0]
 	_more.disabled = _civs >= counts[-1]
 	var where := str(limits["name"]) if limits.has("width") else "a %s map" % str(limits["name"]).to_lower()
-	var which := "%d to %d" % [counts[0], counts[-1]]
-	if counts.size() < counts[-1] - counts[0] + 1:
-		which = " or ".join(counts.map(func(n: int) -> String: return str(n)))
-	_civ_hint.text = "%s on %s" % [which, where]
+	_civ_hint.text = "%s on %s" % [_range_text(counts), where]
 	_ask_preview()
+
+
+## The map rows lit for the choice; the options and the preview shown once a map is picked.
+func _refresh_choice() -> void:
+	for key: String in _map_buttons:
+		_light(_map_buttons[key], _map_chosen and key == _map)
+	_options.visible = _map_chosen
+	if _preview_panel != null and is_instance_valid(_preview_panel):
+		_preview_panel.visible = _map_chosen
+	_refresh_start()
+
+
+func _refresh_start() -> void:
+	if _start == null or not is_instance_valid(_start):
+		return
+	_start.disabled = not _map_chosen
+	_start.text = "Pick a map to begin" if not _map_chosen else (
+		"Start watching" if _mode == "watch" else "Choose your civ")
 
 
 ## A new backdrop for the choice, once the clicking has settled.
 func _ask_preview() -> void:
-	if _quiet or _preview_timer == null:
+	if _quiet or _preview_timer == null or not _map_chosen:
 		return
 	_preview_timer.start()
 
 
-## The preview: the menu steps aside so the map's first day shows behind, and a panel at the
-## side holds the map in small with each civ's start marked.
+## The card at the bottom right: the chosen map in small, each civ's start marked, and who
+## starts where.
 func _build_preview() -> void:
 	if _preview_timer == null:
 		_preview_timer = Timer.new()
@@ -355,21 +367,21 @@ func _build_preview() -> void:
 		_preview_timer.wait_time = 0.4
 		_preview_timer.timeout.connect(func() -> void: preview_requested.emit(_size, _map, _civs))
 		add_child(_preview_timer)
-	_preview_panel = _panel(Color(0.05, 0.065, 0.095, 0.92), 18, 18)
-	_preview_panel.set_anchors_preset(Control.PRESET_CENTER_LEFT)
-	_preview_panel.offset_left = 30
-	_preview_panel.grow_vertical = Control.GROW_DIRECTION_BOTH
+	_preview_panel = _panel(GLASS, 16, 14)
+	_preview_panel.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	_preview_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_preview_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_preview_panel.offset_right = -16
+	_preview_panel.offset_bottom = -16
 	_preview_panel.visible = false
 	_root.add_child(_preview_panel)
 	var column := VBoxContainer.new()
-	column.add_theme_constant_override("separation", 10)
+	column.add_theme_constant_override("separation", 8)
 	_preview_panel.add_child(column)
-	var title := Label.new()
-	title.text = "How the game begins"
-	title.add_theme_font_size_override("font_size", 22)
-	column.add_child(title)
+	var title := _label(column, "How the game begins")
+	title.add_theme_font_size_override("font_size", 16)
 	_preview_map = Minimap.new()
-	_preview_map.longest_side = 380.0
+	_preview_map.longest_side = 260.0
 	_preview_map.docked = false
 	_preview_map.show_view = false
 	_preview_map.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -378,33 +390,21 @@ func _build_preview() -> void:
 	_preview_list.bbcode_enabled = true
 	_preview_list.fit_content = true
 	_preview_list.scroll_active = false
-	_preview_list.custom_minimum_size = Vector2(380, 0)
-	_preview_list.add_theme_font_size_override("normal_font_size", 14)
+	_preview_list.custom_minimum_size = Vector2(272, 0)
+	_preview_list.add_theme_font_size_override("normal_font_size", 13)
+	_preview_list.add_theme_font_size_override("bold_font_size", 13)
 	column.add_child(_preview_list)
-	var back := Button.new()
-	back.text = "Back to the menu"
-	back.custom_minimum_size = Vector2(0, 40)
-	_style_button(back, ACCENT.darkened(0.1), ACCENT, 10)
-	back.pressed.connect(func() -> void:
-		_preview_panel.visible = false
-		_menu.visible = true)
-	column.add_child(back)
 	_fill_preview()
 
 
-## For scripted runs: choose a map and a number of civs, and open the preview.
-func open_preview_for(size: String, map_id: String, civs: int) -> void:
+## For scripted runs: choose a map and a number of civs, as if clicked.
+func open_preview_for(size: String, map_id: String, civs: int, mode := "watch") -> void:
+	_set_mode(mode)
 	_set_size(size)
 	_set_map(map_id)
 	_set_civs(civs)
-	_open_preview()
-
-
-func _open_preview() -> void:
 	_preview_timer.stop()
-	preview_requested.emit(_size, _map, _civs)  # make sure the backdrop is this very choice
-	_menu.visible = false
-	_preview_panel.visible = true
+	preview_requested.emit(_size, _map, _civs)
 
 
 ## The backdrop's map and civs, as each new one arrives (main.gd).
@@ -437,8 +437,9 @@ func _fill_preview() -> void:
 		return
 	var lines: Array[String] = []
 	for civ: Dictionary in _world_civs:
-		lines.append("[color=%s]●[/color] [b]%s[/b] starts at %s" % [civ["color"], civ["name"], civ.get("capital_name", "?")])
-	_preview_list.text = "\n".join(lines) + "\n[color=#8a93a0]Start the game with the seed left blank and it is this one.[/color]"
+		lines.append("[color=%s]●[/color] [b]%s[/b]  [color=#a9b0ba]at %s[/color]" % [civ["color"], civ["name"],
+			civ.get("capital_name", "?")])
+	_preview_list.text = "\n".join(lines)
 
 
 ## The numbers of civs a choice takes, smallest first.
@@ -483,12 +484,103 @@ func _spec() -> Dictionary:
 
 # -- pieces --------------------------------------------------------------------
 
-func _heading(parent: Control, text: String) -> void:
+## "2 to 5", or "2 or 4" when a map skips some numbers.
+func _range_text(counts: Array[int]) -> String:
+	if counts.size() < counts[-1] - counts[0] + 1:
+		return " or ".join(counts.map(func(n: int) -> String: return str(n)))
+	return "%d to %d" % [counts[0], counts[-1]] if counts.size() > 1 else str(counts[0])
+
+
+## A numbered step: a small gold number in a ring and its heading.
+func _step(parent: Control, number: int, text: String) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	parent.add_child(row)
+	var badge := Label.new()
+	badge.text = str(number)
+	badge.custom_minimum_size = Vector2(22, 22)
+	badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	badge.add_theme_font_size_override("font_size", 12)
+	badge.add_theme_color_override("font_color", Color(0.08, 0.07, 0.05))
+	var ring := StyleBoxFlat.new()
+	ring.bg_color = GOLD
+	ring.set_corner_radius_all(11)
+	badge.add_theme_stylebox_override("normal", ring)
+	row.add_child(badge)
+	var heading := Label.new()
+	heading.text = text.to_upper()
+	heading.add_theme_font_size_override("font_size", 13)
+	heading.add_theme_color_override("font_color", GOLD.lightened(0.2))
+	row.add_child(heading)
+
+
+func _label(parent: Control, text: String) -> Label:
 	var label := Label.new()
-	label.text = text.to_upper()
-	label.add_theme_font_size_override("font_size", 12)
-	label.modulate = Color(1, 1, 1, 0.5)
+	label.text = text
+	label.add_theme_font_size_override("font_size", 15)
 	parent.add_child(label)
+	return label
+
+
+## A line of small print under a choice, wrapped to the panel.
+func _note(parent: Control, text: String) -> Label:
+	var label := Label.new()
+	label.text = text
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.custom_minimum_size = Vector2(PANEL_WIDTH - 60, 0)
+	label.add_theme_font_size_override("font_size", 13)
+	label.modulate = Color(1, 1, 1, 0.72)
+	parent.add_child(label)
+	return label
+
+
+## A row of buttons that share the width: one of them is the choice.
+func _segments(parent: Control) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	parent.add_child(row)
+	return row
+
+
+func _segment(row: HBoxContainer, text: String, on_pressed: Callable) -> Button:
+	var button := Button.new()
+	button.text = text
+	button.focus_mode = Control.FOCUS_NONE
+	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	button.custom_minimum_size = Vector2(0, 38)
+	button.add_theme_font_size_override("font_size", 15)
+	button.pressed.connect(on_pressed)
+	_light(button, false)
+	row.add_child(button)
+	return button
+
+
+## A map in the list: its name, and its size and civs in small print under it.
+func _row(parent: Control, title: String, detail: String, on_pressed: Callable) -> Button:
+	var row := Button.new()
+	row.custom_minimum_size = Vector2(0, 50)
+	row.focus_mode = Control.FOCUS_NONE
+	row.pressed.connect(on_pressed)
+	var text := VBoxContainer.new()
+	text.set_anchors_preset(Control.PRESET_FULL_RECT)
+	text.offset_left = 14
+	text.alignment = BoxContainer.ALIGNMENT_CENTER
+	text.add_theme_constant_override("separation", 0)
+	text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(text)
+	var heading := Label.new()
+	heading.text = title
+	heading.add_theme_font_size_override("font_size", 16)
+	text.add_child(heading)
+	var body := Label.new()
+	body.text = detail
+	body.add_theme_font_size_override("font_size", 12)
+	body.modulate = Color(1, 1, 1, 0.6)
+	text.add_child(body)
+	_light(row, false)
+	parent.add_child(row)
+	return row
 
 
 func _panel(color: Color, radius: int, margin: int) -> PanelContainer:
@@ -505,7 +597,7 @@ func _panel(color: Color, radius: int, margin: int) -> PanelContainer:
 	return panel
 
 
-## A large choice: a title and a line or two under it. Returns the button it is.
+## A large choice: a title and a line or two under it (the ruler's civ cards). Returns the button.
 func _card(parent: Control, title: String, detail: String, size: Vector2, on_pressed: Callable) -> Button:
 	var card := Button.new()
 	card.custom_minimum_size = size
@@ -536,17 +628,17 @@ func _card(parent: Control, title: String, detail: String, size: Vector2, on_pre
 func _round_button(parent: Control, text: String, on_pressed: Callable) -> Button:
 	var button := Button.new()
 	button.text = text
-	button.custom_minimum_size = Vector2(46, 46)
+	button.custom_minimum_size = Vector2(38, 38)
 	button.focus_mode = Control.FOCUS_NONE
-	button.add_theme_font_size_override("font_size", 24)
-	_style_button(button, Color(1, 1, 1, 0.08), Color(1, 1, 1, 0.2), 23)
+	button.add_theme_font_size_override("font_size", 20)
+	_style_button(button, Color(1, 1, 1, 0.08), Color(1, 1, 1, 0.2), 19)
 	button.pressed.connect(on_pressed)
 	parent.add_child(button)
 	return button
 
 
 func _style_button(button: Button, normal: Color, hover: Color, radius: int) -> void:
-	for state: Array in [["normal", normal], ["hover", hover], ["pressed", hover], ["disabled", Color(1, 1, 1, 0.03)]]:
+	for state: Array in [["normal", normal], ["hover", hover], ["pressed", hover], ["disabled", Color(1, 1, 1, 0.04)]]:
 		var style := StyleBoxFlat.new()
 		style.bg_color = state[1]
 		style.set_corner_radius_all(radius)
@@ -554,12 +646,14 @@ func _style_button(button: Button, normal: Color, hover: Color, radius: int) -> 
 		button.add_theme_stylebox_override(state[0], style)
 
 
-## The card that is the current choice is lit in the accent colour.
-func _light(card: Button, chosen: bool) -> void:
+## The choice lit in the accent colour, with a bright edge; the others dark glass.
+func _light(button: Button, chosen: bool) -> void:
 	if chosen:
-		_style_button(card, ACCENT.darkened(0.45), ACCENT.darkened(0.3), 14)
-		var style: StyleBoxFlat = card.get_theme_stylebox("normal")
-		style.set_border_width_all(2)
-		style.border_color = ACCENT.lightened(0.2)
+		_style_button(button, ACCENT.darkened(0.45), ACCENT.darkened(0.3), 10)
+		for state: String in ["normal", "hover"]:
+			var style: StyleBoxFlat = button.get_theme_stylebox(state)
+			style.set_border_width_all(1)
+			style.border_width_left = 3
+			style.border_color = ACCENT.lightened(0.2)
 	else:
-		_style_button(card, Color(1, 1, 1, 0.06), Color(1, 1, 1, 0.14), 14)
+		_style_button(button, Color(1, 1, 1, 0.05), Color(1, 1, 1, 0.12), 10)

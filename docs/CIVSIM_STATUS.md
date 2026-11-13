@@ -109,9 +109,12 @@ Plan (agreed 2026-11-13): war on the AI's own judgement with a home guard; fight
   Rebels find patrons, who keep their word (a sworn bond) or betray them; fallen rebels are
   locked away or ransomed to their fathers. Three check games: about 0.4 expected plots a
   game (0.48 / 0.37 / 0.35), so roughly one game in three sees a rebellion.
-- **Menu preview:** choosing a map or civ count swaps the backdrop for that map on day 0
-  (`preview_map` command, paused); a Preview panel marks each civ's start; a game started with
-  the seed left blank reuses the preview's seed.
+- **Main menu** (redesigned 2026-11-13): a side panel in three steps (how to play, map,
+  options once a map is picked) with Start always in reach; choosing a map or civ count swaps
+  the backdrop for that map on day 0 (`preview_map`, paused) and a card marks each civ's
+  start; Start reuses the preview's seed, so the game is the one shown (the seed field is
+  gone). New option: court intrigue (`SimConfig.intrigue`, `config.INTRIGUE`: off 0, rare
+  0.5, normal 1, frequent 2.5 times the plot and murder chances).
 
 - **Project cleanup** (2026-11-13): the launcher is `Play CivSim.command` in the root (it
   repairs a missing package, checks Python 3.11, and stops a simulation left running); the

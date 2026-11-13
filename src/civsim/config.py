@@ -8,6 +8,7 @@ class SimConfig:
     map_name: str = ""
     map_file: str = ""  # a drawn map, saved in civsim/data/maps; overrides map_seed
     difficulty: str = "normal"  # how hard the other civs go on a human ruler: easy, normal or hard
+    intrigue: str = "normal"  # how often the royal houses plot and murder: off, rare, normal or frequent
     width: int = 96
     height: int = 96
     num_civs: int = 4
@@ -23,6 +24,9 @@ MAX_CIVS = 5
 # are for one unit, which is the same thing as that many people at a fraction of the rate each.
 HEADCOUNT = 4
 DIFFICULTIES = ("easy", "normal", "hard")
+# Court intrigue: how much plots, rebellions and murders happen (a factor on their chances,
+# civ/family.py). Off leaves the houses to age, marry, die and be succeeded in peace.
+INTRIGUE = {"off": 0.0, "rare": 0.5, "normal": 1.0, "frequent": 2.5}
 # The three map sizes. `civs` is how many suit a map of the size; min_civs and max_civs span
 # what its maps take (each drawn map has its own range). `side` is the size of a generated map.
 MAP_SIZES = {

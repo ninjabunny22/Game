@@ -161,7 +161,8 @@ def natural_death_chance(age: int, health: float = 1.0, ill: bool = False, wound
     return min(MORTALITY_CAP, chance)
 
 
-def sudden_rates(age: int, sick_realm: bool = False, enemies: int = 0, royal: bool = False) -> dict[str, float]:
+def sudden_rates(age: int, sick_realm: bool = False, enemies: int = 0, royal: bool = False,
+                 intrigue: float = 1.0) -> dict[str, float]:
     """Yearly chances of each sudden death, apart from ageing: any of them can strike at any age."""
     rates = {
         "a stroke": STROKE[0] * math.exp(STROKE[1] * (age - 30)),
@@ -171,15 +172,17 @@ def sudden_rates(age: int, sick_realm: bool = False, enemies: int = 0, royal: bo
     }
     if sick_realm:
         rates["the plague"] = PLAGUE
-    if royal and enemies:
-        rates["poison"] = min(MURDER_CAP, MURDER * enemies) * 0.4
-        rates["an assassin's knife"] = min(MURDER_CAP, MURDER * enemies) * 0.6
+    if royal and enemies and intrigue > 0:
+        murder = min(MURDER_CAP, MURDER * enemies) * intrigue
+        rates["poison"] = murder * 0.4
+        rates["an assassin's knife"] = murder * 0.6
     return rates
 
 
 class Families:
-    def __init__(self, civs: list, seed: int, diplomacy=None):
+    def __init__(self, civs: list, seed: int, diplomacy=None, intrigue: float = 1.0):
         self.rng = random.Random(seed * 104729 + 7)
+        self.intrigue = intrigue  # a factor on plots and murders (config.INTRIGUE)
         self.civs = {civ.id: civ for civ in civs}
         self.diplomacy = diplomacy
         self.military = None  # set by the simulation: commanders who are princes
@@ -376,7 +379,7 @@ class Families:
         age = person.age(tick)
         royal = person.id == house.ruler or self.heir(house) is person
         enemies = self._enemies(civ.id) if royal else []
-        rates = sudden_rates(age, self._sick(civ), len(enemies), royal)
+        rates = sudden_rates(age, self._sick(civ), len(enemies) if self.intrigue > 0 else 0, royal, self.intrigue)
         roll = self.rng.random() * YEAR
         for cause, rate in rates.items():
             if roll < rate:
@@ -713,7 +716,7 @@ class Families:
         if person.personality == "Expansionist" or "cruel" in person.traits:
             ambition += 0.1
         circumstances = 1.0 + 2.0 * self._troubles(civ, tick) + (0.5 if person.commanding else 0.0)
-        return PLOT_BASE * min(1.0, ambition) ** 2 * circumstances
+        return PLOT_BASE * self.intrigue * min(1.0, ambition) ** 2 * circumstances
 
     def _plot(self, person: Character, house: House, civ, tick: int, events: list) -> None:
         """An attempt on the ruler's life, and what comes of it."""

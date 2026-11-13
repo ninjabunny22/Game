@@ -197,3 +197,16 @@ def test_a_rebel_taken_by_his_own_father_is_put_aside():
     sim.diplomacy.capture_region(king, region, 50, events := [])
     assert prince.alive and prince.deposed and prince.captive_of is None
     assert prince not in sim.families.line(house)
+
+
+def test_court_intrigue_off_means_no_plots_or_murders():
+    sim = Simulation(game_config("medium", 4, 3, intrigue="off"))
+    families = sim.families
+    assert families.intrigue == 0.0
+    house = families.house_of(0)
+    prince = next(p for p in families.line(house) if families.heir(house) is not p)
+    prince.ambition = 1.0
+    assert families._plot_chance(prince, house, sim.civs[0], family.PLOT_FROM) == 0.0
+    assert "poison" not in family.sudden_rates(40, enemies=2, royal=True, intrigue=0.0)
+    busy = Simulation(game_config("medium", 4, 3, intrigue="frequent")).families
+    assert busy.intrigue > 1.0

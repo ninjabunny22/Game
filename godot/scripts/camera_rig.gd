@@ -14,6 +14,7 @@ var _yaw := 0.0
 var _pitch := deg_to_rad(55.0)
 var _distance := 110.0
 var auto_orbit := false  # circle slowly on its own, behind the main menu
+var h_shift := 0.13  # how far the view is shifted sideways, as a share of the distance (clear of a side panel)
 
 
 func _ready() -> void:
@@ -95,4 +96,4 @@ func _apply() -> void:
 	_camera.position = Vector3(0.0, sin(_pitch), cos(_pitch)) * _distance
 	_camera.rotation = Vector3(-_pitch, 0.0, 0.0)
 	# Shift the view left so the focus point isn't hidden behind the HUD's side panel.
-	_camera.h_offset = _distance * 0.13
+	_camera.h_offset = _distance * h_shift

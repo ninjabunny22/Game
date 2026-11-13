@@ -11,7 +11,7 @@ import random
 from websockets.asyncio.server import ServerConnection, broadcast, serve
 from websockets.exceptions import ConnectionClosed
 
-from ..config import DIFFICULTIES, game_config
+from ..config import DIFFICULTIES, INTRIGUE, game_config
 from ..simulation import Simulation
 from ..strategy import Brain, CheckinRequest
 from . import protocol
@@ -172,7 +172,8 @@ class SimServer:
                 size = value.get("size")
                 sim = Simulation(game_config(size if isinstance(size, str) else "medium", value.get("civs"), seed,
                                              chosen if isinstance(chosen, str) and chosen else None,
-                                             difficulty=level if level in DIFFICULTIES else "normal"))
+                                             difficulty=level if level in DIFFICULTIES else "normal",
+                                             intrigue=value.get("intrigue") if value.get("intrigue") in INTRIGUE else "normal"))
             except ValueError as exc:
                 self._broadcast(protocol.error_message(self.sim, str(exc)))
                 return
