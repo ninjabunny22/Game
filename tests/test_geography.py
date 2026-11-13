@@ -91,3 +91,13 @@ def test_a_campaign_does_not_wait_for_a_prize_it_could_never_take():
     kesh.garrison = 10_000  # far beyond anything it could field
     again = sim.military._campaign_target(civ)
     assert again is not kesh and (again is not None or target is kesh)
+
+
+def test_regions_placed_alike_are_alike_in_how_many_routes_cross_them():
+    from civsim.map.saved import load_map
+    world = load_map("highgate")
+    geo = Geography(world, [], None)
+    by_name = {r.name: geo.centrality[r.id] for r in world.regions}
+    mouths = [by_name[m] for m in ("Brackenford", "Cragmouth", "Southmouth", "Westmouth")]
+    corners = [by_name[c] for c in ("Ashdale", "Elmridge", "Fernmoor", "Greywood")]
+    assert max(mouths) - min(mouths) < 1e-9 and max(corners) - min(corners) < 1e-9

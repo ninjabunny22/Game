@@ -149,23 +149,37 @@ class Geography:
         return pairs
 
     def _betweenness(self) -> list[float]:
-        """How many of the shortest routes between other regions pass through each one, 0 to 1."""
+        """How many of the shortest routes between other regions pass through each one, 0 to 1.
+        Routes are counted in steps from region to region (a sea crossing counts SEA_DETOUR
+        steps), every equally short route counted and the credit shared among them (Brandes),
+        so regions placed alike score alike."""
         n = len(self.world.regions)
         through = [0.0] * n
         for s in range(n):
-            dist = self._dijkstra({s}, lambda a, b, sea: True, SEA_DETOUR)[0]
-            for t in range(s + 1, n):
-                if t not in dist:
+            dist = {s: 0}
+            ways = {s: 1.0}
+            before: dict[int, list[int]] = {s: []}
+            order = []
+            heap = [(0, s)]
+            while heap:
+                d, a = heapq.heappop(heap)
+                if d > dist[a]:
                     continue
-                # Walk back along one shortest route and credit what lies between.
-                node = t
-                while node != s:
-                    prev = min((m for m in self.neighbours[node] if m in dist),
-                               key=lambda m: dist[m] + self.neighbours[node][m][0]
-                               * (SEA_DETOUR if self.neighbours[node][m][1] else 1.0))
-                    if prev != s:
-                        through[prev] += 1
-                    node = prev
+                order.append(a)
+                for b, (_, by_sea) in self.neighbours[a].items():
+                    step = int(SEA_DETOUR) if by_sea else 1
+                    if b not in dist or d + step < dist[b]:
+                        dist[b], ways[b], before[b] = d + step, ways[a], [a]
+                        heapq.heappush(heap, (d + step, b))
+                    elif d + step == dist[b]:
+                        ways[b] += ways[a]
+                        before[b].append(a)
+            credit = {a: 0.0 for a in order}
+            for b in reversed(order):
+                for a in before[b]:
+                    credit[a] += ways[a] / ways[b] * (1.0 + credit[b])
+                if b != s:
+                    through[b] += credit[b]
         top = max(through) or 1.0
         return [x / top for x in through]
 
