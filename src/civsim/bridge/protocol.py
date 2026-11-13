@@ -415,6 +415,10 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
         # Rallies gathering or on the march: who leads, where it gathers, what it is for, how long
         # until it sets out (0 once it has), who has joined and how many soldiers it has.
         "rallies": [_rally(sim, rally) for rally in sim.military.rallies],
+        # Every fight as a spectator follows it (military/engagements.py): sent only while
+        # nobody rules a civ, since it shows both sides' numbers.
+        "engagements": [] if watcher is not None else [
+            _engagement(record) for record in sim.military.engagements.records.values()],
         "relations": relations,
         "deals": [
             {"id": deal.id, "a": deal.a, "b": deal.b, "ends": deal.end,
@@ -439,6 +443,39 @@ def _status(sim: Simulation, paused: bool, speed: float) -> dict:
 def heads(count: float) -> int:
     """A head count as it is shown: each unit in the simulation stands for HEADCOUNT people."""
     return round(count * HEADCOUNT)
+
+
+def _led(general: dict | None, civ: str) -> str:
+    """"Varen of Zhanlu", or "Varen (Zhanlu)" for a general whose name does not say his civ."""
+    if general is None:
+        return civ
+    return general["name"] if civ in general["name"] else f"{general['name']} ({civ})"
+
+
+def _engagement(record) -> dict:
+    """A fight for the viewer's fight box: where, who, how it stands, its last notes, and a
+    headline ("General Aldric (Zhanlu) assaults Cragford with 180 soldiers")."""
+    sides = [{"civ": side.civ, "name": side.name, "general": side.general, "soldiers": heads(side.soldiers),
+              "start": heads(side.start), "lost_today": heads(side.lost_today), "lost": heads(side.lost),
+              "label": _led(side.general, side.name)}
+             for side in record.sides]
+
+    def who(side: dict) -> str:
+        return f"General {_led(side['general'], side['name'])}" if side["general"] else f"{side['name']}'s army"
+
+    if not sides:
+        headline = record.place
+    elif record.kind == "siege":
+        headline = f"{who(sides[0])} assaults {record.place} with {sides[0]['start']} soldiers"
+    elif record.kind == "storm":
+        headline = f"{who(sides[0])} storms {record.place}, held by {sides[-1]['name']}"
+    else:
+        headline = (f"Battle at {record.place}: {who(sides[0])} against {who(sides[1])}" if len(sides) > 1
+                    else f"Battle at {record.place}")
+    return {"id": record.id, "kind": record.kind, "x": record.x, "y": record.y, "place": record.place,
+            "started": record.started, "headline": headline, "sides": sides, "siege": record.siege,
+            "notes": list(record.notes), "over": record.over is not None, "result": record.result,
+            "size": sum(side["soldiers"] for side in sides)}
 
 
 def _rally(sim: Simulation, rally) -> dict:

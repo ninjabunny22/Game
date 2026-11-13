@@ -14,6 +14,7 @@ const CameraRig := preload("res://scripts/camera_rig.gd")
 const Hud := preload("res://scripts/hud.gd")
 const Menu := preload("res://scripts/menu.gd")
 const Minimap := preload("res://scripts/minimap.gd")
+const BattleView := preload("res://scripts/battle_view.gd")
 
 const UI_SCALE := 1.35  # the whole overlay is drawn this much larger than Godot's default text size
 const UI_SCALE_STEP := 0.1
@@ -28,6 +29,7 @@ var _camera := CameraRig.new()
 var _hud := Hud.new()
 var _menu := Menu.new()
 var _minimap := Minimap.new()
+var _battles := BattleView.new()  # fight boxes and the battle alert, while spectating
 var _auto_started := false
 var _starting := ""  # the mode of the game just asked for from the menu: "watch" or "rule"
 var _models := Models.new()
@@ -55,6 +57,8 @@ func _ready() -> void:
 	add_child(_camera)
 	add_child(_hud)
 	_hud.add_child(_minimap)  # shown and hidden with the rest of the overlay
+	_hud.add_child(_battles)
+	_battles.jump_requested.connect(_on_minimap_jump)
 	_minimap.jump_requested.connect(_on_minimap_jump)
 	add_child(_menu)
 	_menu.start_requested.connect(_on_start_requested)
@@ -75,6 +79,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.pressed:
 		_press_at = event.position
 	elif _press_at.distance_to(event.position) < CLICK_SLOP:
+		if _battles.click(event.position):
+			return  # a fight's marker: its box opens
 		var tile: Vector2i = _castle_under(event.position)
 		_hud.show_castle(tile.x, tile.y, _castle_anchor(tile))
 
@@ -139,6 +145,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			_terrain.toggle_region_borders()
 		KEY_H:
 			_hud.toggle_help()
+		KEY_T:
+			_hud.toggle_tech_tree()
 		KEY_BRACKETLEFT:
 			_set_ui_scale(get_window().content_scale_factor - UI_SCALE_STEP)
 		KEY_BRACKETRIGHT:
@@ -180,6 +188,7 @@ func _process(delta: float) -> void:
 		_detail = detail
 		_civ_view.set_detail(detail)
 		_unit_view.set_detail(detail)
+		_battles.set_detail(detail)
 
 
 ## Scales every panel and all overlay text together; the 3D map is unaffected.
@@ -221,6 +230,7 @@ func _on_init(data: Dictionary) -> void:
 	_unit_view.setup(_terrain, data, _civ_colors, _characters, _adventurers, _models)
 	_hud.setup(data)
 	_minimap.setup(data, _civ_colors)
+	_battles.setup(_terrain, _civ_colors)
 	_hud.reserve_bottom_right(_minimap.custom_minimum_size.y)
 	_camera.focus(_terrain.center(), maxf(_terrain.map_width, _terrain.map_height) * 1.15)
 	# CIVSIM_VIEW="x,y,distance" starts the camera on a tile instead of the whole map.
@@ -229,6 +239,8 @@ func _on_init(data: Dictionary) -> void:
 		_camera.focus(_terrain.tile_position(int(view[0]), int(view[1])), view[2])
 	if OS.get_environment("CIVSIM_DIPLOMACY") == "1":  # start with the diplomacy panel open
 		_hud.toggle_diplomacy()
+	if OS.get_environment("CIVSIM_TECH") == "1":  # start with the tech tree open
+		_hud.toggle_tech_tree.call_deferred()
 	var castle := OS.get_environment("CIVSIM_CASTLE").split_floats(",", false)
 	if castle.size() == 2:  # CIVSIM_CASTLE="x,y" starts with that castle's panel open
 		_hud.show_castle(int(castle[0]), int(castle[1]), _castle_anchor(Vector2i(int(castle[0]), int(castle[1]))))
@@ -292,6 +304,7 @@ func _on_tick(tick: int, data: Dictionary) -> void:
 	clock = Time.get_ticks_usec()
 	_hud.update(tick, data)
 	_minimap.update(data)
+	_battles.update(data)
 	parts["hud"] = Time.get_ticks_usec() - clock
 	# CIVSIM_PERF=1 also names any part of a tick that took over 30 ms.
 	if timing:

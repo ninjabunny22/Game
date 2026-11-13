@@ -38,6 +38,7 @@ from ..economy.rules import HEAL_TICKS, INFIRMARY_BEDS, MIN_POPULATION
 from ..map import WorldMap, find_path, region_neighbours
 from ..map.pathfinding import move_cost
 from .army import LEADERLESS_CAPACITY, XP_PER_LEVEL_STEP, Army, Captive, Commander, Rally
+from .engagements import Engagements
 from .units import BASE_UNIT, MAX_TIER, UNIT_TYPES, tier_strength, unit_strength
 
 GARRISON_KEEP = 0.2  # share of the soldiers that always stays to hold the capitals, at the least
@@ -152,6 +153,7 @@ class Military:
         self.rng = rng
         self.next_id = next_id
         self._battles: dict[tuple[int, int], int] = {}  # (army id, army id) -> tick the battle began
+        self.engagements = Engagements()  # every fight as a spectator follows it (engagements.py)
         self._rally: dict[int, int] = {}  # army id -> tick until which it rests after a rout
         self.rallies: list[Rally] = []  # rallies gathering or on the march
         self._called: dict[int, int] = {}  # civ -> tick before which it calls no new rally
@@ -216,6 +218,7 @@ class Military:
                         self._storm(civ, army, tick, events)
                     else:
                         self._besiege(civ, army, tick, events)
+        self.engagements.end_of_day(tick)
 
     # -- raising and organising ----------------------------------------------
 
@@ -1222,6 +1225,7 @@ class Military:
         total = sum(strengths.values())
         war = self.diplomacy.relation(one.civ, two.civ).war
         engaged = min(one.size, two.size)
+        lost = {one.id: 0.0, two.id: 0.0}
         if total > 0 and engaged > 0:
             for army, enemy in ((one, two), (two, one)):
                 # The phase 3 casualty rule, at battle intensity; a skilled commander loses fewer.
@@ -1230,6 +1234,7 @@ class Military:
                     loss *= 1 - army.commander.casualty_reduction
                 loss *= max(0.2, 1 + self.mods[army.civ].casualties)
                 loss = min(loss, army.size)
+                lost[army.id] = loss
                 fallen = self._lost.setdefault((army.id, enemy.id), {})
                 for unit, count in army.take(loss).items():
                     fallen[unit] = fallen.get(unit, 0.0) + count
@@ -1240,6 +1245,8 @@ class Military:
                     war.casualties[civ.id] += loss
                 self._gain(army, XP_PER_BATTLE_TICK)
 
+        self._record_battle(one, two, lost, tick)
+
         # An army breaks when it is wiped out or its strength falls below half its opponent's.
         # The weaker side loses a larger share each tick, so the gap widens until that happens:
         # quickly when the armies are unequal, slowly when they are close.
@@ -1247,6 +1254,42 @@ class Military:
             if army.size < 1.0 or strengths[army.id] < ROUT_RATIO * strengths[enemy.id]:
                 self._defeat(army, enemy, tick, events)
                 return
+
+    # -- fights as a spectator follows them --------------------------------------
+
+    @staticmethod
+    def _battle_key(one: Army, two: Army) -> str:
+        return f"battle:{min(one.id, two.id)}:{max(one.id, two.id)}"
+
+    def _side(self, army: Army, lost: float = 0.0) -> dict:
+        general = {"name": army.commander.name, "level": army.commander.level} if army.commander else None
+        return {"civ": army.civ, "name": self.civs[army.civ].name, "general": general,
+                "soldiers": army.size, "lost": lost}
+
+    def _record_battle(self, one: Army, two: Army, lost: dict, tick: int) -> None:
+        world = self.world
+        region = world.region_of[two.tile]
+        castle = world.capital_tiles.get(two.tile) if two.role == "garrison" else None
+        place = (world.regions[castle].capital_name if castle is not None
+                 else world.regions[region].name if region >= 0 else "the open field")
+        self.engagements.fight(self._battle_key(one, two), "battle", world.xy(two.tile), place, tick,
+                               [self._side(one, lost[one.id]), self._side(two, lost[two.id])])
+
+    def _record_siege(self, civ, enemy, army: Army, target: int, region, price: float, tick: int) -> None:
+        """A day of a siege: the besiegers against those holding the castle (its share of the
+        garrison and any allies standing in it), the breach, and the hold once it is broken into."""
+        holders = (enemy.garrison.size / max(1, len(enemy.settlements)) if enemy.garrison else 0.0) \
+            + sum(guest.size for guest in self._guests(target))
+        posted = next((c for c in enemy.commanders if c.post == target), None)
+        held = region.hold if region is not None and region.held_by == civ.id else 0
+        place = region.capital_name if region is not None else self.world.regions[self.world.capital_tiles[target]].capital_name
+        self.engagements.fight(f"siege:{target}:{civ.id}", "siege", self.world.xy(target), place, tick,
+                               [self._side(army),
+                                {"civ": enemy.id, "name": enemy.name, "soldiers": holders,
+                                 "general": {"name": posted.name, "level": posted.level} if posted else None}],
+                               siege={"breach": round(min(1.0, army.siege_progress / max(price, 1e-9)), 3)
+                                      if held == 0 else 1.0,
+                                      "held": held, "needed": rules.CAPITAL_HOLD})
 
     def _broken(self, army: Army, tick: int) -> bool:
         """An army beaten in battle cannot fight again until it has rallied: a garrison where it
@@ -1291,6 +1334,7 @@ class Military:
         winning, losing = self.civs[winner.civ], self.civs[loser.civ]
         events.append({"civ": winning.id, "kind": "war",
                        "text": f"{winning.name}'s army scatters the garrison of {losing.capital.name}"})
+        self.engagements.end(self._battle_key(loser, winner), tick, f"{winning.name} scatters the garrison")
 
     def _rout(self, loser: Army, winner: Army, tick: int, events: list) -> None:
         losing, winning = self.civs[loser.civ], self.civs[winner.civ]
@@ -1319,6 +1363,8 @@ class Military:
         self._battles.pop((winner.id, loser.id), None)
         events.append({"civ": winning.id, "kind": "war",
                        "text": f"{winning.name}'s army{led} routs {losing.name}'s at ({x}, {y}){fate}"})
+        self.engagements.end(self._battle_key(loser, winner), tick,
+                             f"{losing.name}'s army breaks and runs{fate}")
         self.diplomacy.history.append({"tick": tick, "civs": [winning.id, losing.id],
                                        "text": f"{winning.name}'s army routs {losing.name}'s"})
         if loser.size < 1.0:
@@ -1602,8 +1648,14 @@ class Military:
             civ.soldiers = max(0.0, civ.soldiers - loss)
             civ.population = max(MIN_POPULATION, civ.population - loss)
             self._casualties(civ, fallen, army.tier, WOUNDED_IN_VICTORY)
+            dead = region.garrison
             region.garrison = max(0.0, region.garrison - rate * engaged * attack / (attack + defence))
             self._gain(army, XP_PER_BATTLE_TICK)
+            self.engagements.fight(f"storm:{region.id}:{army.id}", "storm", self.world.xy(region.capital),
+                                   region.capital_name, tick,
+                                   [self._side(army, loss),
+                                    {"civ": None, "name": self.diplomacy.faction, "general": None,
+                                     "soldiers": region.garrison, "lost": dead - region.garrison}])
 
         # Like any battle, the assault runs until one side is broken.
         attack, defence = self.army_strength(army), natives.defence(region)
@@ -1613,6 +1665,7 @@ class Military:
                 army.commander.wins += 1
                 self._gain(army, XP_WON)
             self.diplomacy.capture_region(civ, region, tick, events)
+            self.engagements.end(f"storm:{region.id}:{army.id}", tick, f"{civ.name} takes {region.capital_name}")
             army.state, army.engaged_since = "returning", None
             civ.campaign_cooldown = tick + CAMPAIGN_REST
         elif army.size < 1.0 or attack < ROUT_RATIO * defence:
@@ -1623,6 +1676,7 @@ class Military:
             civ.campaign_cooldown = tick + CAMPAIGN_RETRY
             events.append({"civ": civ.id, "kind": "region",
                            "text": f"{civ.name}'s attack on {region.capital_name} is beaten off by {self.diplomacy.faction}"})
+            self.engagements.end(f"storm:{region.id}:{army.id}", tick, f"{civ.name}'s attack is beaten off")
 
     # -- taking ground -------------------------------------------------------
 
@@ -1675,13 +1729,15 @@ class Military:
             army.siege_progress = min(army.siege_progress + gain,
                                       4 * max(rules.TILE_DEFENSE.values()) * rules.CAPITAL_DEFENSE)
         price = self.tile_price(civ, target)
+        region = self._capital_region(target, enemy)
+        self._record_siege(civ, enemy, army, target, region, price, tick)
         if army.siege_progress < price:
             return
-        region = self._capital_region(target, enemy)
         if region is not None:
             # A capital does not fall the moment it is breached: the army has to hold it.
             if region.held_by is None:
                 region.held_by, region.hold = civ.id, 0
+                self.engagements.note(f"siege:{target}:{civ.id}", tick, "the walls are breached")
                 self.diplomacy._log(tick, events, "war", [civ, enemy],
                                     f"{civ.name}'s army breaks into {region.capital_name}: {region.name} "
                                     f"falls unless {enemy.name} drives it out within {rules.CAPITAL_HOLD} days")
@@ -1699,6 +1755,8 @@ class Military:
             region.held_by, region.hold = None, 0
         army.siege_progress -= price
         self.diplomacy._capture_tile(relation, civ, enemy, target, tick, events)
+        self.engagements.end(f"siege:{target}:{civ.id}", tick,
+                             f"{civ.name} takes {region.capital_name if region else 'the castle'}")
 
     def _capital_region(self, tile: int, holder):
         """The region whose capital stands on this tile, if `holder` owns that region."""

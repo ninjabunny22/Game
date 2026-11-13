@@ -65,12 +65,28 @@ Then open `godot/` in Godot 4.7 or newer and press Play (or
 viewer reconnects on its own.
 
 Viewer controls: drag to pan, right-drag to orbit, wheel to zoom, `Space` to
-pause, `.` to step one tick, `-` / `=` to change speed.
+pause, `.` to step one tick, `-` / `=` to change speed, `Tab` diplomacy, `T` the tech tree,
+`H` the keys.
 
 The overlay is built for watching:
 
-- **Date.** The top left shows the day (one tick is one day) and the pace in
-  days per minute. A banner appears while the sim is paused.
+- **The bar** (top left): the day (one tick is one day), the pace in days per minute and the
+  map, over one row of icons: pause/resume, one day on, slower, faster, diplomacy, what the
+  lines between castles mean, the keys, and back to the menu. Resting the mouse on an icon
+  says what it does and its key (icons made by `tools/make_icons.py`). A banner appears
+  while the sim is paused.
+- **Fights you can follow** (while watching, not when you rule a civ). Over every battle,
+  siege or assault on a native capital on screen floats a box: a headline ("General Varen of
+  Zhanlu assaults Dunlinby with 122 soldiers"), a bar per side (soldiers left of what it
+  brought, today's losses), for a siege the breach and then the 100-day hold, and the last
+  notes of the fight, a line a day. From afar a fight is a crossed-swords marker; click it to
+  open its box. When fights are going on and none is on screen, a crossed-swords button at
+  the top says how many; click it to go to the largest, again for the next. A finished
+  fight's box stays a few days with how it ended.
+- **Tech tree** (while watching; the tree button beside the civ cards, or `T`): one column per
+  era, a dot in each civ's colour on every tech it knows, and a frame and progress bar on what
+  each is learning now. Resting the mouse on a tech says what it does, its cost and who knows
+  it; with a civ's card open, the tree shows that civ's path.
 - **Text size.** The whole overlay is drawn 35% larger than Godot's default;
   `[` and `]` make it smaller or larger while watching.
 - **Sieges.** A civ's capital does not fall the moment an army breaks in: the army

@@ -71,6 +71,12 @@ Plan (agreed 2026-11-13): war on the AI's own judgement with a home guard; fight
   The balance batch below predates this rule.
 - **Castles:** nobody is drawn inside; clicking one opens a panel beside it with what is inside.
   **Minimap** at the bottom right.
+- **War on the AI's own judgement:** no minimum army to declare war; a home guard (enough to
+  hold off the strongest other civ in reach) stays home. Three check games: first wars on days
+  631 (Highgate), 427 (Emberwaste), 387 (Five Gates); 19, 33 and 35 wars; all ended on score.
+  Watch for stalemates: in Emberwaste and Five Gates nothing changed hands for thousands of days.
+- **Fights you can follow** (boxes over battles and sieges, a battle alert), the **icon bar**,
+  and the **tech tree** viewer, all while spectating.
 
 ## Balance batch (2026-11-13)
 

@@ -103,6 +103,10 @@ content; code reads it through `economy/buildings.py`, `tech/tree.py` and `milit
   and `pathfinding.move_cost` adds diagonals (√2, no cutting corners). Armies, villagers and
   route searches all go through them. Passes are carved when a map is built
   (`map/passes.carve_passes`); bridges come from a design's `causeways`.
+- **Fights for spectators:** `military/engagements.py` keeps one record per battle, siege and
+  assault on a native capital, filled in by `warfare.py` where the fighting happens
+  (`_battle_tick`, `_besiege`, `_storm`, `_rout`), and sent as `engagements` only while nobody
+  rules a civ. The viewer's `battle_view.gd` draws them; it decides nothing.
 - **Land in whole regions:** a civ's `territory` is always every tile of the regions it holds.
   Tiles change hands only through `Diplomacy.capture_region` (a native capital stormed, an
   enemy castle held for 100 days, a treaty) and `_eliminate`; there is no tile-by-tile
