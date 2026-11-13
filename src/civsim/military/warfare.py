@@ -663,6 +663,20 @@ class Military:
                 and army.rally is None and army.target_region is None and army.size >= MIN_FIELD_ARMY
                 and army.state in ("idle", "marching", "besieging") and not self._holding(army))
 
+    def _rally_ground(self, civ, enemy, mine: list) -> tuple[int, int]:
+        """Where a rally against `enemy` would gather, and the capital it would march on: the
+        enemy capital cheapest to take, and the civ's own city nearest it that one of its armies
+        can reach in time."""
+        start = civ.capital.tile
+        target = min((s.tile for s in enemy.settlements),
+                     key=lambda t: (self._gap(start, t) + WALL_DETOUR * self.tile_price(civ, t), t))
+        cities = [s.tile for s in civ.settlements]
+        within = [t for t in cities if any(self._gap(a.tile, t) <= RALLY_REACH for a in mine)]
+        largest = max(mine, key=lambda a: (a.size, -a.id))
+        city = (min(within, key=lambda t: (self._gap(t, target), t)) if within
+                else min(cities, key=lambda t: (self._gap(t, largest.tile), t)))
+        return city, target
+
     def start_rally(self, civ, enemy_id: int, tick: int, events: list) -> Rally | str:
         """Call a rally against an enemy: the civ's own armies make for the city nearest the
         enemy capital that is cheapest to take, and its allies have RALLY_GATHER days to join
@@ -678,15 +692,7 @@ class Military:
         mine = [a for a in civ.armies if self._free_to_rally(a, enemy_id)]
         if not mine:
             return "no army is free to lead it"
-        start = civ.capital.tile
-        target = min((s.tile for s in enemy.settlements),
-                     key=lambda t: (self._gap(start, t) + WALL_DETOUR * self.tile_price(civ, t), t))
-        # It gathers in the city nearest the target that one of its own armies can reach in time.
-        cities = [s.tile for s in civ.settlements]
-        within = [t for t in cities if any(self._gap(a.tile, t) <= RALLY_REACH for a in mine)]
-        largest = max(mine, key=lambda a: (a.size, -a.id))
-        city = (min(within, key=lambda t: (self._gap(t, target), t)) if within
-                else min(cities, key=lambda t: (self._gap(t, largest.tile), t)))
+        city, target = self._rally_ground(civ, enemy, mine)
         rally = Rally(self.next_id(), civ.id, enemy_id, city, target, tick, tick + RALLY_GATHER)
         self.rallies.append(rally)
         for army in mine:
@@ -773,11 +779,16 @@ class Military:
                 continue
             for enemy_id in self.diplomacy.enemies(civ.id):
                 war = self.diplomacy.relation(civ.id, enemy_id).war
-                # Worth calling when an ally shares the war and the army has not yet committed itself.
-                if (war and civ.id in war.aggressors
-                        and any(self._free_to_rally(a, enemy_id) and self._at_home(civ, a.tile) for a in civ.armies)
-                        and any(self._free_to_rally(a, enemy_id) and self._gap(a.tile, civ.capital.tile) <= RALLY_REACH
-                                for ally in self._war_allies(civ, enemy_id) for a in ally.armies)):
+                # Worth calling when an ally shares the war, the army has not yet committed
+                # itself, and an ally's army could reach the city it would gather in.
+                if not (war and civ.id in war.aggressors and self.civs[enemy_id].settlements):
+                    continue
+                home = [a for a in civ.armies if self._free_to_rally(a, enemy_id) and a.state in ("idle", "marching")]
+                if not home:
+                    continue
+                city, _ = self._rally_ground(civ, self.civs[enemy_id], home)
+                if any(self._free_to_rally(a, enemy_id) and self._gap(a.tile, city) <= RALLY_REACH
+                       for ally in self._war_allies(civ, enemy_id) for a in ally.armies):
                     if isinstance(self.start_rally(civ, enemy_id, tick, events), Rally):
                         break
 

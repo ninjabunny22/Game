@@ -60,11 +60,12 @@ style). Balance and timing have not had their dedicated pass yet.
 
 ## In progress
 
-The nine drawn maps are built, playable and committed; judging their balance is not done:
-- the balance batch (`civsim.balance`, about 70 games per map) waits for approval to run
-  more than 3 games at a time;
-- victory still counts regions; victory by points awaits approval;
-- the uneven setups flagged by `civsim.fairness` are kept for now (see ROADMAP).
+Finishing the to-do list (see ROADMAP "Immediate priorities"):
+- done: victory by region points (80% and half the regions), the strategist playing to it,
+  rallies called when an ally can reach the gathering city, the timing table;
+- next: league tuning for entertaining games (`civsim.league --aim fun --evolve`), then the
+  balance batch on all nine maps (approved), then fixes for the slots it flags;
+- after that: the stabilisation review (cleanup of unused models and stray files at the root).
 
 `KayKit_ResourceBits_1.0_FREE` (added by the user, at the repository root) is still unused.
 
@@ -92,17 +93,23 @@ The nine drawn maps are built, playable and committed; judging their balance is 
 
 ## Tests
 
-- Python: **440 passed** with the castle-holding change (about 9 minutes). No known failures.
-- Viewer asset check: `assets ok` with the latest horse.
-- Last balance check (3 games, with castle holding):
-  - generals left a force to hold a castle 4, 31 and 48 times (small, medium, large);
-  - first wars came on days 503–648, and armies went unpaid on 2–7% of days;
-  - every game ended by domination (days 1,395, 3,982 and 4,943).
+- Python: about **500 pass** (about 8 minutes). No known failures.
+- Viewer asset check: `assets ok`.
+- Timing check (one game per size, utility brain, points victory, new rally rule):
+  - Confluence (3 civs): domination on day 3,189 of 6,000, first war day 471, 9 wars, 4 rallies;
+  - Emberwaste (5): score on the last day, first war day 465, 3 wars, 17 alliances, no rallies;
+  - Five Gates (5): score on the last day, first war day 400, 20 wars, 11 rallies, best 32 of 62 points.
+- Speed: a fixed 2,100-day Five Gates game takes 16.7 s (it took 23.4 s before the neighbour cache).
 
 ## Latest important changes (newest first)
 
 | Commit | Change |
 |---|---|
+| `826555f` | Victory by region points; the strategist plays to the race |
+| `42ff52f` | About 30% faster simulation, identical games |
+| `cc239e8` | Nobody walks on water (bridges only) or over mountains (passes only) |
+| `8a56262`, `4dcb428` | The Long March 256 wide, civs in its four corners |
+| `1004046` | Nine hand-drawn maps; one valuation of land for the AI |
 | `08997b2` | Blender models: gold mine, ship, harbour, stable, siege engines, spear |
 | `c441d5b` | Gold mines as fixed map sites; garrisons only shown by clicking a castle (with estimates); castles built from pack pieces |
 | `67b0fc8` | Levelled ground under castles; 5×5 castle ground; hospitals inside castles with three research steps |
@@ -112,10 +119,7 @@ The nine drawn maps are built, playable and committed; judging their balance is 
 
 ## Immediate next steps
 
-1. Finish step 5:
-   - check the bow shot and the swings;
-   - compare the new `KayKit_Character_Animations_1.1` pack and use its animations if they're better;
-   - run the asset check and a real game;
-   - commit.
-2. Remove the custom Archer and cavalry Knight models once step 5 is verified.
-3. Then the agreed timing pass (ROADMAP).
+1. League tuning for entertaining, objective-aware games; put what is kept into `Params`.
+2. The balance batch on all nine maps; fix or drop the start setups it flags.
+3. The stabilisation review: remove the six unused Hexagon models, move the stray .glb files
+   and the ResourceBits pack at the root into `art/`, drop three unused names.

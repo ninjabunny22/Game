@@ -316,3 +316,19 @@ def test_a_ruler_calls_rallies_and_is_asked_to_join_an_allys(allies):
     assert ruler.command("start_rally", {"civ": b.id}) is None
     assert ruler.state()["rally"]["state"] == "gathering"
     assert ruler.command("cancel_rally", {}) is None and ruler.state()["rally"] is None
+
+
+def test_a_civ_calls_a_rally_when_an_ally_could_reach_where_it_would_gather(allies):
+    """Its own army need not be standing in a castle: one on the march, not yet fighting, will
+    do. What counts is that an ally's army could get to the city the rally gathers in."""
+    sim, a, b, c, armies = allies
+    military = sim.military
+    world = sim.world
+    city, _ = military._rally_ground(a, b, [armies[a.id]])
+    armies[a.id].state = "marching"
+    armies[a.id].tile = next(t for t in world.neighbors(a.capital.tile) if world.walkable(t))
+    armies[c.id].tile = city  # the ally's army is there already
+    events = []
+    military._rallies(20, events)
+    assert military.rally_led_by(a.id) is not None or military.rally_led_by(c.id) is not None
+    assert any("calls a rally" in e["text"] for e in events)

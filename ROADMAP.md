@@ -13,25 +13,20 @@ state is in CIVSIM_STATUS.md.
 
 0. **The nine drawn maps: finish judging them.** They are built and playable (see
    CIVSIM_STATUS.md). Still to do:
-   - **balance batch** (`civsim.balance`), about 70 games per map, once you approve running
-     more than 3 games at a time; then adjust the maps whose slots it flags;
-   - **victory by region points**, if approved: 70% of the map's points and at least half the
-     regions (points are already worked out and shown; victory still counts regions);
+   - **balance batch** (`civsim.balance`), about 70 games per map (approved); then adjust the
+     maps whose slots it flags;
+   - ~~victory by region points~~ done: 80% of the map's points and at least half the regions;
    - decide whether to keep the uneven setups the fairness report flags (Highgate with 3,
      the rings of five with 3 or 4, The Divide with 3 or 5, the Narrow Sea's Neck slot).
-1. **Timing pass.** Put every duration in one table and tune them to fit together:
-   - war length (50-day minimum, 100-day capital hold, peace terms from day 150, exhaustion at 400);
-   - sickness (from day 250);
-   - truces (50 / 150 days);
-   - alliances (100-day minimum, lapse after 100 days of peace, 300 days before re-allying);
-   - preparation for war, army training speed, restlessness;
-   - game length per map size.
-
-   Known oddities: games often end well before the last day, and rallies are rare. The first
-   war used to come late; in the latest 3-game check it came on days 503–648.
-2. **Tune by league.** Run `python -m civsim.league --evolve` on the settled timings, ideally
-   to one set of numbers per personality. First decide whether the aim is the strongest civs
-   or the most entertaining games.
+1. **Timing pass.** The durations are in one table (README "Timing"). Measured with the new
+   victory rule: first wars on days 400–471, games running to 53–100% of the last day. Rallies
+   were never called (an ally had to be near the caller's capital); now they are, when an ally
+   can reach the city the rally gathers in. Nothing else retuned until the balance batch shows
+   a pattern rather than one game.
+2. **Tune by league** for entertaining games in which civs play to the objectives:
+   `python -m civsim.league --aim fun --evolve N` (every civ plays the variant; kept if games
+   are better to watch: length, wars, alliances, rallies, lead changes, prizes taken, someone
+   near winning, varied winners).
 
 ## Next development stages
 
