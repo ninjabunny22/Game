@@ -76,3 +76,6 @@ state is in CIVSIM_STATUS.md.
 - The old bridges are drawn with the pack's bridge model laid across the river; check how it
   sits at close zoom.
 - Trees can hide figures at close zoom.
+- **Next up (asked for 2026-11-13):** name each ruling house after the civ it rules ("House
+  Ossyria", "House Iskandar") instead of its board name (Valedorn, Silvermere...), and a rebel's
+  house after the civ it founds. Portraits stay the same; only the displayed house name changes.
