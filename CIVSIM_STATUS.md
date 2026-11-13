@@ -65,9 +65,11 @@ Finishing the to-do list (see ROADMAP "Immediate priorities"):
   rallies called when an ally can reach the gathering city, the timing table;
 - next: league tuning for entertaining games (`civsim.league --aim fun --evolve`), then the
   balance batch on all nine maps (approved), then fixes for the slots it flags;
-- after that: the stabilisation review (cleanup of unused models and stray files at the root).
+- after that: the rest of the stabilisation review (the unused models are gone and the root
+  is tidied).
 
-`KayKit_ResourceBits_1.0_FREE` (added by the user, at the repository root) is still unused.
+`KayKit_ResourceBits_1.0_FREE` is unused and now kept with the other raw packs in `art/kaykit/`;
+the old custom .glb files that lay at the root are in `art/legacy_models/` (both ignored by git).
 
 ## Known bugs, limits and technical debt
 
@@ -121,5 +123,4 @@ Finishing the to-do list (see ROADMAP "Immediate priorities"):
 
 1. League tuning for entertaining, objective-aware games; put what is kept into `Params`.
 2. The balance batch on all nine maps; fix or drop the start setups it flags.
-3. The stabilisation review: remove the six unused Hexagon models, move the stray .glb files
-   and the ResourceBits pack at the root into `art/`, drop three unused names.
+3. The rest of the stabilisation review: three unused Python names, then a pass for bugs.
