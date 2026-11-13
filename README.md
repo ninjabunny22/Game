@@ -104,6 +104,11 @@ The overlay is built for watching:
   short of), Family (portraits of the house, the ruler and heir marked, the dead below), Army, Diplomacy (its own wars and deals, then the whole world's) and Tech (opens
   the tree on its path). **Follow** keeps the camera on its largest army in the field (else
   its capital); **Rule it** takes control. Click the chip again, its X or `Esc` to close.
+- **Ongoing wars** (while watching): a panel under the civ chips at the top right, its heading
+  counting the wars going on. Each war is a row, both civs' shields and names in their colours
+  facing each other across crossed swords; click a row to compare the two sides (military
+  strength, armies in the field, regions held), live. Rows come and go with the wars; the − in
+  the heading folds the panel away. It steps aside while a civ's drawer is open.
 - **The ticker and the chronicle** (while watching): the newest headline (wars, peace,
   castles taken, alliances, eras, with a war's proclamation) shows at the bottom left and
   fades after a few seconds. Click it, or press `L`, for the chronicle: every headline so far,

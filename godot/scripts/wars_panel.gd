@@ -1,0 +1,234 @@
+extends PanelContainer
+## Ongoing wars, under the civ chips at the top right while watching. The heading counts them;
+## each war is a row with both civs' shields and names in their colours, facing each other
+## across crossed swords. Clicking a row folds open a side-by-side comparison (military
+## strength, field armies, regions held), updated every tick from the data the simulation
+## sends (relations, civs, armies). Rows appear and go as wars begin and end. It only shows
+## what it is sent; it decides nothing.
+
+const WIDTH := 372.0
+const MAX_HEIGHT := 420.0  # beyond this the list scrolls, so the map stays in view
+const TEXT := Color(0.93, 0.9, 0.84)
+const FAINT := Color(0.66, 0.7, 0.76)
+
+var _title: Label
+var _fold: Button
+var _scroll: ScrollContainer
+var _list: VBoxContainer
+var _rows := {}  # "a:b" -> {"root", "details", "values": {stat: [label a, label b]}}
+var _open := {}  # "a:b" -> true while folded open
+var _collapsed := false
+var bottom_reserve := 0.0  # the height kept free at the bottom right (the minimap and its toggles), from hud.gd
+
+
+func _ready() -> void:
+	set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	offset_right = -10
+	offset_left = -10 - WIDTH
+	custom_minimum_size = Vector2(WIDTH, 0)
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.06, 0.075, 0.1, 0.88)
+	style.set_corner_radius_all(10)
+	style.set_content_margin_all(10)
+	style.set_border_width_all(1)
+	style.border_color = Color(1, 1, 1, 0.1)
+	add_theme_stylebox_override("panel", style)
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 8)
+	add_child(column)
+	var header := HBoxContainer.new()
+	header.add_theme_constant_override("separation", 8)
+	column.add_child(header)
+	header.add_child(_icon("res://assets/icons/battle.svg", 24, Color.WHITE))
+	_title = Label.new()
+	_title.add_theme_font_size_override("font_size", 17)
+	_title.add_theme_color_override("font_color", TEXT)
+	_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(_title)
+	_fold = Button.new()
+	_fold.flat = true
+	_fold.focus_mode = Control.FOCUS_NONE
+	_fold.add_theme_font_size_override("font_size", 18)
+	_fold.tooltip_text = "Show or hide the wars"
+	_fold.pressed.connect(func() -> void:
+		_collapsed = not _collapsed
+		_fit())
+	header.add_child(_fold)
+	_scroll = ScrollContainer.new()
+	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	column.add_child(_scroll)
+	_list = VBoxContainer.new()
+	_list.add_theme_constant_override("separation", 6)
+	_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_scroll.add_child(_list)
+	visible = false
+
+
+## From each tick: the wars going on, and the figures each row compares. `info` is the HUD's
+## civ id -> {name, color} from the init message.
+func update(data: Dictionary, info: Dictionary) -> void:
+	var civs := {}
+	for civ: Dictionary in data["civs"]:
+		civs[int(civ["id"])] = civ
+	var armies := {}  # civ id -> its armies in the field
+	for army: Dictionary in data["armies"]:
+		if army["role"] == "field":
+			armies[int(army["civ"])] = armies.get(int(army["civ"]), 0) + 1
+	var seen := {}
+	for relation: Dictionary in data["relations"]:
+		if relation["status"] != "war":
+			continue
+		var a := int(relation["a"])
+		var b := int(relation["b"])
+		if not (info.has(a) and info.has(b) and civs.has(a) and civs.has(b)):
+			continue
+		var key := "%d:%d" % [a, b]
+		seen[key] = true
+		if not _rows.has(key):
+			_rows[key] = _make_row(key, a, b, info, str(relation.get("name", "") if relation.get("name") != null else ""))
+		var values: Dictionary = _rows[key]["values"]
+		for side in 2:
+			var civ: Dictionary = civs[a if side == 0 else b]
+			var civ_id := int(civ["id"])
+			(values["strength"][side] as Label).text = _thousands(int(civ.get("army_strength", 0)))
+			var count := int(armies.get(civ_id, 0))
+			(values["armies"][side] as Label).text = "%d %s" % [count, "army" if count == 1 else "armies"]
+			var regions := int(civ.get("regions", []).size())
+			(values["regions"][side] as Label).text = "%d %s" % [regions, "region" if regions == 1 else "regions"]
+	for key: String in _rows.keys():
+		if not seen.has(key):  # the war is over
+			(_rows[key]["root"] as Node).queue_free()
+			_rows.erase(key)
+			_open.erase(key)
+	_title.text = "Ongoing Wars (%d)" % _rows.size()
+	_fit.call_deferred()  # once the rows of wars just ended are really gone
+
+
+func clear() -> void:
+	for key: String in _rows:
+		(_rows[key]["root"] as Node).queue_free()
+	_rows.clear()
+	_open.clear()
+
+
+## The list as tall as its rows, up to MAX_HEIGHT; folded away when collapsed or empty.
+func _fit() -> void:
+	_fold.text = "+" if _collapsed else "−"
+	_scroll.visible = not _collapsed and not _rows.is_empty()
+	for key: String in _rows:
+		(_rows[key]["details"] as Control).visible = _open.has(key)
+	# Never down over the minimap: the list gets the room left above it, at most MAX_HEIGHT.
+	var room := get_viewport().get_visible_rect().size.y - offset_top - bottom_reserve - 80.0
+	_scroll.custom_minimum_size = Vector2(0, minf(_list.get_combined_minimum_size().y, clampf(room, 90.0, MAX_HEIGHT)))
+	reset_size.call_deferred()  # shrink to fit when a row folds shut or a war ends
+
+
+## One war: a clickable bar with both sides facing each other, and the comparison under it.
+func _make_row(key: String, a: int, b: int, info: Dictionary, war_name: String) -> Dictionary:
+	if OS.get_environment("CIVSIM_WARS_OPEN") == "1":  # scripted runs: every war folded open
+		_open[key] = true
+	var color_a := Color.html(info[a]["color"])
+	var color_b := Color.html(info[b]["color"])
+	var root := VBoxContainer.new()
+	root.add_theme_constant_override("separation", 0)
+	_list.add_child(root)
+	var bar := PanelContainer.new()
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(1, 1, 1, 0.05)
+	style.set_corner_radius_all(8)
+	style.set_content_margin_all(6)
+	style.set_border_width_all(1)
+	style.border_color = color_a.lerp(color_b, 0.5).darkened(0.2)
+	bar.add_theme_stylebox_override("panel", style)
+	bar.mouse_filter = Control.MOUSE_FILTER_STOP
+	bar.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	bar.tooltip_text = war_name if war_name != "" else "Click to compare the two sides"
+	bar.gui_input.connect(func(event: InputEvent) -> void:
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			if _open.has(key):
+				_open.erase(key)
+			else:
+				_open[key] = true
+			_fit())
+	root.add_child(bar)
+	var line := HBoxContainer.new()
+	line.add_theme_constant_override("separation", 6)
+	line.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar.add_child(line)
+	line.add_child(_icon("res://assets/icons/shield.svg", 26, color_a.lightened(0.15)))
+	var left := _name(str(info[a]["name"]), color_a, HORIZONTAL_ALIGNMENT_LEFT)
+	line.add_child(left)
+	line.add_child(_icon("res://assets/icons/battle.svg", 22, Color(1, 0.55, 0.5)))
+	var right := _name(str(info[b]["name"]), color_b, HORIZONTAL_ALIGNMENT_RIGHT)
+	line.add_child(right)
+	line.add_child(_icon("res://assets/icons/shield.svg", 26, color_b.lightened(0.15)))
+	# The comparison, folded away until the row is clicked.
+	var details := PanelContainer.new()
+	var inner := StyleBoxFlat.new()
+	inner.bg_color = Color(0, 0, 0, 0.25)
+	inner.set_corner_radius_all(6)
+	inner.set_content_margin_all(8)
+	details.add_theme_stylebox_override("panel", inner)
+	details.visible = false
+	root.add_child(details)
+	var grid := GridContainer.new()
+	grid.columns = 3
+	grid.add_theme_constant_override("h_separation", 10)
+	grid.add_theme_constant_override("v_separation", 6)
+	details.add_child(grid)
+	grid.add_child(Control.new())
+	grid.add_child(_cell(str(info[a]["name"]), color_a.lightened(0.3)))
+	grid.add_child(_cell(str(info[b]["name"]), color_b.lightened(0.3)))
+	var values := {}
+	for stat: Array in [["strength", "Military strength"], ["armies", "Armies in the field"], ["regions", "Regions held"]]:
+		var label := _cell(str(stat[1]), FAINT)
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		grid.add_child(label)
+		var pair := [_cell("", color_a.lightened(0.45)), _cell("", color_b.lightened(0.45))]
+		grid.add_child(pair[0])
+		grid.add_child(pair[1])
+		values[stat[0]] = pair
+	return {"root": root, "details": details, "values": values}
+
+
+func _name(text: String, color: Color, align: HorizontalAlignment) -> Label:
+	var label := Label.new()
+	label.text = text
+	label.horizontal_alignment = align
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.clip_text = true
+	label.add_theme_font_size_override("font_size", 16)
+	label.add_theme_color_override("font_color", color.lightened(0.3))
+	return label
+
+
+func _cell(text: String, color: Color) -> Label:
+	var label := Label.new()
+	label.text = text
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.add_theme_font_size_override("font_size", 13)
+	label.add_theme_color_override("font_color", color)
+	return label
+
+
+func _icon(path: String, side: int, tint: Color) -> TextureRect:
+	var icon := TextureRect.new()
+	icon.texture = load(path)
+	icon.custom_minimum_size = Vector2(side, side)
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.modulate = tint
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return icon
+
+
+## 46800 as "46,800".
+func _thousands(value: int) -> String:
+	var digits := str(absi(value))
+	var out := ""
+	while digits.length() > 3:
+		out = "," + digits.substr(digits.length() - 3) + out
+		digits = digits.substr(0, digits.length() - 3)
+	return ("-" if value < 0 else "") + digits + out

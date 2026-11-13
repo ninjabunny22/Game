@@ -126,6 +126,11 @@ Plan (agreed 2026-11-13): war on the AI's own judgement with a home guard; fight
   each civ's name (and the native faction's) shows in its own colour (`hud._tint`, from the
   colours the sim sends), the rest of the text in the standard colour.
 
+- **Ongoing Wars panel** (2026-11-13): `godot/scripts/wars_panel.gd`, under the chips while
+  watching, from the tick's `relations`, `civs` (`army_strength`, `regions`) and `armies`; rows
+  fold open to compare the sides; capped above the minimap. Chips tighten when rebels make
+  more than five civs.
+
 ## Balance batch (2026-11-13)
 
 5 games per civ for every map and civ count (`civsim.balance`, 90% intervals). A slot is

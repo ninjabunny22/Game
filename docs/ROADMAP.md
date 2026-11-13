@@ -112,17 +112,8 @@ state is in CIVSIM_STATUS.md.
   (today it takes the kinds in `HEADLINE_KINDS`, hud.gd, and only counts the routine ones).
   Add a chronicle button to the top bar beside the others (today it opens only from the
   ticker or the `L` key).
-- **To do (asked for 2026-11-13): an Ongoing Wars panel, and alliances at a glance.**
-  - A panel under the civ chips at the top right, its heading counting the wars going on.
-  - One compact row per war: both civs' flags and colours facing each other across crossed
-    swords.
-  - Click a row to fold out a side-by-side comparison: total military strength, number of
-    armies, regions held.
-  - Rows come and go as wars begin and end; each folds open and shut on its own.
-  - All live from the tick data the viewer already gets (`relations`, `civs`, `armies`).
-  - The same panel (or a button beside it, a "war log") shows who is allied with whom.
-  - Match the overlay's style, keep it clear of the map, and test with several wars at once.
-  - Viewer only: no change to war rules.
+- **To do (asked for 2026-11-13): alliances at a glance.** The Ongoing Wars panel is done;
+  still to do: show who is allied with whom (in that panel, or a "war log" button beside it).
 - **To do (asked for 2026-11-13): generals who come to help.** A general can march on an
   enemy army besieging one of his civ's castles and attack it. He can go to the aid of his
   own civ's or an ally's general caught fighting in the field. He can join a siege already

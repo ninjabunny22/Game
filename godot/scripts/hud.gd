@@ -10,6 +10,8 @@ signal follow_requested(civ_id: int)  # keep the camera on this civ's largest ar
 const TechTree := preload("res://scripts/tech_tree.gd")
 const WarBanner := preload("res://scripts/war_banner.gd")
 const FamilyTree := preload("res://scripts/family_tree.gd")
+const WarsPanel := preload("res://scripts/wars_panel.gd")
+var _wars: PanelContainer  # the ongoing wars, top right while watching
 var _family_tree: PanelContainer
 const LINK_LEGEND := "[color=#ff4033]━[/color] war   [color=#59a6ff]━[/color] alliance   [color=#59e666]━[/color] trade   [color=#aaaaaa]━[/color] neutral"
 
@@ -192,6 +194,7 @@ func _ready() -> void:
 		_diplomacy_panel.position = Vector2(470, below)
 		_side.offset_top = below
 		_drawer.offset_top = below
+		_wars.offset_top = below + 6
 	controls.resized.connect(place)
 
 	# Event log.
@@ -231,6 +234,8 @@ func _ready() -> void:
 	add_child(_tech_tree)  # beside the overlay's root, so it can come in front of the minimap too
 	_family_tree = FamilyTree.new()
 	add_child(_family_tree)
+	_wars = WarsPanel.new()
+	root.add_child(_wars)  # under the banners, which stand in front of it
 	_banners = WarBanner.new()
 	root.add_child(_banners)
 	# The cards scroll when there are more than fit above the minimap.
@@ -586,6 +591,7 @@ func setup(init: Dictionary) -> void:
 	_drawer_civ = -1
 	_following = -1
 	_drawer.visible = false
+	_wars.clear()
 
 
 func _add_card(civ: Dictionary) -> void:
@@ -657,6 +663,9 @@ func update(tick: int, data: Dictionary) -> void:
 	_ruler_panel.visible = not _spectating
 	_refresh_chips()
 	_refresh_drawer()
+	_wars.visible = _spectating and not _drawer.visible
+	if _wars.visible:
+		_wars.update(data, _civ_info)
 	# The tech tree is a spectator's view: a ruler sees only what his own civ knows.
 	if not _spectating:
 		_tech_tree.visible = false
@@ -733,6 +742,7 @@ func _days(ticks: int) -> String:
 ## Keep the bottom right clear for `height` pixels (the minimap): the cards stop above it.
 func reserve_bottom_right(height: float) -> void:
 	_reserved_bottom_right = height
+	_wars.bottom_reserve = height + 20.0
 	_drawer.offset_bottom = -(height + 20.0)
 	_fit_cards()
 
@@ -997,11 +1007,12 @@ func _make_chips() -> void:
 	for chip: Node in _chips.get_children():
 		chip.queue_free()
 	_chip_buttons.clear()
+	var crowded := _civ_info.size() > 5  # rebels have joined: tighter chips, so all fit on the bar
 	for civ_id: int in _civ_info:
 		var color := Color.html(_civ_info[civ_id]["color"])
 		var chip := Button.new()
 		chip.focus_mode = Control.FOCUS_NONE
-		chip.add_theme_font_size_override("font_size", 13)
+		chip.add_theme_font_size_override("font_size", 11 if crowded else 13)
 		chip.add_theme_color_override("font_color", color.lightened(0.45))
 		chip.add_theme_color_override("font_hover_color", Color.WHITE)
 		chip.add_theme_constant_override("icon_max_width", 16)
@@ -1011,8 +1022,8 @@ func _make_chips() -> void:
 			style.border_color = color
 			style.border_width_bottom = 3
 			style.set_corner_radius_all(7)
-			style.content_margin_left = 7
-			style.content_margin_right = 7
+			style.content_margin_left = 4 if crowded else 7
+			style.content_margin_right = 4 if crowded else 7
 			style.content_margin_top = 4
 			style.content_margin_bottom = 4
 			chip.add_theme_stylebox_override(state[0], style)
@@ -1057,6 +1068,7 @@ func show_drawer_tab(tab: String) -> void:
 func select_civ(civ_id: int) -> void:
 	_drawer_civ = civ_id if _civ_info.has(civ_id) else -1
 	_drawer.visible = _drawer_civ >= 0 and _spectating
+	_wars.visible = _spectating and not _drawer.visible  # they share the corner
 	_tech_tree.pick(_drawer_civ)
 	_refresh_chips()
 	_refresh_drawer()
