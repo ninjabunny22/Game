@@ -99,14 +99,13 @@ def blueprint() -> Blueprint:
     return Blueprint(
         id="long_march", name="The Long March", width=W, height=H, seed=7302,
         premise="A long continent: neighbours fight, the far ends are safe, and the Crossroads lies in the middle.",
-        best="2 to 5",
+        best="4",
         land=[land], coast_noise=1.3, zones=zones, patches=patches, ridges=ridges, lakes=lakes, rivers=rivers,
         deposits=deposits, scatter=[("fish", 40, None)], mines=mines, regions=regions, links=links,
-        # The civs start in the four corners, each on the two outermost bands of its coast;
-        # a fifth holds the south coasts of the two middle bands, the Crossroads above them.
+        # The civs start in the four corners. Two take the west end, north and south coast, so
+        # they meet (from opposite ends, four games in ten never saw a war). No fifth: a start
+        # in the middle sat beside the Crossroads and won far too often.
         starts={"NW": ("frostend", "pinewick"), "SW": ("westhaven", "barleyhythe"),
-                "NE": ("iceend", "firwick"), "SE": ("easthaven", "hopshythe"),
-                "Middle": ("southcross", "suncross")},
-        sets={2: ["NW", "SE"], 3: ["NW", "NE", "Middle"], 4: ["NW", "SW", "NE", "SE"],
-              5: ["NW", "SW", "NE", "SE", "Middle"]},
+                "NE": ("iceend", "firwick"), "SE": ("easthaven", "hopshythe")},
+        sets={2: ["NW", "SW"], 4: ["NW", "SW", "NE", "SE"]},
     )

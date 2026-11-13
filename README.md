@@ -96,7 +96,7 @@ The overlay is built for watching:
   | Emberwaste | 96x96 | 2-5 | fertile valleys round a desert that holds the gold; the Oasis of Kesh at the centre |
   | The Divide | 96x96 | 2, 4 or 5 | a ridge of peaks splits the land; three passes, the Kingsgate fortress in the middle |
   | The Five Gates | 160x160 | 2-5 | five home lands round a walled heartland, each with its own gate |
-  | The Long March | 256x112 | 2-5 | a long continent of twelve bands; the Crossroads shared by the middle two |
+  | The Long March | 256x112 | 2 or 4 | a long continent of twelve bands; the Crossroads shared by the middle two |
   | The Narrow Sea | 176x144 | 2-5 | two continents joined by the Wyrm's Neck; gold on the Drowned Crown in mid-sea |
 
   Each map has fixed start slots for each number of civs; the seed only decides which civ

@@ -60,7 +60,7 @@ MAPS = {
                "civs": (2, 5), "best": "5",
                "premise": "Five home lands round a walled heartland; each has its own gate into the Old Crown."},
               {"id": "long_march", "name": "The Long March", "file": True, "width": 256, "height": 112,
-               "civs": (2, 5), "best": "2 to 5",
+               "civs": (2, 4), "counts": (2, 4), "best": "4",
                "premise": "A long continent: neighbours fight, the far ends are safe, and the Crossroads lies in the middle."},
               {"id": "narrow_sea", "name": "The Narrow Sea", "file": True, "width": 176, "height": 144,
                "civs": (2, 5), "best": "2 or 4",
