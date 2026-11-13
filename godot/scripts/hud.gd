@@ -5,6 +5,7 @@ extends CanvasLayer
 
 signal command_requested(action: String, value: Variant)
 
+const TechTree := preload("res://scripts/tech_tree.gd")
 const LINK_LEGEND := "[color=#ff4033]━[/color] war   [color=#59a6ff]━[/color] alliance   [color=#59e666]━[/color] trade   [color=#aaaaaa]━[/color] neutral"
 
 const MAX_HEADLINES := 5
@@ -19,6 +20,10 @@ const STANCE_COLORS := {"trade": "#7ccf7c", "ally": "#6fb7ff", "ignore": "#8a93a
 
 var _status: Label
 var _pause_button: Button
+var _tech_tree: PanelContainer  # tech_tree.gd: the tree as the civs climb it, while spectating
+var _tech_button: PanelContainer
+var _legend: RichTextLabel
+var _icons := {}  # icon name -> Texture2D
 var _log: RichTextLabel
 var _cards_box: VBoxContainer
 var _cards_scroll: ScrollContainer
@@ -75,15 +80,18 @@ func _ready() -> void:
 	var column := VBoxContainer.new()
 	controls.add_child(column)
 	_status = Label.new()
-	_status.add_theme_font_size_override("font_size", 20)
+	_status.add_theme_font_size_override("font_size", 16)
 	column.add_child(_status)
+	# One row of icons; each says what it does, and its key, when the mouse rests on it.
 	var buttons := HBoxContainer.new()
+	buttons.add_theme_constant_override("separation", 4)
 	column.add_child(buttons)
-	_pause_button = _button(buttons, "Pause", func() -> void: command_requested.emit("toggle_pause", null))
-	_button(buttons, "Step", func() -> void: command_requested.emit("step", null))
-	_button(buttons, "Slower", func() -> void: request_speed(0.5))
-	_button(buttons, "Faster", func() -> void: request_speed(2.0))
-	_button(buttons, "Diplomacy", toggle_diplomacy)
+	_pause_button = _icon_button(buttons, "pause", "Pause / resume  (Space)",
+		func() -> void: command_requested.emit("toggle_pause", null))
+	_icon_button(buttons, "step", "One day on  ( . )", func() -> void: command_requested.emit("step", null))
+	_icon_button(buttons, "slower", "Slower  ( - )", func() -> void: request_speed(0.5))
+	_icon_button(buttons, "faster", "Faster  ( = )", func() -> void: request_speed(2.0))
+	_icon_button(buttons, "diplomacy", "Diplomacy: every war, alliance and trade deal  (Tab)", toggle_diplomacy)
 	var help := Label.new()
 	help.text = ("Drag: pan   Right-drag: orbit   Wheel: zoom   B: region borders\n"
 			+ "Space: pause   . : step   - / = : speed   Tab: diplomacy   1-4: civ details\n"
@@ -93,8 +101,10 @@ func _ready() -> void:
 	help.visible = false  # H or the ? button shows the keys
 	column.add_child(help)
 	_help = help
-	_button(buttons, "?", toggle_help)
-	_button(buttons, "Menu", func() -> void: command_requested.emit("end_game", {}))
+	_icon_button(buttons, "legend", "What the lines between castles mean (click to show)",
+		func() -> void: _legend.visible = not _legend.visible)
+	_icon_button(buttons, "help", "Keys and controls  (H)", toggle_help)
+	_icon_button(buttons, "menu", "Back to the menu", func() -> void: command_requested.emit("end_game", {}))
 	var legend := RichTextLabel.new()
 	legend.bbcode_enabled = true
 	legend.fit_content = true
@@ -103,7 +113,9 @@ func _ready() -> void:
 	legend.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	legend.add_theme_font_size_override("normal_font_size", 12)
 	legend.text = LINK_LEGEND
+	legend.visible = false  # the legend icon shows it
 	column.add_child(legend)
+	_legend = legend
 
 	# The ruler's panel: take a civ in hand, and give it its orders.
 	var ruler_panel := _panel(root)
@@ -127,6 +139,12 @@ func _ready() -> void:
 	_diplomacy.add_theme_font_size_override("normal_font_size", 13)
 	_diplomacy.add_theme_font_size_override("bold_font_size", 13)
 	_diplomacy_panel.add_child(_diplomacy)
+	# The ruler's panel sits just below the bar, however tall it is (the legend and the help
+	# add lines); diplomacy opens beside the bar, clear of the civ cards.
+	var place := func() -> void:
+		ruler_panel.position.y = controls.position.y + controls.size.y + 8.0
+		_diplomacy_panel.position = Vector2(controls.position.x + controls.size.x + 8.0, controls.position.y)
+	controls.resized.connect(place)
 
 	# Event log.
 	var log_panel := _panel(root)
@@ -151,6 +169,21 @@ func _ready() -> void:
 	side.offset_left = -400
 	side.offset_right = -10
 	side.offset_top = 10
+	# The tech tree, opened from the tree button beside the cards (only while spectating).
+	_tech_tree = TechTree.new()
+	_tech_tree.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_tech_tree.offset_left = 20
+	_tech_tree.offset_top = 100  # below the icon bar
+	_tech_tree.offset_right = -20
+	_tech_tree.offset_bottom = -20
+	add_child(_tech_tree)  # beside the overlay's root, so it can come in front of the minimap too
+	_tech_button = _panel(root)
+	_tech_button.anchor_left = 1.0
+	_tech_button.anchor_right = 1.0
+	_tech_button.offset_left = -466
+	_tech_button.offset_right = -410
+	_tech_button.offset_top = 10
+	_icon_button(_tech_button, "tech", "Tech tree: what each civ knows and is learning  (T)", toggle_tech_tree)
 	# The cards scroll when there are more than fit above the minimap.
 	_cards_scroll = ScrollContainer.new()
 	_cards_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -495,6 +528,7 @@ func setup(init: Dictionary) -> void:
 	_log_lines.clear()
 	_log.text = ""
 	_ruler_signature = ""
+	_tech_tree.setup(init)
 
 
 func set_status(status: Dictionary) -> void:
@@ -518,6 +552,12 @@ func update(tick: int, data: Dictionary) -> void:
 		_latest[int(civ["id"])] = civ
 	_refresh_ruler(data.get("ruler"))
 	_refresh_castle()
+	# The tech tree is a spectator's view: a ruler sees only what his own civ knows.
+	var spectating: bool = data.get("ruler") == null
+	_tech_button.visible = spectating
+	if not spectating:
+		_tech_tree.visible = false
+	_tech_tree.update(data)
 	_victory = data.get("victory")
 	_refresh_status()
 	_armies.clear()
@@ -655,10 +695,16 @@ func _refresh_castle() -> void:
 			return
 
 
+func toggle_tech_tree() -> void:
+	if _tech_button.visible:
+		_tech_tree.toggle()
+
+
 func toggle_card(civ_id: int) -> void:
 	if not _cards.has(civ_id):
 		return
 	_expanded = -1 if _expanded == civ_id else civ_id
+	_tech_tree.pick(_expanded)  # an open card shows that civ's path in the tech tree
 	_refresh_cards()
 
 
@@ -764,8 +810,8 @@ func _refresh_status() -> void:
 		return
 	# One tick is one day; speed is shown as days per minute, which is what a spectator feels.
 	var pace := "paused" if _paused else "%s days/min" % String.num(_speed * 60.0, 0)
-	_status.text = "Day %d   [%s]   %s" % [_tick, pace, _map_name if _map_name != "" else "seed %d" % _seed]
-	_pause_button.text = "Resume" if _paused else "Pause"
+	_status.text = "Day %d  ·  %s  ·  %s" % [_tick, pace, _map_name if _map_name != "" else "seed %d" % _seed]
+	_pause_button.icon = _icon("play" if _paused else "pause")
 
 
 ## The two-line card: who they are, how big, and the one thing most worth knowing about them now.
@@ -964,6 +1010,26 @@ func _panel(parent: Control) -> PanelContainer:
 	panel.add_theme_stylebox_override("panel", style)
 	parent.add_child(panel)
 	return panel
+
+
+## A square button with an icon from res://assets/icons (made by tools/make_icons.py) and a tooltip.
+func _icon_button(parent: Control, icon_name: String, tip: String, on_pressed: Callable) -> Button:
+	var button := _button(parent, "", on_pressed)
+	button.icon = _icon(icon_name)
+	button.tooltip_text = tip
+	button.expand_icon = true
+	button.custom_minimum_size = Vector2(38, 34)
+	for state: String in ["normal", "hover", "pressed"]:
+		var style: StyleBoxFlat = button.get_theme_stylebox(state)
+		style.content_margin_left = 7
+		style.content_margin_right = 7
+	return button
+
+
+func _icon(icon_name: String) -> Texture2D:
+	if not _icons.has(icon_name):
+		_icons[icon_name] = load("res://assets/icons/%s.svg" % icon_name)
+	return _icons[icon_name]
 
 
 func _button(parent: Control, text: String, on_pressed: Callable) -> Button:
