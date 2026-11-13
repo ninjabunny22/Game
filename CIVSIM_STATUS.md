@@ -61,8 +61,9 @@ style). Balance and timing have not had their dedicated pass yet.
 ## In progress
 
 The to-do list is finished (victory by points, the strategist playing to it, rallies, the
-timing table, league tuning, the balance batch). Next is the stabilisation review's bug pass;
-its first round fixed two crashes from malformed commands.
+timing table, league tuning, the balance batch), and so is the stabilisation review's bug
+pass: two crashes from malformed commands fixed; three whole games (one per size) checked day
+by day for impossible states found none. Those checks are kept as `tests/test_invariants.py`.
 
 ## Balance batch (2026-11-13)
 
@@ -116,7 +117,7 @@ the old custom .glb files that lay at the root are in `art/legacy_models/` (both
 
 ## Tests
 
-- Python: **517 pass** (about 8½ minutes). No known failures.
+- Python: **518 pass** (about 8½ minutes). No known failures.
 - Viewer asset check: `assets ok`.
 - Timing check (one game per size, utility brain, points victory, new rally rule):
   - Confluence (3 civs): domination on day 3,189 of 6,000, first war day 471, 9 wars, 4 rallies;
@@ -145,6 +146,8 @@ the old custom .glb files that lay at the root are in `art/legacy_models/` (both
 
 ## Immediate next steps
 
-1. The rest of the stabilisation review: the bug pass (two crashes fixed so far), tests.
-2. Re-measure the leans above with fresh seeds (`civsim.balance --first-seed`) before changing
+1. Re-measure the leans above with fresh seeds (`civsim.balance --first-seed`) before changing
    those maps.
+2. Look at the Narrow Sea's new Skerry causeways in the viewer (drawn by the same bridge code
+   as Tidewalk's, not yet seen on screen).
+3. Then ROADMAP "Next development stages".
