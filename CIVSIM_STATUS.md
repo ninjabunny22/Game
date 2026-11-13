@@ -120,6 +120,8 @@ the old custom .glb files that lay at the root are in `art/legacy_models/` (both
 
 - Python: **518 pass** (about 8½ minutes). No known failures.
 - Viewer asset check: `assets ok`.
+- The units picture scene (`godot/tests/units_view.gd`) also checks every frame that no boat's
+  keel is under the water, and prints `boats above water: ok`.
 - Timing check (one game per size, utility brain, points victory, new rally rule):
   - Confluence (3 civs): domination on day 3,189 of 6,000, first war day 471, 9 wars, 4 rallies;
   - Emberwaste (5): score on the last day, first war day 465, 3 wars, 17 alliances, no rallies;

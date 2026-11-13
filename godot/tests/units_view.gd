@@ -17,7 +17,8 @@ extends Node3D
 var map_width := 40
 var map_height := 40
 func tile_position(x: int, y: int) -> Vector3:
-	return Vector3(x, 0, y)
+	# As in the game, a water tile reports the water's surface (the sea below is at 0.01).
+	return Vector3(x, 0.01 if absi(x - 30) <= 3 and absi(y - 20) <= 3 else 0.0, y)
 func height_at(_x: float, _z: float) -> float:
 	return 0.0
 """
@@ -25,6 +26,8 @@ func height_at(_x: float, _z: float) -> float:
 var _camera := Camera3D.new()
 var _frames := 0
 var _armies: Array = []
+var _lowest := 1.0  # the lowest any boat's keel has been
+const SEA_LEVEL := 0.01
 var _out := ""
 var _units: Node3D
 var _models := Models.new()
@@ -110,6 +113,13 @@ func _boatmen(y: int) -> Array:
 
 func _process(_delta: float) -> bool:
 	_frames += 1
+	# Every boat rides on the water, never under it, in every frame.
+	for army: Dictionary in _units._armies.values():
+		if army.get("afloat", false) and army.has("boat"):
+			_lowest = minf(_lowest, (army["boat"] as Node3D).global_position.y)
+	for villager: Dictionary in _units._villagers.values():
+		if villager.has("skiff"):
+			_lowest = minf(_lowest, (villager["skiff"]["node"] as Node3D).global_position.y)
 	if _frames == 2:
 		_camera.look_at_from_position(Vector3(17.5, 3.0, 23.2), Vector3(18.3, 0.3, 20))
 	elif _frames == 25:
@@ -141,6 +151,7 @@ func _process(_delta: float) -> bool:
 		_save("fishing_boats_rowing_a")
 	elif _frames == 124:
 		_save("fishing_boats_rowing_b")
+		print("boats above water: ok" if _lowest >= SEA_LEVEL else "A BOAT SANK BELOW THE WATER: %.4f" % _lowest)
 		return true
 	return false
 

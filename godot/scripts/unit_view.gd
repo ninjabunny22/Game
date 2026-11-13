@@ -39,10 +39,9 @@ const MAX_RANKS := 8  # ... up to this many behind whoever leads it
 const RANK_SPACING := 0.34
 const STRIKES := ["attack", "shoot"]  # what a model's fighting animation may be called
 const BOAT_LENGTH := 0.95
-# A villager's fishing boat: its length in tiles (half an army's ship), where its waterline and
-# rowlocks are (in the model's own units, as tools/blender/make_models.py draws it) and how it rows.
+# A villager's fishing boat: its length in tiles (half an army's ship), where its rowlocks are (in the model's own units, as tools/blender/make_models.py draws it) and how it rows.
 const SKIFF_LENGTH := 0.45
-const SKIFF_WATERLINE := 0.05
+const AFLOAT := 0.005  # a keel never sinks below the water's surface: it rides this far above at its lowest
 const SKIFF_ROWLOCK := Vector3(0.2, 0.225, -0.1)
 const STROKE_RATE := 6.0  # radians a second: about one stroke a second
 const ROWING_ON := 1.5  # seconds the oars keep going after the boat last moved
@@ -112,6 +111,7 @@ func update(armies: Array, villagers: Array) -> void:
 		if entry["afloat"] and not entry.has("boat"):
 			var boat: Node3D = _models.instance("civsim_ship", _models.tinted_material(_civ_colors[civ]), BOAT_LENGTH)
 			if boat != null:
+				boat.position.y = AFLOAT  # on the water from its first frame
 				entry["node"].add_child(boat)
 				entry["boat"] = boat
 		_show_siege_engines(entry, civ, army)
@@ -166,6 +166,7 @@ func update(armies: Array, villagers: Array) -> void:
 			if made != null:
 				_villagers[id]["skiff"] = made
 				_villagers[id]["rowed"] = ROWING_ON
+				_row(_villagers[id], false, 0.0)  # on the water where he is, from its first frame
 		elif not afloat and _villagers[id].has("skiff"):
 			_villagers[id]["skiff"]["node"].queue_free()
 			_villagers[id].erase("skiff")
@@ -260,7 +261,7 @@ func _process(delta: float) -> void:
 					_characters.play(figure, action)
 				if entry.has("boat") and entry.get("afloat", false):  # a ship rides the swell
 					_swell += delta
-					entry["boat"].position.y = 0.03 * sin(_swell * 1.7 + node.position.x)
+					entry["boat"].position.y = AFLOAT + 0.03 * (1.0 + sin(_swell * 1.7 + node.position.x))
 					entry["boat"].rotation.z = 0.05 * sin(_swell * 1.3 + node.position.z)
 			elif entry.has("skiff"):
 				_row(entry, moving, delta)
@@ -276,11 +277,10 @@ func _row(entry: Dictionary, moving: bool, delta: float) -> void:
 	var skiff: Dictionary = entry["skiff"]
 	var node: Node3D = entry["node"]
 	var boat: Node3D = skiff["node"]
-	var measure: float = skiff["measure"]
 	entry["rowed"] = 0.0 if moving else float(entry.get("rowed", ROWING_ON)) + delta
 	var rowing: bool = entry["rowed"] < ROWING_ON
-	var bob := 0.008 * sin(_clock * 1.7 + node.position.x)
-	boat.position = node.position + Vector3(0, bob - SKIFF_WATERLINE * measure, 0)
+	var bob := AFLOAT + 0.008 * (1.0 + sin(_clock * 1.7 + node.position.x))  # never below the surface
+	boat.position = node.position + Vector3(0, bob, 0)
 	boat.rotation = Vector3(0, node.rotation.y, 0.04 * sin(_clock * 1.3 + node.position.z))
 	if rowing:
 		skiff["stroke"] = float(skiff["stroke"]) + STROKE_RATE * delta
@@ -540,7 +540,7 @@ func _make_skiff(civ: int) -> Variant:
 		boat.free()
 		return null
 	add_child(boat)
-	return {"node": boat, "oars": oars, "measure": measure, "stroke": 0.0}
+	return {"node": boat, "oars": oars, "stroke": 0.0}
 
 
 func _soldier_figure(unit_id: String, color: Color) -> Node3D:
