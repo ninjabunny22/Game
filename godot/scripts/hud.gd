@@ -561,8 +561,12 @@ func setup(init: Dictionary) -> void:
 		card.queue_free()
 	_cards.clear()
 	_civ_info.clear()
+	_tints.clear()
 	for civ: Dictionary in init["civs"]:
 		_add_card(civ)
+		_add_tint(str(civ["name"]), str(civ["color"]))
+	var natives: Dictionary = init.get("native_faction", {})
+	_add_tint(str(natives.get("name", "")), str(natives.get("color", "#9a9488")))
 	_expanded = -1
 	_latest.clear()
 	_routine.clear()
@@ -607,6 +611,7 @@ func add_civ(civ: Dictionary) -> void:
 	if _civ_info.has(int(civ["id"])):
 		return
 	_add_card(civ)
+	_add_tint(str(civ["name"]), str(civ["color"]))
 	_make_chips()
 	_chronicle_filter.add_item(str(civ["name"]), int(civ["id"]))
 	_tech_tree.add_civ(civ)
@@ -674,7 +679,7 @@ func update(tick: int, data: Dictionary) -> void:
 	for event: Dictionary in data["events"]:
 		if event["kind"] in HEADLINE_KINDS:
 			var color: String = _civ_info[int(event["civ"])]["color"]
-			var line := "[color=#8a93a0]Day %d[/color]  [color=%s]%s[/color]" % [tick, color, event["text"]]
+			var line := "[color=#8a93a0]Day %d[/color]  %s" % [tick, _tint(str(event["text"]))]
 			_log_lines.append(line)
 			var involved := [int(event["civ"])]
 			if event.has("target"):
@@ -686,14 +691,15 @@ func update(tick: int, data: Dictionary) -> void:
 			if family.get("banner", false) and (ruled == null or int(ruled["civ"]) in involved):
 				_announce_family(tick, event, family, color)
 			if event.has("proclamation"):
-				var words := "        [color=%s][i]“%s”[/i][/color]" % [color, event["proclamation"]]
+				var words := "        [i]“%s”[/i]" % _tint(str(event["proclamation"]))
 				_log_lines.append(words)
 				line += "\n" + words
 				# A banner while watching, and when you rule, for a war on or by your civ.
 				var mine := ruled == null or int(ruled["civ"]) in [int(event["civ"]), int(event.get("target", -1))]
 				if mine:
-					_banners.proclaim(tick, str(_civ_info[int(event["civ"])]["name"]), Color.html(color),
-						str(_civ_info[int(event["target"])]["name"]), str(event.get("war_name", "")), str(event["proclamation"]))
+					_banners.proclaim(tick, _tint(str(_civ_info[int(event["civ"])]["name"])),
+						_tint(str(_civ_info[int(event["target"])]["name"])), Color.html(color),
+						_tint(str(event.get("war_name", ""))), _tint(str(event["proclamation"])))
 			_chronicle_entries.append([involved, line])
 			_show_on_ticker(line)
 		elif ROUTINE_LABELS.has(event["kind"]):
@@ -927,6 +933,7 @@ func _refresh_chronicle() -> void:
 
 const DRAWER_TABS := ["Overview", "Family", "Army", "Diplomacy", "Tech"]
 var _families := {}  # civ id -> its ruling house (civ/family.py), as last sent
+var _tints: Array = []  # [RegEx, BBCode] per civ (and the native faction): its name in its colour
 
 
 func _build_drawer(root: Control) -> void:
@@ -1186,6 +1193,23 @@ func _portrait_table(members: Array, crest: String, dead: bool) -> String:
 	return text + "[/table]\n"
 
 
+## Each civ's name (and the native faction's) in its own colour, a little lightened so it reads
+## on the dark panels; the rest of the text keeps the standard colour. Several names in one
+## line each get their own.
+func _add_tint(civ_name: String, color: String) -> void:
+	if civ_name == "":
+		return
+	var pattern := RegEx.new()
+	pattern.compile("\\b" + civ_name + "\\b")
+	_tints.append([pattern, "[color=#%s]%s[/color]" % [Color.html(color).lightened(0.3).to_html(false), civ_name]])
+
+
+func _tint(text: String) -> String:
+	for tint: Array in _tints:
+		text = (tint[0] as RegEx).sub(text, tint[1], true)
+	return text
+
+
 ## A death, a murder, a succession or a marriage between ruling houses: a banner like a war's.
 func _announce_family(tick: int, event: Dictionary, family: Dictionary, color: String) -> void:
 	var kind := str(family["type"])
@@ -1200,8 +1224,9 @@ func _announce_family(tick: int, event: Dictionary, family: Dictionary, color: S
 	var portrait := str(family.get("portrait", ""))
 	if portrait == "":
 		portrait = str(family.get("crest", ""))
-	_banners.announce(tick, "[b][color=%s]%s[/color][/b]  %s" % [color, _civ_info[int(event["civ"])]["name"], title],
-		Color.html(color), str(family.get("line", "")), str(event["text"]), icon, portrait, bool(family.get("dead", false)))
+	_banners.announce(tick, "[b]%s[/b]  %s" % [_tint(str(_civ_info[int(event["civ"])]["name"])), title],
+		Color.html(color), _tint(str(family.get("line", ""))), _tint(str(event["text"])), icon, portrait,
+		bool(family.get("dead", false)))
 
 
 func toggle_card(civ_id: int) -> void:

@@ -122,6 +122,10 @@ Plan (agreed 2026-11-13): war on the AI's own judgement with a home guard; fight
   `art/portraits_royalty/`; the empty TODO.md stub, a dead HUD tech button, the unused
   `toggle_region_borders` and an unused server field are gone. No change to play or visuals.
 
+- **Names in colour** (2026-11-13): in the ticker, chronicle, ruler's log and every banner,
+  each civ's name (and the native faction's) shows in its own colour (`hud._tint`, from the
+  colours the sim sends), the rest of the text in the standard colour.
+
 ## Balance batch (2026-11-13)
 
 5 games per civ for every map and civ count (`civsim.balance`, 90% intervals). A slot is

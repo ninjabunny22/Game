@@ -27,8 +27,9 @@ func _process(_delta: float) -> void:
 
 
 ## A declaration: who declares, on whom, the war's name and the proclamation.
-func proclaim(day: int, declarer: String, color: Color, target: String, war_name: String, line: String) -> void:
-	announce(day, "[b][color=%s]%s[/color][/b] declares war on [b]%s[/b]" % [color.to_html(false), declarer, target],
+## The names come already in their civs' colours (hud.gd), as BBCode.
+func proclaim(day: int, declarer: String, target: String, color: Color, war_name: String, line: String) -> void:
+	announce(day, "[b]%s[/b] declares war on [b]%s[/b]" % [declarer, target],
 		color, line, "%s begins" % war_name, "res://assets/icons/battle.svg")
 
 
@@ -86,21 +87,11 @@ func announce(day: int, title_text: String, color: Color, line: String, footer: 
 		if grey:
 			face.modulate = Color(0.62, 0.62, 0.62)
 		body.add_child(face)
-	var words := Label.new()
-	words.text = "“%s”" % line
-	words.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	words.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	words.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	var words := _rich("[center]“%s”[/center]" % line, 26, Color(0.98, 0.93, 0.8))
 	words.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	words.add_theme_font_size_override("font_size", 26)
-	words.add_theme_color_override("font_color", Color(0.98, 0.93, 0.8))
+	words.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	body.add_child(words)
-	var name_label := Label.new()
-	name_label.text = "%s  ·  day %d" % [footer, day]
-	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART  # a long footer wraps, the banner keeps its width
-	name_label.add_theme_font_size_override("font_size", 14)
-	name_label.add_theme_color_override("font_color", Color(0.75, 0.7, 0.62))
+	var name_label := _rich("[center]%s  ·  day %d[/center]" % [footer, day], 14, Color(0.75, 0.7, 0.62))
 	column.add_child(name_label)
 	add_child(panel)
 	move_child(panel, 0)  # the newest on top
@@ -108,6 +99,21 @@ func announce(day: int, title_text: String, color: Color, line: String, footer: 
 	var entry := [panel, day + DAYS]
 	_banners.append(entry)
 	close.pressed.connect(func() -> void: _drop(entry))
+
+
+## Text with BBCode (names in their civs' colours), wrapped and as tall as it needs.
+func _rich(text: String, font_size: int, color: Color) -> RichTextLabel:
+	var label := RichTextLabel.new()
+	label.bbcode_enabled = true
+	label.fit_content = true
+	label.scroll_active = false
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.add_theme_font_size_override("normal_font_size", font_size)
+	label.add_theme_font_size_override("italics_font_size", font_size)
+	label.add_theme_font_size_override("bold_font_size", font_size)
+	label.add_theme_color_override("default_color", color)
+	label.text = text
+	return label
 
 
 ## Called every day: banners whose time is up go.
