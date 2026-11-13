@@ -52,8 +52,8 @@
     {
       "id": "the_wheel", "name": "The Wheel", "era": 1, "prereqs": ["animal_husbandry"],
       "cost": {"science": 100, "wood": 60},
-      "effects": {"yield_mult": {"wood": 0.15}, "expand_cost": -0.2},
-      "description": "+15% wood, -20% territory expansion cost"
+      "effects": {"yield_mult": {"wood": 0.15}},
+      "description": "+15% wood"
     },
     {
       "id": "water_purification", "name": "Water Purification", "era": 1, "prereqs": ["pottery"],
@@ -65,7 +65,7 @@
       "id": "bridge_building", "name": "Bridge Building", "era": 1, "prereqs": ["masonry"],
       "cost": {"science": 95, "wood": 50, "stone": 30},
       "effects": {"bridges": 1},
-      "description": "Rivers no longer slow expansion or attacks"
+      "description": "Rivers no longer slow marches or attacks"
     },
     {
       "id": "boatbuilding", "name": "Boatbuilding", "era": 1, "prereqs": ["the_wheel"],
@@ -226,8 +226,8 @@
     {
       "id": "railways", "name": "Railways", "era": 6, "prereqs": ["steam_power"],
       "cost": {"science": 20500, "ore": 500, "wood": 400},
-      "effects": {"expand_cost": -0.3, "home_speed": 1, "reinforce": 1.0},
-      "description": "-30% territory expansion cost, armies move one tile faster on home land, reinforcements arrive twice as fast"
+      "effects": {"home_speed": 1, "reinforce": 1.0},
+      "description": "Armies move one tile faster on home land, reinforcements arrive twice as fast"
     },
     {
       "id": "rifling", "name": "Rifling", "era": 6, "prereqs": ["gunpowder", "steam_power"],

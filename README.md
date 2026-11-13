@@ -76,7 +76,7 @@ The overlay is built for watching:
 - **Sieges.** A civ's capital does not fall the moment an army breaks in: the army
   has to hold it for 100 days. The map shows who holds it and how far along they are,
   and the defender's armies drop everything to drive them out.
-- **Peace on terms.** A side well ahead in a war (five tiles or more) is paid a quarter of
+- **Peace on terms.** A side ahead in a war (at least one more castle taken) is paid a quarter of
   the loser's stores when it ends, and a winner whose advance has stalled accepts an offer
   of tribute rather than fight on.
 - **Allies and betrayal.** Civs join an ally's war when together they outmatch the enemy,
@@ -107,12 +107,12 @@ The overlay is built for watching:
 - **No peace lasts for ever.** The longer a civ has gone without a war the more it wants one,
   the warlike soonest, until even an equal will do; and a civ whose army is away or has just
   been beaten is attacked sooner. A game nobody has fought in does not end on score.
-- **Ceding land.** A side at least twenty tiles behind when peace is made gives up a region
+- **Ceding land.** A side at least two castles behind when peace is made gives up a region
   (never its home) instead of paying tribute.
 - **More war, sooner.** Civs reconsider every 10 days. Restlessness sets in after about 250
   days of peace for the most warlike and 500 for the most peaceable; truces last 50 days
   (150 after a capital falls). Neighbours build a grudge along a shared border and over
-  native land both are settling. A civ much bigger than a neighbour attacks it whatever
+  native land both have armies out to take. A civ much bigger than a neighbour attacks it whatever
   its temper, and the two strongest civs resent each other, ally less and are quicker to
   betray one another. An alliance lasts only while both sides still choose it, and is
   let go after 100 days in which neither ally is at war.
@@ -268,12 +268,18 @@ model the viewer uses and checks the animations, weapons and colours
   hold stays at the first stone walls. They stand on 5 x 5 tiles that the simulation keeps free
   of buildings: 4.4 tiles across for a civ's own capital, 3.6 for its others, with a paved yard. The ground under each is levelled so it never
   sinks into a hillside, then eases back into the land; the shore and water are left as they
-  are. Inside the walls stand the castle's hospital (a tent, and one more for each hospital
-  tech) and the generals in reserve. Soldiers without a general (the garrison) are not drawn:
-  click a castle to see who holds it, its garrison, generals, hospital and any enemy hold.
-  When you rule a civ, another civ's garrison shows only as "about N" (within 30 of the
-  truth, steady from day to day) unless one of your armies has besieged or fought at that
-  castle in the last 30 days. An army waiting in its own capital stands outside the gate.
+  are. Inside the walls stands the castle's hospital (a tent, and one more for each hospital
+  tech). Nobody inside a castle is drawn: villagers, riders, generals and armies standing in
+  their own (or an ally's) castle disappear behind its walls. **Click a castle** to see what
+  is inside, in a panel beside it (closed by its X or a click anywhere else): who holds it,
+  its garrison, how many villagers and soldiers are inside, its generals, its hospital and any
+  enemy hold. When you rule a civ, another civ's garrison shows only as "about N" (within 30
+  of the truth, steady from day to day) unless one of your armies has besieged or fought at
+  that castle in the last 30 days.
+- **Minimap** (bottom right): every region in its holder's colour (natives grey), capitals as
+  white dots, and each army with a general as a small square in its civ's colour, moving as
+  it moves; an army inside a castle is not shown. The outline is what the camera sees; click
+  anywhere on it to look there.
 - **Gold mines** are fixed sites drawn on each map, mostly in the regions worth fighting for. Each pays 1 gold a day to whoever holds its region, once that civ knows
   Mining. Nothing can be built on a mine's tile. While an enemy holds a capital, rubble
   and scaffolding lie against its walls.
@@ -394,23 +400,25 @@ region. Every other region belongs to **the Hinterfolk**, a native faction with 
 strategist and no diplomacy. Each neutral capital has a garrison (6
 soldier-equivalents at the start, growing to 60) that only fights armies sent
 against it. A **stronghold** (marked on the map) keeps 1.5 to 3 times that garrison and
-never opens its gates peacefully; once taken it is an ordinary region. A civ takes a neutral region in two ways:
+is an ordinary region once taken.
 
-- **Settling it.** Border expansion claims native land tile by tile, but never
-  a capital. Every 25 ticks, once a civ holds over 30% of a neutral region,
-  each native tile beside its land goes over to it with probability
-  0.5 x (share - 0.3); over 60%, the capital itself joins with probability
-  (share - 0.6), bringing the rest of the region with it.
-- **Taking the capital.** A civ at peace, able to field about twice the
-  garrison's defence, raises an expedition and storms the neutral capital worth most to
-  it among those it can get at: touching or partly settled by it, or across water once it
-  has ships and a harbour. This is rule-based: no declaration and no diplomacy points.
+**Land changes hands only as whole regions.** Nobody settles land tile by tile: a civ holds
+every tile of the regions it holds, and nothing else. It gains a region in one of two ways,
+and gets everything in it at once (its mines, deposits, buildings and villagers):
+- **Storming a native capital.** A civ able to field about twice the garrison's defence from
+  the soldiers its castles can spare raises an expedition. It goes for the **nearest** native
+  region first: those touching its land (or a short sail away, with ships and a harbour), then
+  those one region further, and so on. Among the nearest, the one worth most to it wins; while
+  it means to reach a rival it cannot yet get at, the one lying toward that rival. A war
+  elsewhere does not stop an expedition; an enemy near one of the civ's own castles calls it
+  home. This is rule-based: no declaration and no diplomacy points.
+- **Taking an enemy castle** in a war (see Taking ground), or by treaty when peace is made.
 
 **What land is worth.** One valuation (`strategy/geography.py`) prices every region for every
 civ: what it would yield, priced by what the civ lacks, plus mines and strategic weight
 (passes, necks, crossroads, prizes, routes through it), discounted by distance and by water
 it cannot yet cross, less the cost of taking it and of holding it against its neighbours.
-Expansion, campaigns against the natives, which enemy capital an army makes for, the
+Campaigns against the natives, which enemy capital an army makes for, the
 strategist's wars ("which we want for its two gold mines") and where a harbour is built all
 use it.
 
@@ -427,7 +435,7 @@ see `economy/modifiers.py`).
 
 **AI.** Utility scoring: `score = personality weight x current need`, with
 diminishing returns per copy. Each tick a civ picks a research target, picks a
-project (a building or a territory expansion) and either starts it or saves for
+project (a building) and either starts it or saves for
 it, then splits workers by what it is saving for. Each civ gets one archetype
 from `personalities.json` plus seeded jitter. Tuning knobs are the constants at
 the top of `civ/ai.py` and the JSON data files.
@@ -444,8 +452,8 @@ each owned coast tile 0.15. The cap is 250 plus 10 per source, plus Cisterns.
 Civs start with full water. People drink 0.03 each per tick, and farms, mines,
 quarries, workshops, barracks and markets use it as upkeep. A civ that runs dry
 loses up to 0.4% of its population per tick, in proportion to the shortfall,
-and its thirsty buildings stop. A civ short of water steers its expansion
-toward rivers, lakes and coast.
+and its thirsty buildings stop. A civ short of water values regions with rivers, lakes and
+coast more when choosing which to take.
 
 Population growth eases off before that point: it is unhindered while a
 quarter of the supply is spare, slows in proportion below that, and stops when
@@ -463,26 +471,24 @@ strategists follow this directly, and whatever one answers is corrected to the
 first two rules (`strategy/checkin.py`).
 
 **Crossing water and mountains.** One rule (`WorldMap.walkable` and `crossing_cost`)
-governs how armies and villagers move, war reach, and how settling spreads. Armies and
+governs how armies and villagers move, and war reach. Armies and
 villagers step eight ways, a diagonal step costing about 1.41 times a straight one and never
 cutting the corner between two tiles that cannot be entered, so every direction on the map is
 equally far:
 - **No one walks on water,** deep or shallow, except over a **bridge**. Water is crossed by
-  boat only (armies from near a harbour; villagers with boats from any shore). Shallows can
-  still be claimed, as fishing grounds, but settling steps from them onto land only by boat.
+  boat only (armies from near a harbour; villagers with boats from any shore). Shallows
+  belong to the region they lie in, as fishing grounds.
 - **Mountains are walls:** armies and villagers go round them or through a **pass**, which
-  is as slow as climbing (2.5 times a plain). Land can still be settled on a mountain, but not
-  from there on to the land beyond. Hills are walked. Every map has passes wherever its
+  is as slow as climbing (2.5 times a plain). Hills are walked. Every map has passes wherever its
   mountains would otherwise part the land, drawn ones and carved ones (`map/passes.py`).
-- **High peaks** cannot be crossed, claimed or built on at all.
-- **Rivers:** without Bridge Building a river tile costs three times as much to claim, to
-  capture or to cross; with it, nothing extra. An **old bridge** drawn over a river is
+- **High peaks** cannot be crossed or built on at all.
+- **Rivers:** without Bridge Building a river tile costs three times as much to cross, and a
+  castle on one three times as much to break into; with it, nothing extra. An **old bridge** drawn over a river is
   crossed at the plain cost by anyone.
 - A villager with no way to a place stays where it is, and the place is left alone for 60
   days (a building site there waits without holding up the others).
-Without Boatbuilding, lakes and deep sea block expansion and attack entirely;
-with it a civ can claim land across up to 6 tiles of open water. Armies, and so
-war, need more than boats: see **Ships** below. Boats are transport only.
+Without Boatbuilding, lakes and deep sea block attack entirely. Armies, and so
+war across water, need more than boats: see **Ships** below. Boats are transport only.
 
 **Demolition.** A civ tears down its own buildings in two cases: one whose
 upkeep has gone unpaid for 60 ticks, and, when it has no free slot left, its
@@ -552,8 +558,8 @@ them.
   offer; a further betrayal while distrusted adds another 50. Ending an
   alliance without attacking carries no penalty.
 - **War.** `aggression` declares war (100 diplomacy points) once the two territories are
-  within 4 tiles (further across water, by ship from a harbour); until then the aggressor's
-  border expands toward the target. Troop commitment mobilises up to 35% of the
+  within 4 tiles (further across water, by ship from a harbour); until then the aggressor
+  takes the native regions that lie toward the target first. Troop commitment mobilises up to 35% of the
   population as soldiers. Wars end when a civ's own capital falls, when
   neither side is aggressive (after 50 ticks), or after 400 ticks.
 
@@ -605,13 +611,11 @@ them, each under a commander.
   prisoner until his civ ransoms him (20 gold plus 20 per level, paid to the
   captor, and only while it keeps 20 gold back) or the two civs make peace.
   A beaten army falls back on the nearest capital its civ holds.
-- **Taking ground.** An army cannot step onto enemy land until it has captured
-  the tile in its way, by the phase 3 capture rule against the local militia.
-  Up to two cheap, undefended tiles beside a captured one fall with it.
-  Buildings, stores and villagers on captured tiles change hands. An
-  aggressor's army makes for the nearest capital its enemy holds; a capital
-  costs three times its terrain to capture, and when it falls the whole region
-  goes with it (land other civs hold there stays theirs). A civ that loses its
+- **Taking ground.** Open enemy land changes hands only with its castle. An aggressor's
+  army marches through it to the nearest capital its enemy holds and lays siege there, by
+  the phase 3 capture rule against the local militia and the garrison; a capital costs
+  three times its terrain to break into, the army must then hold it for 100 days, and when
+  it falls the whole region goes with it: every tile, building, store and villager. A civ that loses its
   own capital pays half its stock as tribute, moves its court to another
   capital it holds, and gets a 300-tick truce. A civ with no capital left is
   destroyed and what remains of it goes to its conqueror.

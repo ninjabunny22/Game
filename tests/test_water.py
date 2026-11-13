@@ -9,7 +9,7 @@ from civsim.economy import compute_modifiers, produce, recompute_capacity
 from civsim.economy.rules import (
     BASE_STORAGE, LAKE_WATER, MIN_POPULATION, RESOURCES, RIVER_WATER, WATER_PER_POP, WELL_WATER,
 )
-from civsim.map import BIOME_INFO, BOAT_RANGE, Biome, find_path, generate_map, step_cost
+from civsim.map import BIOME_INFO, Biome, find_path, generate_map, step_cost
 from civsim.map.water import MAX_LAKE_TILES, MAX_RIVER_SIZE
 from civsim.simulation import Simulation
 from civsim.strategy import RuleBrain
@@ -219,24 +219,6 @@ def test_a_watered_population_does_not_shrink(sim):
     assert not civ.thirsty and civ.population >= 25
 
 
-def test_a_thirsty_civ_expands_toward_water(sim):
-    civ = sim.civs[0]
-    world = sim.world
-    mods = sim.modifiers[civ.id]
-    civ.water_access = {"river": 0, "lake": 0, "coast": 0}
-    civ.upkeep["water"] = 5.0  # using far more than the well gives
-    needs = sim.ai.assess_needs(civ, compute_modifiers(civ, sim.building_defs, sim.tech_tree))
-    assert needs["wanted"][0] == "water"
-
-    civ.resources.update(food=250, wood=250)
-    before = civ.water_access["river"] + civ.water_access["lake"]
-    for _ in range(12):
-        civ.upkeep["water"] = 5.0
-        needs = sim.ai.assess_needs(civ, mods)
-        border = sim.ai._border(civ, mods)
-        sim.ai._expand(civ, mods, border, needs)
-    assert civ.water_access["river"] + civ.water_access["lake"] > before
-    assert all(world.owner[t] == civ.id for t in civ.territory)
 
 
 def test_water_can_be_traded(sim):
@@ -278,49 +260,8 @@ def test_crossing_rule(sim):
         assert world.crossing_cost(water, bridges=True, boats=True) == 1
 
 
-def test_rivers_slow_expansion_until_bridges(sim):
-    civ = sim.civs[0]
-    world = sim.world
-    mods = sim.modifiers[civ.id]
-    river_tiles = [t for t in sorted(world.rivers) if world.owner[t] < 0 and t not in world.capital_tiles][:6]
-    needs = sim.ai.assess_needs(civ, mods)
-
-    def claimed_from(border, bridges):
-        mods.bridges = bridges
-        before = set(civ.territory)
-        sim.ai._expand(civ, mods, list(border), needs)
-        new = civ.territory - before
-        for tile in new:  # undo
-            civ.territory.discard(tile)
-            world.owner[tile] = -1
-        return len(new)
-
-    free = [t for t in river_tiles if world.owner[t] < 0]
-    assert claimed_from(free, bridges=0) == 1, "fording one river tile uses most of an expansion"
-    assert claimed_from(free, bridges=1) == 4
 
 
-def test_open_water_blocks_expansion_until_boats(sim):
-    civ = sim.civs[0]
-    world = sim.world
-    mods = sim.modifiers[civ.id]
-    without = set(sim.ai._border(civ, mods))
-    assert all(not world.is_open_water(t) for t in without), "lakes and deep sea are never claimed"
-
-    # Put the civ on a shore and look across.
-    shore = next(t for t in range(len(world.biomes)) if world.owner[t] < 0 and not world.is_water(t)
-                 and any(world.is_open_water(n) for n in world.neighbors(t)))
-    world.claim(shore, civ.id)
-    civ.territory.add(shore)
-    near = set(sim.ai._border(civ, mods))
-    mods.boats = 1
-    far = set(sim.ai._border(civ, mods))
-    assert near <= far and len(far) > len(near), "boats reach land across the water"
-    for tile in far - near:
-        assert not world.is_open_water(tile) and world.owner[tile] < 0
-    x0, y0 = world.xy(shore)
-    assert any(abs(world.xy(t)[0] - x0) + abs(world.xy(t)[1] - y0) > 1 for t in far - near)
-    assert BOAT_RANGE == 6
 
 
 def test_war_across_open_water_needs_boats(sim):

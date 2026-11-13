@@ -154,16 +154,15 @@ def test_a_war_between_civs_that_were_never_allied_is_not_betrayal(sim):
 
 
 def siege(sim, attacker, defender, ticks) -> float:
-    """Capture progress a small army makes against the tile in front of it, over `ticks`."""
+    """Siege progress a small army makes against the defender's second castle, over `ticks`."""
     army = next(a for a in attacker.armies if a.role == "field" and a.target_civ == defender.id)
-    target = next(t for t in sorted(defender.territory) if t != defender.capital.tile
-                  and t not in set(sim.world.neighbors(defender.capital.tile, diagonal=True)))
+    target = next(s.tile for s in defender.settlements if s.tile != defender.capital.tile)
     army.units = {"spearman": 8.0}
     attacker.soldiers = 8.0 + attacker.garrison.size
     attacker.unpaid = attacker.unsupplied = False
     defender.population = 300  # its militia outweighs eight spearmen, if it has time to muster
     army.siege_progress = 0.0
-    taken = sim.diplomacy.relation(attacker.id, defender.id).war.tiles_taken[attacker.id]
+    taken = sim.diplomacy.relation(attacker.id, defender.id).war.regions_taken[attacker.id]
     for _ in range(ticks):
         sim.tick += 1
         army.state, army.path = "marching", [target]
@@ -171,7 +170,7 @@ def siege(sim, attacker, defender, ticks) -> float:
             break
         sim.military._besiege(attacker, army, sim.tick, [])
     war = sim.diplomacy.relation(attacker.id, defender.id).war
-    return army.siege_progress + ((war.tiles_taken[attacker.id] - taken) if war else 1.0)
+    return army.siege_progress + ((war.regions_taken[attacker.id] - taken) if war else 1.0)
 
 
 def test_the_betrayed_civ_is_off_guard_only_for_the_opening(sim):

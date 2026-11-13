@@ -1,5 +1,6 @@
 """A whole stretch of a game with the state checked every day: whatever the civs do, the
-books must balance and nobody may stand where nothing can."""
+books must balance, land changes hands only as whole regions, and nobody may stand where
+nothing can."""
 
 import json
 import math
@@ -29,9 +30,12 @@ def _breaches(sim) -> list[str]:
             region = world.regions[world.region_of[castle.tile]]
             if region.owner != civ.id or region.capital != castle.tile or castle.tile not in civ.territory:
                 found.append(f"{civ.name}: {castle.name} is not the capital of a region it owns")
+        held = {r.id for r in world.regions if r.owner == civ.id}
         for tile in civ.territory:
             if owners.setdefault(tile, civ.id) != civ.id:
                 found.append(f"tile {tile} is owned twice")
+            if world.region_of[tile] not in held:
+                found.append(f"{civ.name} holds a tile outside its regions: land changes hands only as whole regions")
         for army in civ.armies:
             if any(n < -1e-6 or not math.isfinite(n) for n in army.units.values()):
                 found.append(f"{civ.name}: an army with {army.units}")

@@ -85,7 +85,7 @@ def test_an_old_bridge_crosses_a_river_at_the_plain_cost():
     assert world.crossing_cost(river, bridges=False, boats=False) == 1.0
 
 
-def test_a_stronghold_keeps_a_bigger_garrison_and_never_opens_its_gates():
+def test_a_stronghold_keeps_a_bigger_garrison():
     world = _strip()
     plain = Region(0, "Plain", "Plainsby", world.idx(1, 2), [world.idx(x, y) for x in range(4) for y in range(5)])
     fort = Region(1, "Fort", "Fortby", world.idx(7, 2), [world.idx(x, y) for x in range(4, 9) for y in range(5)],
@@ -96,24 +96,6 @@ def test_a_stronghold_keeps_a_bigger_garrison_and_never_opens_its_gates():
     assert fort.garrison == 2 * plain.garrison == 2 * rules.NATIVE_GARRISON
     assert natives.garrison_size(1000, fort) == pytest.approx(2 * natives.garrison_size(1000))
 
-    class Civ:
-        id, territory = 0, set()
-
-    captured = []
-
-    class Diplomacy:
-        def capture_region(self, *args, **kwargs):
-            captured.append(args[1])
-
-    natives.civs, natives.diplomacy, natives.rng = {0: Civ()}, Diplomacy(), random.Random(0)
-    for region in (plain, fort):
-        for tile in region.tiles:
-            if tile != region.capital:
-                world.owner[tile] = 0  # all but the capital settled
-    for tick in range(0, 2500, rules.DEFECTION_INTERVAL):
-        natives._defections(plain, tick, [])
-        natives._defections(fort, tick, [])
-    assert plain in captured and fort not in captured
 
 
 @pytest.mark.parametrize("map_id", DESIGNS)

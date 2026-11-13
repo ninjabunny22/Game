@@ -3,7 +3,7 @@
 Buildings and techs share one effects vocabulary (see data/*.json):
   yield_mult {res|"all": frac}, income {res: per tick}, housing, science,
   storage (cap of every resource), store {res: cap of that resource only},
-  science_mult, build_speed, growth, expand_cost, build_slots, demolition_refund,
+  science_mult, build_speed, growth, build_slots, demolition_refund,
   military (army strength), defense (strength when holding own land),
   purification (water per owned coast tile), water_mult, water_use, bridges, boats,
   boat_range, commander_xp, commander_start, officer_appointment, capture_speed, casualties, mobilization,
@@ -36,7 +36,6 @@ class Modifiers:
     science_mult: float = 0.0
     build_speed: float = 0.0
     growth: float = 0.0
-    expand_cost: float = 0.0
     build_slots: int = 1
     military: float = 0.0
     defense: float = 0.0

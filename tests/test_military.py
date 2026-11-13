@@ -171,21 +171,23 @@ def test_war_raises_a_field_army_with_a_commander_per_enemy(sim):
     assert defender_army.commander is not None and defender_army.tile == b.capital.tile
 
 
-def test_armies_march_tile_by_tile_and_take_the_ground_in_their_way(sim):
+def test_armies_march_tile_by_tile_and_take_the_castle_in_their_way(sim):
     a, b = sim.civs[0], sim.civs[1]
     army = go_to_war(sim, a, b, soldiers=(150, 0))
     land = len(b.territory)
+    theirs = {r.id for r in sim.world.regions if r.owner == b.id}
     positions = [army.tile]
-    texts = []
     for _ in range(1500):
-        texts += update(sim)
+        update(sim)
         a.soldiers = 150
         a.unpaid = a.unsupplied = False
         positions.append(army.tile)
-        if any("falls with it" in t for t in texts):
+        if len(b.territory) < land:
             break
-    assert any("falls with it" in t for t in texts), "it fought its way to a capital"
-    assert len(b.territory) < land
+    fallen = [r for r in sim.world.regions if r.id in theirs and r.owner == a.id]
+    assert fallen, "it fought its way to a castle and took it"
+    assert all(sim.world.owner[t] == a.id for t in fallen[0].tiles), "and the whole region with it"
+    assert len(b.territory) == land - len(fallen[0].tiles), "nothing else changed hands on the way"
     moves = [(p, q) for p, q in zip(positions, positions[1:]) if p != q]
     assert len(moves) > 3, "the army moved"
     for p, q in moves:

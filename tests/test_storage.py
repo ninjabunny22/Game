@@ -3,7 +3,7 @@ import pytest
 from civsim.civ import Building
 from civsim.config import SimConfig
 from civsim.diplomacy import Intent, Stance
-from civsim.economy import compute_modifiers, produce
+from civsim.economy import compute_modifiers, may_stand, produce
 from civsim.economy.rules import BASE_STORAGE, RESOURCES
 from civsim.map import BIOME_INFO
 from civsim.simulation import Simulation
@@ -100,8 +100,9 @@ def test_capturing_a_storage_building_transfers_its_share_of_the_stock(sim):
     world.claim(edge, a.id)
     a.territory.add(edge)
 
-    # A granary on every free tile the defender has: wherever the attacker breaks in, it takes one.
-    tiles = [t for t in free_tiles(sim, b) if t not in set(world.neighbors(b.capital.tile, diagonal=True))]
+    # A granary on every free tile the defender has: whichever region falls, some change hands.
+    tiles = [t for t in free_tiles(sim, b) if t not in set(world.neighbors(b.capital.tile, diagonal=True))
+             and may_stand(world, "granary", t)]
     b.buildings += [Building("granary", t, 1.0, True) for t in tiles]
     sim.modifiers[b.id] = compute_modifiers(b, sim.building_defs, sim.tech_tree)
     cap = sim.modifiers[b.id].storage["food"]
@@ -112,23 +113,22 @@ def test_capturing_a_storage_building_transfers_its_share_of_the_stock(sim):
     a.resources.update(gold=100, food=BASE_STORAGE)  # the attacker's own granary is already full
     sim.diplomacy.set_intents(a.id, {b.id: Intent(Stance.AGGRESSION, commitment=1.0)})
 
-    texts = []
-    for tick in range(1, 400):
+    held = {r.id for r in world.regions if r.owner == b.id}
+    for tick in range(1, 600):
         events: list = []
         sim.tick = tick
         sim.diplomacy.update(tick, events)
-        texts += [e["text"] for e in events]
         a.soldiers = 140
         a.unpaid = a.unsupplied = False
         army = next((x for x in a.armies if x.role == "field"), None)
         if army and tick == 15:
             army.tile, army.path = edge, []  # the army has marched to the border
-        if any("captures a Granary" in t for t in texts):
+        if any(r.owner == a.id for r in world.regions if r.id in held):
             break
-    assert any("captures a Granary" in t for t in texts)
-    # A breach can take the granaries on either side of it too, so count what was captured.
+    taken = next(r for r in world.regions if r.id in held and r.owner == a.id)
+    # Every granary in the region that fell changes hands with it, and its share of the stock.
     captured = len([bld for bld in a.buildings if bld.type == "granary"])
-    assert captured >= 1, "the granary itself changes hands"
+    assert captured == len([t for t in tiles if world.region_of[t] == taken.id]) >= 1
     share = 300 * captured  # the stores were full, so each granary held its full 300
     assert b.resources["food"] == pytest.approx(cap - share)
     assert a.resources["food"] == pytest.approx(BASE_STORAGE + share), "all of it arrives"

@@ -5,6 +5,7 @@ import pytest
 
 from civsim.config import SimConfig
 from civsim.diplomacy import Intent, Stance, rules
+from civsim.military import Army
 from civsim.simulation import Simulation
 from civsim.strategy import CHECKIN_INTERVAL
 
@@ -62,12 +63,8 @@ def test_two_civs_after_the_same_native_land_fall_out_over_it(sim, monkeypatch):
     d, world = sim.diplomacy, sim.world
     a, b = sim.civs[0], sim.civs[1]
     region = next(r for r in world.regions if r.neutral)
-    land = [t for t in region.tiles if t != region.capital]
-    half = len(land) // 2
-    for civ, tiles in ((a, land[:half]), (b, land[half:])):
-        for tile in tiles:
-            world.owner[tile] = civ.id
-            civ.territory.add(tile)
+    for civ in (a, b):  # both have an army out to take it
+        civ.armies.append(Army(900 + civ.id, civ.id, civ.capital.tile, "field", target_region=region.id))
     for pair in d.standing:
         d.standing[pair] = 0.0
     d._friction()

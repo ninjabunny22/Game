@@ -171,7 +171,7 @@ class Diplomacy:
 
     def _friction(self) -> None:
         """Neighbours at peace come to resent each other: over the border they share, and over
-        native land both are settling. Allies do not."""
+        native land both have armies out to take. Allies do not."""
         top = self.rivals()
         if top is not None:
             # Whatever else is between them, allies or not: there is room for only one at the top.
@@ -191,7 +191,7 @@ class Diplomacy:
         for region in self.world.regions:
             if not region.neutral:
                 continue
-            after = sorted(c for c, share in self.natives.shares(region).items() if share >= rules.RIVAL_SHARE)
+            after = self.natives.after(region)
             for i, a in enumerate(after):
                 for b in after[i + 1:]:
                     if self.relation(a, b).status == "peace":
@@ -400,7 +400,7 @@ class Diplomacy:
         self.deals = [d for d in self.deals if {d.a, d.b} != {a, b}]
         self._set_status(relation, "war", tick)
         self.wars_started += 1
-        relation.war = War(a, b, tick, aggressors=aggressors, progress={a: 0.0, b: 0.0}, tiles_taken={a: 0, b: 0},
+        relation.war = War(a, b, tick, aggressors=aggressors, progress={a: 0.0, b: 0.0}, regions_taken={a: 0, b: 0},
                            casualties={a: 0.0, b: 0.0}, declarer=declarer.id, guardian=guardian, defending=defending,
                            name=name, last_gain=tick)
 
@@ -540,12 +540,12 @@ class Diplomacy:
         convert_villagers(tile, loser, captor)
 
     def _capture_tile(self, relation: Relation, attacker, defender, tile: int, tick: int, events: list) -> None:
-        """An army takes one tile in a war. Taking a region's capital takes the whole region."""
+        """An army takes an enemy capital in a war, and with it the whole region."""
         world = self.world
         self._transfer_tile(tile, attacker, defender, tick, events)
         recompute_capacity(attacker, world)
         recompute_capacity(defender, world)
-        relation.war.tiles_taken[attacker.id] += 1
+        relation.war.regions_taken[attacker.id] += 1
         relation.war.last_gain = tick
         self._reach_cache.clear()
         region_id = world.capital_tiles.get(tile)
@@ -564,9 +564,9 @@ class Diplomacy:
         loser = self.civs.get(region.owner) if region.owner is not None else None
         was_main = loser is not None and loser.capital.tile == region.capital
         if loser is None and self.natives is not None:
-            # Whoever else was settling a native region does not forgive being beaten to it.
-            for other, share in self.natives.shares(region).items():
-                if other != captor.id and share >= rules.RIVAL_SHARE:
+            # Whoever else had an army out to take a native region does not forgive being beaten to it.
+            for other in self.natives.after(region):
+                if other != captor.id:
                     self.remember(other, captor.id, -rules.BEATEN_TO_IT)
         shares = self.spoils_shares(captor, loser) if loser else {captor.id: 1.0}
         for tile in region.tiles:
@@ -620,8 +620,8 @@ class Diplomacy:
         self.intents[(loser.id, winner.id)] = Intent(tick=tick)
 
     def ahead(self, war: War) -> int | None:
-        """The side well ahead in a war by ground taken, or None while it is close."""
-        lead = war.tiles_taken.get(war.a, 0) - war.tiles_taken.get(war.b, 0)
+        """The side ahead in a war by castles taken, or None while it is even."""
+        lead = war.regions_taken.get(war.a, 0) - war.regions_taken.get(war.b, 0)
         if abs(lead) < rules.PEACE_LEAD:
             return None
         return war.a if lead > 0 else war.b
@@ -644,7 +644,7 @@ class Diplomacy:
         if leader is not None:
             winner = self.civs[leader]
             loser = self.civs[war.b if leader == war.a else war.a]
-            lead = war.tiles_taken.get(winner.id, 0) - war.tiles_taken.get(loser.id, 0)
+            lead = war.regions_taken.get(winner.id, 0) - war.regions_taken.get(loser.id, 0)
             ceded = self._region_to_cede(winner, loser) if lead >= rules.CEDE_LEAD else None
             self.learn(loser.id, winner.id, rules.LESSON_LOST)
             self.learn(winner.id, loser.id, rules.LESSON_WON)

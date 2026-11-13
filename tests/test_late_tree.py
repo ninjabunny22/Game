@@ -7,7 +7,7 @@ from civsim.config import SimConfig
 from civsim.diplomacy import Intent, Stance, rules
 from civsim.economy import compute_modifiers, find_site, footprint, manage_villagers, produce
 from civsim.economy.rules import MAX_MOBILIZATION, WATER_PER_POP
-from civsim.map import BOAT_RANGE, step_cost
+from civsim.map import step_cost
 from civsim.military import Army, Commander
 from civsim.simulation import Simulation
 
@@ -96,19 +96,6 @@ def test_water_and_sea_techs(sim):
     assert civ.upkeep["water"] == pytest.approx(0.8 * plain, rel=0.02)
 
 
-def test_navigation_lets_boats_reach_further(sim):
-    civ = sim.civs[0]
-    world = sim.world
-    mods = sim.modifiers[civ.id]
-    shore = next(t for t in range(len(world.biomes)) if world.owner[t] < 0 and not world.is_water(t)
-                 and any(world.is_open_water(n) for n in world.neighbors(t)))
-    world.claim(shore, civ.id)
-    civ.territory.add(shore)
-    mods.boats = 1
-    near = set(sim.ai._border(civ, mods))
-    mods.boat_range = 4
-    assert near <= set(sim.ai._border(civ, mods))
-    assert BOAT_RANGE + mods.boat_range == 10
 
 
 def test_commander_training_techs(sim):
@@ -144,7 +131,7 @@ def test_war_techs_change_the_fight(sim):
     assert mods.casualties == pytest.approx(-0.1)
     assert mods.capture_speed == pytest.approx(0.5)
     assert mods.defense == pytest.approx(0.25)
-    assert mods.home_speed == 1 and mods.reinforce == 1.0 and mods.expand_cost == pytest.approx(-0.3)
+    assert mods.home_speed == 1 and mods.reinforce == 1.0
 
     # On home ground a railway army covers two tiles where it used to cover one.
     sim.modifiers[civ.id] = mods

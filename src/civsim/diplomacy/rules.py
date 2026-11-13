@@ -61,7 +61,6 @@ SICKNESSES = ("camp fever", "the flux", "the sweating sickness", "a plague", "th
 FRICTION_INTERVAL = 25  # ticks between reckonings
 BORDER_FRICTION = 0.04  # held against each other per reckoning along a long shared border ...
 LONG_BORDER = 20  # ... which is this many tiles; a shorter one counts in proportion
-RIVAL_SHARE = 0.1  # share of a native region a civ must have settled to count as after it
 RIVAL_FRICTION = 0.03  # held against each other per reckoning by two civs after the same region
 BEATEN_TO_IT = 0.6  # held against whoever takes a native region by the others who were after it
 
@@ -84,11 +83,11 @@ HELP_STAYED_AWAY = -0.3  # ... and of one who never did, once the war is over
 HELP_WAR = 100  # ticks a war must have lasted for staying out of it to be held against an ally
 
 # Ceding land: a side far ahead takes a whole region rather than tribute when peace is made.
-CEDE_LEAD = 20  # tiles taken, more than the other side
+CEDE_LEAD = 2  # castles taken, more than the other side
 
 # Peace on terms: a side well ahead in a war is paid tribute when it ends, and will accept an
 # offer of it once its own advance has stalled.
-PEACE_LEAD = 5  # tiles taken, more than the other side, to count as ahead
+PEACE_LEAD = 1  # castles taken, more than the other side, to count as ahead
 PEACE_TRIBUTE = 0.25  # share of the loser's stock handed over
 TERMS_AFTER = 150  # ticks of war before an offer of tribute is listened to
 STALL_TICKS = 80  # ... and only when the winner has taken nothing for this long
@@ -101,10 +100,6 @@ NATIVE_GARRISON = 6.0  # defenders of a neutral capital at the start, in soldier
 NATIVE_GROWTH = 0.012  # ... growing by this much per tick ...
 NATIVE_GARRISON_MAX = 60.0  # ... up to this: weaker than a civ's army at any stage, but never trivial
 NATIVE_RECOVERY = 0.02  # share of its losses a garrison makes good per tick when left alone
-DEFECTION_INTERVAL = 25  # ticks between checks for natives going over to a civ
-TILE_DEFECTION_SHARE = 0.3  # share of a region a civ must hold before its neighbours start to defect
-TILE_DEFECTION_RATE = 0.5  # chance per check for each bordering tile, per unit of share above that
-CAPITAL_DEFECTION_SHARE = 0.6  # share above which the capital itself may join; chance = share - this
 
 # Combat
 HOME_BONUS = 0.25  # defenders fight better on their own land

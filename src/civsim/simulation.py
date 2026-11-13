@@ -75,7 +75,7 @@ class Simulation:
         self.villages = Villages(self.world, self.civs, lambda: next(self._ids), self.config.seed)
         self.villages.update(0, [])  # the towns around the starting capitals
         self.diplomacy.natives = self.natives
-        # What each region is worth to each civ: one valuation for expansion, campaigns, war
+        # What each region is worth to each civ: one valuation for campaigns, war
         # targets, harbours and the strategist.
         self.geography = Geography(self.world, self.civs, self.diplomacy, self.military)
         self.ai.geography = self.military.geography = self.geography
@@ -313,7 +313,6 @@ class Simulation:
                 for tile in region.tiles:
                     world.claim(tile, civ.id)
                     civ.territory.add(tile)
-            civ.base_territory = len(civ.territory)
             recompute_capacity(civ, world)
         return civs
 

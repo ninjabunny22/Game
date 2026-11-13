@@ -3,7 +3,7 @@
 Every tick each civ
   1. assesses its needs (0..~1.5 per category),
   2. picks a research target, scoring each available tech by what its effects are worth,
-  3. picks a project (a building or a territory expansion) and starts it if affordable,
+  3. picks a project (a building) and starts it if affordable,
      otherwise keeps it as the goal it is saving for,
   4. splits its workers across resources according to what the goal still requires.
 It also tears down buildings: ones it has long been unable to keep up, and, when it
@@ -12,13 +12,12 @@ has run out of room, its least useful building to make way for a much better one
 Score of an option = personality weight for its category x current need, with
 diminishing returns. The strategic layer steers a civ through the standing orders
 on the Civilization (soldier_target, military_need, march_target, exports); this
-module turns them into day-to-day decisions.
+module turns them into day-to-day decisions. Land is not settled tile by tile: a civ holds
+whole regions, and gains more only by taking them (military/warfare.py).
 """
 
 import math
 import random
-from collections import deque
-from collections.abc import Callable
 
 from ..economy import (
     BuildingDef,
@@ -30,12 +29,11 @@ from ..economy import (
     footprint,
     place,
     placement_problem,
-    recompute_capacity,
     survey_ground,
     water_growth_factor,
 )
-from ..economy.rules import LAKE_WATER, RESOURCES, RIVER_WATER, SETTLEMENT_YIELDS, WORK_RATE
-from ..map import BOAT_RANGE, Biome, WorldMap
+from ..economy.rules import RESOURCES, SETTLEMENT_YIELDS, WORK_RATE
+from ..map import WorldMap
 from ..tech import Tech, TechTree
 from .civilization import Building, Civilization, Goal, Research
 
@@ -51,7 +49,7 @@ GOAL_EFFECTS = {  # what each focus is after in the tech tree
                  "soldier_cost", "beds"),
     "science": ("science_mult",),
     "economy": ("income", "build_speed", "build_slots"),
-    "expansion": ("expand_cost", "bridges", "boats", "boat_range"),
+    "expansion": ("bridges", "boats", "boat_range"),
     "growth": ("growth", "housing", "water_mult"),
 }
 LOOKAHEAD = 0.25  # how much what a tech leads to counts beside what it gives now
@@ -61,17 +59,12 @@ COUNT_FALLOFF = 0.35  # each existing copy of a building makes another less attr
 FALLOFF_POWER = 0.6  # ... but gently: rising costs and upkeep are what really limit a civ
 STORE_NEED = 0.4  # how much a completely full store makes the civ want more room for it
 UPKEEP_CAUTION = 0.2  # don't add upkeep in a resource that is below this share of storage and not growing
-TILES_PER_EXPANSION = 4  # claiming budget per expansion; a river tile without bridges uses more of it
 RULER_ORDER = 1e6  # the score of a building a human ruler has ordered
 HARBOUR_NEED = 0.6  # ... and a harbour, once it can build one
-REGION_PULL = 0.4  # how much a native region's value (strategy/geography.py) draws settlers to its tiles
 BEDS_MEMORY = 400  # ticks a civ remembers soldiers dying for want of a hospital bed
 BARRACKS_NEED = 0.35  # how much a civ at peace wants barracks to train its soldiers in
 STABLES_NEED = 0.5  # how much a civ at peace wants stables, on the scale of the other needs
-NO_FOREST = 6  # wood work slots on the land (capitals aside) below which expansion stops costing wood
 WATER_MARGIN = 1.15  # look for more water once supply is below this multiple of consumption
-SEEK_RANGE = 35  # how far (in tiles) a civ will stretch its border to reach a missing resource
-MARCH_RANGE = 60  # ... or to reach a civ it intends to attack
 RESERVE_TICKS = 40  # stock kept on hand to cover upkeep, food and trade exports
 MATERIAL_RESERVE = {"wood": 30.0, "stone": 15.0, "ore": 0.0, "gold": 0.0, "water": 0.0}
 ABANDON_AFTER = 60  # ticks of unpaid upkeep after which a building is torn down
@@ -110,7 +103,7 @@ class CivAI:
         eaten = food_need(civ)
         farming_share = eaten / max(civ.population, 1.0) / (WORK_RATE * (1 + mods.yield_mult["food"]))
         reserve_ticks = civ.resources["food"] / max(eaten, 1e-9)
-        # Resources the territory barely provides: a reason to expand toward them.
+        # Resources the territory barely provides: worth taking a region for (geography prices them).
         # (Every capital offers a few slots of its own; it is the land that counts here.)
         capitals = len(civ.settlements)
         wanted = [res for res in ("wood", "stone", "ore")
@@ -120,7 +113,6 @@ class CivAI:
             wanted.insert(0, "water")
         if civ.capacity["gold"] - SETTLEMENT_YIELDS["gold"] * capitals < 2:
             wanted.append("gold")  # last: gold to mine is worth reaching for once nothing else is missing
-        idle_share = civ.idle / max(civ.workforce, 1.0)
         return {
             # No point housing people there is no water for.
             "growth": _clamp((civ.population / mods.housing - 0.6) / 0.4, 0, 1.2) * water_growth_factor(civ, mods),
@@ -136,8 +128,6 @@ class CivAI:
             "training": _clamp((civ.soldier_target - civ.soldiers) / max(civ.soldier_target, 1.0), 0, 1),
             # More hospital beds (by research): wanted once soldiers have died for want of one, and by any civ at war.
             "beds": 1.0 if tick - civ.beds_short < BEDS_MEMORY else 0.7 * civ.military_need,
-            "expansion": (0.25 + 0.75 * _clamp(3 * idle_share, 0, 1) + (0.4 if wanted else 0.0)
-                          + (0.5 if civ.march_target is not None else 0.0)),
             "resource": {res: 0.2 + 0.6 * scarcity[res] for res in RESOURCES},
             "scarcity": scarcity,
             "wanted": wanted,
@@ -225,7 +215,6 @@ class CivAI:
         value += 1.5 * effects.get("build_speed", 0) * weights["industry"]
         value += 0.6 * effects.get("build_slots", 0) * weights["industry"]
         value += 3.0 * effects.get("demolition_refund", 0) * weights["infrastructure"]
-        value -= 2.0 * effects.get("expand_cost", 0) * weights["expansion"]
         value += 0.4 * (effects.get("bridges", 0) + effects.get("boats", 0)) * weights["expansion"]
         value += (0.05 * effects.get("boat_range", 0) + 0.3 * effects.get("home_speed", 0)
                   + 0.2 * effects.get("reinforce", 0)) * weights["expansion"]
@@ -260,7 +249,6 @@ class CivAI:
             civ.goal = None
             return
 
-        weights = civ.personality.weights
         options: list[tuple[float, str, str, dict]] = []
         for bdef in self.building_defs.values():
             if bdef.requires_tech and bdef.requires_tech not in civ.known_techs:
@@ -284,12 +272,6 @@ class CivAI:
                 civ.build_order = None
             else:
                 options.append((RULER_ORDER, "build", ordered.id, ordered.cost_for(count)))
-
-        expand_cost = self.expansion_cost(civ, mods)
-        if self._feasible(civ, expand_cost, mods):
-            added = max(0, len(civ.territory) - civ.base_territory)
-            score = weights["expansion"] * needs["expansion"] / (1 + added / 250)
-            options.append((score, "expand", "", expand_cost))
 
         previous = civ.goal
         if previous:
@@ -320,15 +302,6 @@ class CivAI:
                     place(civ, self.world, self.building_defs[target], site)
                     if target == civ.build_order:
                         civ.build_order = None  # done as ordered
-                    civ.goal = None
-            else:
-                border = self._border(civ, mods)
-                if not border:
-                    continue
-                civ.goal = Goal("expand", None, cost)
-                if civ.can_afford(cost):
-                    civ.pay(cost)
-                    self._expand(civ, mods, border, needs)
                     civ.goal = None
             return
 
@@ -443,154 +416,6 @@ class CivAI:
 
     def _obtainable(self, civ: Civilization, res: str, mods: Modifiers) -> bool:
         return civ.capacity[res] > 0 or mods.income[res] > 0 or civ.imports[res] > 0 or res == "gold"
-
-    # -- territory -----------------------------------------------------------
-
-    def expansion_cost(self, civ: Civilization, mods: Modifiers) -> dict[str, float]:
-        # Priced on land added since the start: the two home regions come free.
-        size = max(0, len(civ.territory) - civ.base_territory)
-        factor = max(0.3, 1 + mods.expand_cost)
-        food, wood = (15 + 0.4 * size) * factor, (10 + 0.25 * size) * factor
-        woodland = civ.capacity["wood"] - SETTLEMENT_YIELDS["wood"] * len(civ.settlements)
-        if woodland < NO_FOREST:
-            # A civ with next to no woodland could never save the timber, and so never reach
-            # any: it expands on food alone, at twice the price.
-            return {"food": round(2 * food)}
-        return {"food": round(food), "wood": round(wood)}
-
-    def _border(self, civ: Civilization, mods: Modifiers) -> list[int]:
-        """Unowned, claimable tiles next to the civ's territory, or a boat trip away from it."""
-        world = self.world
-        border: set[int] = set()
-        water: list[int] = []
-        seen: set[int] = set()
-        for tile in civ.territory:
-            # Settling spreads over its own shallows and mountains, but from there on to the
-            # land beyond only as people could get there: across water by boat, and over
-            # mountains not at all (they go round, or through a pass).
-            stuck = not world.walkable(tile) and not (mods.boats and world.is_boat_water(tile))
-            for n in world.neighbors(tile):
-                if world.is_open_water(n):
-                    if n not in seen:
-                        seen.add(n)
-                        water.append(n)
-                elif world.owner[n] < 0 and n not in world.capital_tiles and world.claimable(n):
-                    if stuck and world.walkable(n):
-                        continue
-                    border.add(n)  # native land can be settled; a capital has to defect or be taken
-        if mods.boats:
-            # Boats: sail up to BOAT_RANGE tiles of open water and land on whatever lies beyond.
-            for _ in range(BOAT_RANGE + mods.boat_range):
-                further = []
-                for tile in water:
-                    for n in world.neighbors(tile):
-                        if n in seen:
-                            continue
-                        seen.add(n)
-                        if world.is_open_water(n):
-                            further.append(n)
-                        elif world.owner[n] < 0 and n not in world.capital_tiles and world.claimable(n):
-                            border.add(n)
-                water = further
-        return sorted(border)
-
-    def _water_value(self, tile: int, mods: Modifiers) -> float:
-        """Water per tick that owning this tile would add."""
-        world = self.world
-        value = RIVER_WATER * world.rivers.get(tile, 0)
-        value += LAKE_WATER * sum(1 for n in world.neighbors(tile) if world.biomes[n] == Biome.LAKE)
-        if world.biomes[tile] == Biome.SHALLOWS:
-            value += mods.purification
-        return value
-
-    def _expand(self, civ: Civilization, mods: Modifiers, border: list[int], needs: dict) -> None:
-        world = self.world
-        cx, cy = world.xy(civ.capital.tile)
-        thirst = 2 + 6 * needs["scarcity"]["water"] + (6 if "water" in needs["wanted"] else 0)
-        # Settling a native region it values wins the natives over to it, region and all.
-        worth = self.geography.values(civ, self._tick) if self.geography is not None else {}
-
-        def appeal(tile: int) -> float:
-            x, y = world.xy(tile)
-            value = sum(
-                amount * (1 + needs["scarcity"][res] + (2 if res in needs["wanted"] else 0))
-                for res, amount in world.yields[tile].items()
-            )
-            value += thirst * self._water_value(tile, mods)
-            region = world.region_of[tile]
-            if region >= 0 and region in worth and world.regions[region].neutral:
-                value += REGION_PULL * max(0.0, worth[region].total)
-            return value - 0.08 * math.hypot(x - cx, y - cy) + 0.3 * self.rng.random()
-
-        def provides(res: str):
-            if res == "water":
-                return lambda t: self._water_value(t, mods) > 0
-            return lambda t: world.yields[t].get(res, 0) > 0
-
-        # Head for a civ marked for attack or a resource the territory lacks,
-        # then fill up with the most appealing tiles.
-        route: list[int] = []
-        if civ.march_target is not None:
-            enemy = civ.march_target
-            path = self._path_to(border, mods, lambda t: any(world.owner[n] == enemy for n in world.neighbors(t)))
-            if 0 < len(path) <= MARCH_RANGE:
-                route = path
-        if not route:
-            for res in needs["wanted"]:
-                path = self._path_to(border, mods, provides(res))
-                if 0 < len(path) <= SEEK_RANGE:
-                    route = path
-                    break
-        ranked = sorted((tile for tile in border if tile not in route), key=appeal, reverse=True)
-
-        # Spend the claiming budget along the route first, then on the most appealing tiles.
-        # Fording a river without bridges uses up most of an expansion.
-        budget = float(TILES_PER_EXPANSION)
-        claimed = 0
-        for tile in route + ranked:
-            cost = world.crossing_cost(tile, bool(mods.bridges), bool(mods.boats)) or 1.0
-            if cost > budget and claimed:
-                if tile in route:
-                    break  # a route is claimed in order; wait for the next expansion
-                continue
-            budget -= cost
-            claimed += 1
-            world.claim(tile, civ.id)
-            civ.territory.add(tile)
-            if budget <= 0:
-                break
-        recompute_capacity(civ, world)
-
-    def _path_to(self, border: list[int], mods: Modifiers, is_goal: Callable[[int], bool]) -> list[int]:
-        """Shortest chain of claimable tiles from the border to the nearest goal tile.
-
-        With boats the search may cross open water; the water tiles are left out
-        of the result, since only the land on either side can be claimed.
-        """
-        world = self.world
-        parent: dict[int, int | None] = dict.fromkeys(border)
-        queue = deque(border)
-        while queue:
-            tile = queue.popleft()
-            if not world.is_open_water(tile) and is_goal(tile):
-                path = []
-                step: int | None = tile
-                while step is not None:
-                    if not world.is_open_water(step):
-                        path.append(step)
-                    step = parent[step]
-                return path[::-1]
-            stuck = not world.walkable(tile) and not (mods.boats and world.is_boat_water(tile))
-            for n in world.neighbors(tile):
-                if n in parent or world.owner[n] >= 0 or n in world.capital_tiles or world.is_peak(n):
-                    continue
-                if world.is_open_water(n) and not mods.boats:
-                    continue
-                if stuck and world.walkable(n):
-                    continue  # off a mountain or out of the water on to land: not on foot
-                parent[n] = tile
-                queue.append(n)
-        return []
 
     # -- workers -------------------------------------------------------------
 

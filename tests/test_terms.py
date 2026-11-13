@@ -37,7 +37,7 @@ def test_peace_between_equals_costs_nobody_anything(war):
 
 def test_the_side_well_behind_pays_tribute_when_peace_is_made(war):
     sim, a, b, relation = war
-    relation.war.tiles_taken[a.id] = rules.PEACE_LEAD
+    relation.war.regions_taken[a.id] = rules.PEACE_LEAD
     set_stances(sim, a, b, Stance.IGNORE, Stance.IGNORE)
     events = []
     sim.diplomacy._resolve_pair(a.id, b.id, rules.MIN_WAR, events)
@@ -51,7 +51,7 @@ def test_the_side_well_behind_pays_tribute_when_peace_is_made(war):
 def test_a_winner_whose_advance_has_stalled_takes_tribute_for_peace(war):
     sim, a, b, relation = war
     war_ = relation.war
-    war_.tiles_taken[a.id] = rules.PEACE_LEAD + 2
+    war_.regions_taken[a.id] = rules.PEACE_LEAD  # ahead, but not by enough to have land ceded
     war_.last_gain = rules.TERMS_AFTER
     set_stances(sim, a, b, Stance.AGGRESSION, Stance.IGNORE)
     sim.diplomacy._resolve_pair(a.id, b.id, rules.TERMS_AFTER + rules.STALL_TICKS - 1, [])
@@ -109,7 +109,7 @@ def test_other_civs_put_alliances_trades_and_peace_to_the_ruler(war):
     set_stances(sim, a, c, Stance.IGNORE, Stance.ALLY)
     set_stances(sim, a, b, Stance.AGGRESSION, Stance.IGNORE)
     sim.tick = rules.MIN_WAR
-    relation.war.tiles_taken[a.id] = rules.PEACE_LEAD
+    relation.war.regions_taken[a.id] = rules.PEACE_LEAD
     offers = {(p["civ"], p["kind"]): p["text"] for p in ruler.proposals()}
     assert set(offers) == {(c.id, "alliance"), (b.id, "peace")}
     assert "tribute" in offers[(b.id, "peace")]
@@ -146,7 +146,7 @@ def test_whole_games_still_end_wars_and_some_on_terms():
 
 def test_a_side_far_behind_cedes_a_region_instead_of_paying(war):
     sim, a, b, relation = war
-    relation.war.tiles_taken[a.id] = rules.CEDE_LEAD
+    relation.war.regions_taken[a.id] = rules.CEDE_LEAD
     home = b.capital.tile
     regions = [r for r in sim.world.regions if r.owner == b.id]
     assert len(regions) == 2
@@ -161,6 +161,6 @@ def test_a_side_far_behind_cedes_a_region_instead_of_paying(war):
     assert any("cedes" in e["text"] for e in events) and any("by treaty" in e["text"] for e in events)
     # With only its home left there is nothing to cede: it pays instead.
     sim.diplomacy._start_war(a, b, 1000, {a.id})
-    relation.war.tiles_taken[a.id] = rules.CEDE_LEAD
+    relation.war.regions_taken[a.id] = rules.CEDE_LEAD
     sim.diplomacy._resolve_pair(a.id, b.id, 1000 + rules.MIN_WAR, [])
     assert relation.war is None and b.alive and b.resources["gold"] < 100.0

@@ -164,7 +164,7 @@ def test_a_beaten_civ_grows_cautious_and_a_betrayed_one_never_trusts_again(conte
     a, b = sim.civs[0], sim.civs[1]
     d._start_war(a, b, 0, {a.id})
     relation = d.relation(a.id, b.id)
-    relation.war.tiles_taken[a.id] = rules.PEACE_LEAD
+    relation.war.regions_taken[a.id] = rules.PEACE_LEAD
     d._make_peace(relation, 100, [], "peace")
     assert d.caution[(b.id, a.id)] == pytest.approx(rules.LESSON_LOST)
     assert d.caution[(a.id, b.id)] == pytest.approx(rules.LESSON_WON)

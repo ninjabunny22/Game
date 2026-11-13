@@ -1,14 +1,12 @@
 """The native faction: holds every region no civ does.
 
 It makes no decisions. Each neutral capital has a garrison that fights only
-armies sent against it, and its people can be won over without a fight: as a
-civ settles more of a region, the natives beside its land start to go over to
-it, and once most of the region is its, the capital may open its gates.
+armies sent against it. A native region is taken whole, by beating that garrison;
+there is no settling it tile by tile, and no winning it over without a fight.
 """
 
 import random
 
-from ..economy import recompute_capacity
 from ..map import WorldMap
 from . import rules
 
@@ -33,50 +31,13 @@ class Natives:
         """Strength an attacker must overcome: the garrison, fighting on its own ground."""
         return region.garrison * (1 + rules.HOME_BONUS)
 
-    def shares(self, region) -> dict[int, float]:
-        """Share of the region's land (its capital aside) each civ has settled."""
-        counts: dict[int, int] = {}
-        for tile in region.tiles:
-            owner = self.world.owner[tile]
-            if owner >= 0 and tile != region.capital:
-                counts[owner] = counts.get(owner, 0) + 1
-        total = max(1, len(region.tiles) - 1)
-        return {civ_id: count / total for civ_id, count in counts.items()}
+    def after(self, region) -> list[int]:
+        """The civs with an army on its way to take this region, or fighting for it."""
+        return sorted(civ.id for civ in self.civs.values() if civ.alive
+                      and any(army.target_region == region.id for army in civ.armies))
 
     def update(self, tick: int, events: list) -> None:
         for region in self.world.regions:
             full = self.garrison_size(tick, region)
             if region.neutral and region.under_attack < tick - 1 and region.garrison < full:
                 region.garrison = min(full, region.garrison + rules.NATIVE_RECOVERY * full)
-        if tick % rules.DEFECTION_INTERVAL == 0:
-            for region in self.world.regions:
-                if region.neutral:
-                    self._defections(region, tick, events)
-
-    def _defections(self, region, tick: int, events: list) -> None:
-        shares = self.shares(region)
-        if not shares:
-            return
-        leader_id = max(sorted(shares), key=lambda civ_id: shares[civ_id])
-        share = shares[leader_id]
-        if share < rules.TILE_DEFECTION_SHARE:
-            return
-        world = self.world
-        leader = self.civs[leader_id]
-
-        # Natives living beside the leading civ's land go over to it.
-        chance = rules.TILE_DEFECTION_RATE * (share - rules.TILE_DEFECTION_SHARE)
-        joined = 0
-        for tile in region.tiles:
-            if world.owner[tile] >= 0 or tile == region.capital:
-                continue
-            if any(world.owner[n] == leader_id for n in world.neighbors(tile)) and self.rng.random() < chance:
-                world.claim(tile, leader_id)
-                leader.territory.add(tile)
-                joined += 1
-        if joined:
-            recompute_capacity(leader, world)
-
-        # And once most of the region is its, the capital itself may join: never a stronghold's.
-        if region.defects and share >= rules.CAPITAL_DEFECTION_SHARE and self.rng.random() < share - rules.CAPITAL_DEFECTION_SHARE:
-            self.diplomacy.capture_region(leader, region, tick, events, peaceful=True)

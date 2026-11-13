@@ -38,7 +38,7 @@ about structure and data flow.
 2. For each living civ, in rotating order:
    - compute modifiers from its buildings, techs and gold mines;
    - apply diplomacy's effects;
-   - run the rule-based AI (`civ/ai.py`): research, building, expansion, workers;
+   - run the rule-based AI (`civ/ai.py`): research, building, workers;
    - move villagers and horses;
    - produce, feed, grow, recruit and pay soldiers (`economy/production.py`);
    - advance construction and research.
@@ -75,8 +75,8 @@ content; code reads it through `economy/buildings.py`, `tech/tree.py` and `milit
 ## How decisions flow
 
 - **Two layers per civ:**
-  - The **rule-based AI** (`civ/ai.py`) runs every tick: what to research and build, where to
-    expand, how to place workers. It scores options by personality weight times current need.
+  - The **rule-based AI** (`civ/ai.py`) runs every tick: what to research and build and
+    how to place workers. It scores options by personality weight times current need.
   - The **strategist** (`strategy/utility.py`, `Params` holds every number) runs at
     check-ins. It sees a context (neighbours, rough or scouted strength, wars, deals,
     forecasts) and replies with a stance toward each civ, a commitment, a long-term
@@ -94,8 +94,8 @@ content; code reads it through `economy/buildings.py`, `tech/tree.py` and `milit
   keeps the armies' head count equal to it. Battle losses go back into the economy as
   wounded (hospital), dead or escaped (garrison).
 - **One valuation of land:** `strategy/geography.Geography` (made by the simulation) prices
-  each region for each civ, refreshed every 25 days. It is read by expansion (`ai._expand`),
-  campaigns against the natives (`_campaign_target`), war targets (`_plan`), harbour sites
+  each region for each civ, refreshed every 25 days. It is read by campaigns against the
+  natives (`_campaign_target`, nearest regions first), war targets (`_plan`), harbour sites
   (`civ.harbour_goal` → `find_site`) and the strategist's context (`prize`, `prizes`), so all
   of them want the same places for the same reasons.
 - **Movement, one rule:** `WorldMap.walkable` says where feet can go (not peaks, not
@@ -103,6 +103,10 @@ content; code reads it through `economy/buildings.py`, `tech/tree.py` and `milit
   and `pathfinding.move_cost` adds diagonals (√2, no cutting corners). Armies, villagers and
   route searches all go through them. Passes are carved when a map is built
   (`map/passes.carve_passes`); bridges come from a design's `causeways`.
+- **Land in whole regions:** a civ's `territory` is always every tile of the regions it holds.
+  Tiles change hands only through `Diplomacy.capture_region` (a native capital stormed, an
+  enemy castle held for 100 days, a treaty) and `_eliminate`; there is no tile-by-tile
+  settling, defection or capture.
 - **Victory by points:** `Simulation.points_held` and `domination_target` (80% of the map's
   region points and half its regions); `score()` counts the same points.
 - **Research** changes the modifiers, such as troop tier, soldier cost and hospital beds,

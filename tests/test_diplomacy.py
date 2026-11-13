@@ -278,14 +278,16 @@ def test_weaker_attacker_gains_nothing_and_bleeds(sim, monkeypatch):
     assert war
     army = field_army(a, b)
     army.tile, army.path = edge, []  # the attacker's army arrives at the border
-    routed_state = None
+    routed, fell_back = False, False
     for _ in range(60):
         texts = events_of(sim, 1)
-        if routed_state is None and any("routs" in t for t in texts):
-            routed_state = field_army(a, b).state  # how it stands the day it is beaten
-    assert war.tiles_taken[a.id] == 0 and len(b.territory) >= size
+        if routed and not fell_back:  # the day after it is beaten
+            beaten = next((x for x in a.armies if x.id == army.id), None)
+            fell_back = beaten is None or beaten.state in ("retreating", "idle", "returning")
+        routed = routed or any("routs" in t for t in texts)
+    assert war.regions_taken[a.id] == 0 and len(b.territory) >= size
     assert war.casualties[a.id] > war.casualties[b.id] > 0, "the defender's army came out to meet it"
-    assert routed_state in ("retreating", "idle"), "the beaten army falls back"
+    assert routed and fell_back, "the beaten army falls back (or is run down)"
 
 
 def test_war_ends_when_nobody_wants_it_any_more(sim):

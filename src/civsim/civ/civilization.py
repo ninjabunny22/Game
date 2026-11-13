@@ -27,7 +27,7 @@ class Building:
 class Goal:
     """What the civ is currently saving up for."""
 
-    kind: str  # "build" or "expand"
+    kind: str  # "build"
     target: str | None
     cost: dict[str, float]
 
@@ -49,7 +49,6 @@ class Civilization:
     resources: dict[str, float]
     settlements: list[Settlement] = field(default_factory=list)
     territory: set[int] = field(default_factory=set)
-    base_territory: int = 0  # tiles held at the start; expansion is priced on what was added since
     alive: bool = True  # False once the civ has lost its last region capital
     buildings: list[Building] = field(default_factory=list)
 
@@ -86,7 +85,7 @@ class Civilization:
     # Standing orders from the diplomacy layer, executed by the economy and the AI.
     soldier_target: float = 0.0
     military_need: float = 0.0  # 0 = at peace and unthreatened, 1 = at war
-    march_target: int | None = None  # civ to expand toward, to bring it within reach
+    march_target: int | None = None  # civ to take land toward, to bring it within reach
     # The capital its next harbour should face: the most valuable place it can only reach by
     # water (set by the AI before it picks a harbour's site; None: the nearest foreign capital).
     harbour_goal: int | None = None

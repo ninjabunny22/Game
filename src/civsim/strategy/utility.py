@@ -302,7 +302,7 @@ class UtilityBrain:
             kind = held  # not yet: see the present goal through
         target = options[kind][1]
         text = {"conquest": f"Conquer {target}", "survival": f"Survive {target}", "science": "Out-think the others",
-                "prosperity": "Grow rich by trade", "expansion": "Settle the open land"}[kind]
+                "prosperity": "Grow rich by trade", "expansion": "Take the open land nearest us"}[kind]
         return {"kind": kind, "target": target, "focus": STRATEGY_FOCUS[kind], "text": text}
 
     @staticmethod

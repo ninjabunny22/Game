@@ -47,19 +47,6 @@ def test_passes_are_carved_wherever_mountains_alone_would_part_the_land():
     assert not world2.passes, "the sea is not mountains: nothing to carve"
 
 
-def test_settling_does_not_climb_off_a_mountain_onto_the_land_beyond():
-    sim = Simulation(SimConfig(seed=4))
-    world, civ = sim.world, sim.civs[0]
-    mods = sim.modifiers[civ.id]
-    edge = next(t for t in sorted(civ.territory) for n in world.neighbors(t)
-                if world.owner[n] < 0 and n not in world.capital_tiles and world.walkable(n) and world.walkable(t))
-    beyond = [n for n in world.neighbors(edge) if world.owner[n] < 0 and world.walkable(n)]
-    world.biomes[edge] = Biome.MOUNTAIN  # the civ's tile there is now a mountain, with no pass
-    world.passes.discard(edge)
-    border = sim.ai._border(civ, mods)
-    for n in beyond:
-        if not any(world.owner[m] == civ.id and world.walkable(m) for m in world.neighbors(n)):
-            assert n not in border
 
 
 def test_a_villager_with_no_way_there_stays_and_leaves_the_place_alone():

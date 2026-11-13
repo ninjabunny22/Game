@@ -127,8 +127,6 @@ POST_DEFENCE_PER_LEVEL = 0.02
 XP_PER_BATTLE_TICK = 1.0
 XP_FOUGHT = 5.0
 XP_WON = 25.0
-SWATH = 2  # undefended enemy tiles beside a captured one that fall with it
-SWATH_MAX_PRICE = 1.5
 MIN_ROUTE_SEARCH = 6000  # tiles a route search may look at, at least ...
 ROUTE_SEARCH = 0.8  # ... or this share of the map's tiles, whichever is more
 VALUE_PULL = 4.0  # tiles of march a unit of a region's value (strategy/geography.py) is worth
@@ -1141,9 +1139,10 @@ class Military:
         army.move_points = min(army.move_points + speed, 2 * speed + 3)
         while army.path:
             step = army.path[0]
-            if (world.owner[step] in enemies and not army.refit
+            if (step in world.capital_tiles and world.owner[step] in enemies and not army.refit
                     and army.state not in ("retreating", "returning", "pursuing")):
-                # Enemy ground: it has to be taken before the army can move onto it.
+                # An enemy castle: it has to be taken before the army can move into it. Open
+                # enemy land is marched through; it changes hands only with its castle.
                 army.move_points = 0.0  # waiting does not bank movement
                 return
             cost = move_cost(world, army.tile, step, bool(mods.bridges), bool(mods.boats))
@@ -1466,21 +1465,23 @@ class Military:
     # -- campaigns against the native faction --------------------------------
 
     def _campaign(self, civ, tick: int) -> None:
-        """A civ at peace takes a neighbouring native capital by force when it can field about
-        twice the garrison's strength. No declaration, no strategist: this is plain policy."""
+        """A civ takes the nearest native capital by force when it can field about twice the
+        garrison's strength: the only way to gain land besides war. No declaration, no
+        strategist: this is plain policy. A war elsewhere does not stop it; an enemy near one
+        of its own castles does."""
         world = self.world
         natives = self.diplomacy.natives
         expedition = next((a for a in civ.armies if a.target_region is not None), None)
-        at_war = bool(self.diplomacy.enemies(civ.id))
+        endangered = any(self._threatened(civ, s.tile) for s in civ.settlements)
         if expedition:
             region = world.regions[expedition.target_region]
-            if (at_war or not region.neutral) and expedition.state not in ("returning", "retreating"):
+            if (endangered or not region.neutral) and expedition.state not in ("returning", "retreating"):
                 expedition.state, expedition.path = "returning", []  # needed at home, or someone got there first
             if expedition.state in ("returning", "retreating"):
                 civ.campaign_muster = 0.0
             return
         civ.campaign_muster = 0.0
-        if natives is None or at_war or tick < civ.campaign_cooldown:
+        if natives is None or endangered or tick < civ.campaign_cooldown:
             return
         if sum(1 for a in civ.armies if a.role == "field" and a.state != "returning") >= MAX_ARMIES:
             return
@@ -1494,7 +1495,12 @@ class Military:
         if civ.income["gold"] <= 0 and civ.resources["gold"] < 0.2 * self.mods[civ.id].storage["gold"]:
             return  # cannot pay an army just now
         civ.campaign_muster = 1.1 * soldiers / max(civ.population, 1.0)
-        if self.diplomacy.strength(civ) * (1 - GARRISON_KEEP) < need:
+        # Only soldiers at home and not needed there go: never those already out against an
+        # enemy, and never the share that holds the castles.
+        spare = civ.garrison.size - GARRISON_KEEP * civ.soldiers
+        ready = (unit_strength(civ.garrison.units) * tier_strength(civ.garrison.tier) * self.diplomacy.quality(civ)
+                 * spare / max(civ.garrison.size, 1e-9))
+        if spare <= 0 or ready < need:
             return  # still mustering
         if self._route(civ, civ.capital.tile, target.capital) is None:
             # Across water it has no harbour for, or cut off: look elsewhere for a good while.
@@ -1502,7 +1508,7 @@ class Military:
             return
         army = Army(self.next_id(), civ.id, civ.capital.tile, "field", target_region=target.id,
                     commander=self._appoint(civ), state="marching")
-        army.add(civ.garrison.take(min((1 - GARRISON_KEEP) * civ.soldiers, self.capacity(army))), civ.garrison.tier)
+        army.add(civ.garrison.take(min(spare, self.capacity(army))), civ.garrison.tier)
         civ.armies.append(army)
 
     def _campaign_soldiers(self, civ, region) -> float:
@@ -1517,37 +1523,57 @@ class Military:
         return values[region].total if region in values else 0.0
 
     def _campaign_target(self, civ):
-        """The native region worth most to the civ (strategy/geography.py) among those it can get
-        at: touching its land, partly settled by it, or across water it has ships and a harbour
-        for. Without a valuation: the one it has settled most of, else the nearest touching it."""
-        natives = self.diplomacy.natives
-        held = {region.id for region in self.world.regions if region.owner == civ.id}
+        """The native region to take next: the nearest first. Regions touching the civ's land
+        (or a short sail away, with ships and a harbour) come first, then those one region
+        further, and so on; among the nearest, the one worth most to it (strategy/geography.py)
+        wins, or, while it means to reach a rival (`march_target`), the one that lies toward
+        that rival. A region it could never field the soldiers for is passed over."""
+        world = self.world
+        held = {region.id for region in world.regions if region.owner == civ.id}
         values = self.geography.values(civ, self._tick) if self.geography is not None else None
+        rings = self._rings(held)
+        toward = self.civs.get(civ.march_target) if civ.march_target is not None else None
         best, best_key = None, None
-        for region in self.world.regions:
+        for region in world.regions:
             if not region.neutral:
                 continue
             if self._tick < self._no_way.get((civ.id, region.id), 0):
                 continue  # no army could get there when last tried
-            share = natives.shares(region).get(civ.id, 0.0)
-            near = share > 0 or bool(self._touching[region.id] & held)
-            if values is None:
-                if not near:
-                    continue
-                key = (-share, self._gap(civ.capital.tile, region.capital), region.id)
-            elif region.id in values:
-                worth = values[region.id]
-                overseas = worth.by_sea and worth.access >= ACCESS_BY_SHIP
-                if not (near or overseas):
+            ring = rings.get(region.id)
+            worth = values.get(region.id) if values is not None else None
+            if worth is not None and worth.by_sea and worth.access >= ACCESS_BY_SHIP:
+                ring = min(ring if ring is not None else 1, 1)  # a short sail counts as next door
+            if ring is None:
+                continue
+            if values is not None:
+                if worth is None:
                     continue
                 if self._campaign_soldiers(civ, region) > self.diplomacy.mobilization_cap(civ) * civ.population:
                     continue  # more than it can put under arms: waiting for it would wait for ever
-                key = (-worth.total, region.id)
+            if toward is not None and toward.alive and toward.settlements:
+                lean = min(self._gap(region.capital, s.tile) for s in toward.settlements)
             else:
-                continue
+                lean = 0
+            score = -worth.total if worth is not None else self._gap(civ.capital.tile, region.capital)
+            key = (ring, lean, score, region.id)
             if best_key is None or key < best_key:
                 best, best_key = region, key
         return best
+
+    def _rings(self, held: set[int]) -> dict[int, int]:
+        """How many regions away each region is from the held ones over land: 1 for those touching
+        them, 2 for the next, and so on. Held regions are 0."""
+        rings = dict.fromkeys(held, 0)
+        frontier = sorted(held)
+        while frontier:
+            step = []
+            for r in frontier:
+                for n in sorted(self._touching[r]):
+                    if n not in rings:
+                        rings[n] = rings[r] + 1
+                        step.append(n)
+            frontier = step
+        return rings
 
     def _storm(self, civ, army: Army, tick: int, events: list) -> None:
         """An expedition next to its target capital fights the native garrison until one side gives way."""
@@ -1609,10 +1635,13 @@ class Military:
         return rules.TILE_DEFENSE.get(self.world.biomes[tile], 1.0) * ford * walls
 
     def _besiege(self, civ, army: Army, tick: int, events: list) -> None:
-        """Capture the enemy tile blocking the army's way, by the phase 3 capture rule."""
+        """Lay siege to the enemy castle in the army's way: once it is broken into and held, the
+        whole region falls."""
         if not army.path or army.refit or army.state in ("retreating", "returning", "idle"):
             return
         target = army.path[0]
+        if target not in self.world.capital_tiles:
+            return
         enemy = self.civs.get(army.target_civ)
         if enemy is None or not enemy.alive:
             return
@@ -1669,16 +1698,6 @@ class Military:
             region.held_by, region.hold = None, 0
         army.siege_progress -= price
         self.diplomacy._capture_tile(relation, civ, enemy, target, tick, events)
-
-        # Undefended ground beside the breach falls with it. Capitals never fall this way.
-        taken = 0
-        for side in sorted(self.world.neighbors(target)):
-            if relation.war is not war or taken >= SWATH or not enemy.alive:
-                break
-            if (self.world.owner[side] == enemy.id and side not in self.world.capital_tiles
-                    and self.tile_price(civ, side) <= SWATH_MAX_PRICE and not self._defended(side, enemy)):
-                self.diplomacy._capture_tile(relation, civ, enemy, side, tick, events)
-                taken += 1
 
     def _capital_region(self, tile: int, holder):
         """The region whose capital stands on this tile, if `holder` owns that region."""
@@ -1737,11 +1756,3 @@ class Military:
             if army is not None:
                 return army
         return None
-
-    def _defended(self, tile: int, defender) -> bool:
-        x, y = self.world.xy(tile)
-        for army in defender.armies:
-            ax, ay = self.world.xy(army.tile)
-            if army.size >= 0.5 and max(abs(ax - x), abs(ay - y)) <= 1:
-                return True
-        return False

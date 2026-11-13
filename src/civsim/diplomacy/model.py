@@ -60,7 +60,7 @@ class War:
     name: str = ""  # shared by every pair fighting in the same war
     aggressors: set[int] = field(default_factory=set)  # sides currently pressing the attack
     progress: dict[int, float] = field(default_factory=dict)  # civ id -> capture progress, in tiles
-    tiles_taken: dict[int, int] = field(default_factory=dict)
+    regions_taken: dict[int, int] = field(default_factory=dict)  # castles (and their regions) each side has taken
     casualties: dict[int, float] = field(default_factory=dict)
     declarer: int | None = None  # who started it
     # Set when one side was pulled in by an alliance: `guardian` fights the
@@ -70,7 +70,7 @@ class War:
     # Set when the declarer broke an alliance with the other side to start this war.
     betrayer: int | None = None
     surprise_until: int = 0
-    last_gain: int = 0  # tick a tile last changed hands
+    last_gain: int = 0  # tick a castle last changed hands
 
 
 @dataclass

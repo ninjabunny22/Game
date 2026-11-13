@@ -25,25 +25,6 @@ def neutral_neighbour(sim, civ):
     return next(r for r in sim.world.regions if r.neutral and touching[r.id] & held)
 
 
-def settle(sim, civ, region, share: float) -> None:
-    """Give the civ `share` of a neutral region's land, starting from its own border."""
-    world = sim.world
-    wanted = round(share * (len(region.tiles) - 1))
-    frontier = [t for t in region.tiles if any(world.owner[n] == civ.id for n in world.neighbors(t))]
-    taken = 0
-    seen = set(frontier)
-    while frontier and taken < wanted:
-        tile = frontier.pop(0)
-        if tile == region.capital or world.owner[tile] >= 0:
-            continue
-        world.claim(tile, civ.id)
-        civ.territory.add(tile)
-        taken += 1
-        for n in world.neighbors(tile):
-            if n not in seen and world.region_of[n] == region.id:
-                seen.add(n)
-                frontier.append(n)
-    assert taken == wanted
 
 
 # -- the map -------------------------------------------------------------------
@@ -106,17 +87,20 @@ def test_each_civ_starts_with_two_whole_regions_and_the_rest_are_neutral(seed):
     assert min(abs(ax - bx) + abs(ay - by) for i, (ax, ay) in enumerate(homes) for bx, by in homes[i + 1:]) >= 15
 
 
-def test_expansion_settles_native_land_but_never_a_capital(sim):
-    civ = sim.civs[0]
-    mods = sim.modifiers[civ.id]
-    start = len(civ.territory)
-    assert sim.ai.expansion_cost(civ, mods)["food"] <= 40, "the two home regions do not count toward the price"
-    for _ in range(30):
-        border = sim.ai._border(civ, mods)
-        assert not set(border) & set(sim.world.capital_tiles)
-        sim.ai._expand(civ, mods, border, sim.ai.assess_needs(civ, mods))
-    assert len(civ.territory) > start
-    assert all(sim.world.owner[t] < 0 for t, r in sim.world.capital_tiles.items() if sim.world.regions[r].neutral)
+def test_land_changes_hands_only_as_whole_regions(sim):
+    """Nobody settles native land tile by tile: a civ holds every tile of its regions and
+    nothing else, however long it plays, until it takes another region whole."""
+    brain = RuleBrain()
+    world = sim.world
+    for _ in range(300):
+        sim.step_with(brain)
+        for civ in sim.civs:
+            held = {r.id for r in world.regions if r.owner == civ.id}
+            assert all(world.region_of[t] in held for t in civ.territory)
+            assert all(world.owner[t] == civ.id for r in held for t in world.regions[r].tiles)
+    for region in world.regions:
+        if region.neutral:
+            assert all(world.owner[t] < 0 for t in region.tiles), "native land belongs to no civ until taken"
 
 
 # -- the Hinterfolk ------------------------------------------------------------
@@ -146,54 +130,17 @@ def test_natives_take_no_part_in_diplomacy(sim):
     assert all(request.civ_id in range(4) for request in sim.take_requests())
 
 
-def test_defection_needs_a_real_presence_and_gets_likelier_with_it(sim):
-    civ = sim.civs[0]
-    region = neutral_neighbour(sim, civ)
-
-    settle(sim, civ, region, 0.2)
-    before = len(civ.territory)
-    for check in range(1, 41):
-        sim.natives.update(check * rules.DEFECTION_INTERVAL, [])
-    assert len(civ.territory) == before and region.neutral, "under 30%: nobody goes over"
-
-    settle(sim, civ, region, 0.3)  # now about half the region
-    held = sim.natives.shares(region)[civ.id]
-    assert 0.45 < held < 0.6
-    settled = len(civ.territory)
-    for check in range(1, 7):
-        sim.natives.update(check * rules.DEFECTION_INTERVAL, [])
-    assert len(civ.territory) > settled, "neighbouring natives go over to it"
-    assert region.neutral and sim.world.owner[region.capital] < 0, "but not yet the capital"
 
 
-def test_a_starved_out_capital_joins_without_a_fight(sim):
-    civ = sim.civs[0]
-    region = neutral_neighbour(sim, civ)
-    settle(sim, civ, region, 0.95)
-    regions = sum(r.owner == civ.id for r in sim.world.regions)
-    points = civ.diplomacy_points
-    events: list = []
-    for check in range(1, 30):
-        sim.natives.update(check * rules.DEFECTION_INTERVAL, events)
-        if not region.neutral:
-            break
-    assert region.owner == civ.id, "at 95% the capital gives in within a few checks"
-    assert sum(r.owner == civ.id for r in sim.world.regions) == regions + 1
-    assert all(sim.world.owner[t] == civ.id for t in region.tiles)
-    assert region.capital in {s.tile for s in civ.settlements}
-    assert any("without a fight" in e["text"] for e in events)
-    assert civ.diplomacy_points == points and civ.soldiers == 0, "no cost and no army involved"
 
 
-def test_the_capital_cannot_defect_below_sixty_percent(sim):
-    civ = sim.civs[0]
-    region = neutral_neighbour(sim, civ)
-    assert rules.CAPITAL_DEFECTION_SHARE == 0.6 and rules.TILE_DEFECTION_SHARE == 0.3
-    settle(sim, civ, region, 0.35)
-    sim.natives.rng.random = lambda: 0.999  # nothing defects, so the share stays put
-    for check in range(1, 60):
-        sim.natives.update(check * rules.DEFECTION_INTERVAL, [])
-    assert region.neutral
+
+
+def test_natives_never_go_over_without_a_fight(sim):
+    region = neutral_neighbour(sim, sim.civs[0])
+    for check in range(1, 200):
+        sim.natives.update(check * 25, [])
+    assert region.neutral and all(sim.world.owner[t] < 0 for t in region.tiles)
 
 
 # -- campaigns -----------------------------------------------------------------
@@ -266,7 +213,7 @@ def test_a_failed_attack_is_beaten_off_and_not_repeated_at_once(sim):
     assert civ.campaign_muster == 0
 
 
-def test_a_civ_at_war_calls_its_expedition_home(sim):
+def test_an_expedition_carries_on_through_a_distant_war_but_comes_home_to_defend(sim):
     civ, enemy = sim.civs[0], sim.civs[1]
     region = neutral_neighbour(sim, civ)
     army = Army(501, civ.id, civ.capital.tile, "field", units={"spearman": 30.0}, target_region=region.id, state="marching")
@@ -276,6 +223,11 @@ def test_a_civ_at_war_calls_its_expedition_home(sim):
     sim.diplomacy._start_war(enemy, civ, 1, aggressors={enemy.id})
     assert relation.war
     sim.military._campaign(civ, 2)
+    assert army.state == "marching", "a war far away does not stop it"
+    # An enemy army at the gates of one of its castles does.
+    raider = Army(502, enemy.id, civ.capital.tile, "field", units={"spearman": 40.0}, target_civ=civ.id, state="marching")
+    enemy.armies.append(raider)
+    sim.military._campaign(civ, 3)
     assert army.state == "returning"
 
 

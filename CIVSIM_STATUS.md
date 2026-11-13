@@ -61,10 +61,16 @@ style). Balance and timing have not had their dedicated pass yet.
 
 ## In progress
 
-The to-do list is finished (victory by points, the strategist playing to it, rallies, the
-timing table, league tuning, the balance batch), and so is the stabilisation review's bug
-pass: two crashes from malformed commands fixed; three whole games (one per size) checked day
-by day for impossible states found none. Those checks are kept as `tests/test_invariants.py`.
+Plan (agreed 2026-11-13): war on the AI's own judgement with a home guard; fights you can follow
+(fight boxes, a battle alert); a top-left icon bar; a tech tree viewer. Done so far:
+- **Land changes hands only as whole regions** (no settling tile by tile, no defection, no
+  tile-by-tile capture in war); native regions are taken nearest first, and campaigns go on
+  during a war far away. Three check games: Highgate 4 civs ends on score at day 6,000,
+  Emberwaste 5 by domination at 5,794, Five Gates 5 on score at 10,000 (its heartland
+  strongholds stay native, and nothing changed hands after day 4,000: watch for stalemates).
+  The balance batch below predates this rule.
+- **Castles:** nobody is drawn inside; clicking one opens a panel beside it with what is inside.
+  **Minimap** at the bottom right.
 
 ## Balance batch (2026-11-13)
 

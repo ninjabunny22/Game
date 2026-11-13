@@ -273,8 +273,7 @@ class Geography:
             take = 0.0
             if region.owner is None and natives is not None and r not in held:
                 need = 2.0 * natives.defence(region)
-                settled = natives.shares(region).get(civ.id, 0.0)
-                take = p.take * min(4.0, need / ours) * (1.0 - settled)
+                take = p.take * min(4.0, need / ours)
             elif region.owner is not None and region.owner != civ.id and diplomacy is not None:
                 holder = self.civs[region.owner]
                 regions_held = max(1, sum(1 for x in world.regions if x.owner == holder.id))
