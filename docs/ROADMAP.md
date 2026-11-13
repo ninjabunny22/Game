@@ -106,3 +106,9 @@ state is in CIVSIM_STATUS.md.
   `_tooltip_at`). Check the hover shows reliably in a real game, and make it clearer: the
   exact bonuses in numbers (from the tech's effects, not only its description) and the civs
   that have it in their colours.
+- **To do (asked for 2026-11-13): an events audit, and a chronicle button.** Go through every
+  kind of event the simulation logs and check that each one meant to pop up does (war
+  declarations, royal deaths, rebellions...) and that the chronicle lists all of them
+  (today it takes the kinds in `HEADLINE_KINDS`, hud.gd, and only counts the routine ones).
+  Add a chronicle button to the top bar beside the others (today it opens only from the
+  ticker or the `L` key).
