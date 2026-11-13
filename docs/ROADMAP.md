@@ -88,3 +88,8 @@ state is in CIVSIM_STATUS.md.
   so. The capture itself is already a headline ("Ossyria takes Saltcrown Keep from the
   Hinterfolk; all of Saltcrown falls with it"). The expedition starts in
   `Military` (military/warfare.py, `target_region`), which logs nothing today.
+- **To do (asked for 2026-11-13): clickable events** (ticker, chronicle and banners). A family
+  event (a death, succession, wedding, rebellion...) opens that house's family tree, with the
+  person marked (greyed if dead). A war, battle or siege event moves the camera to where it
+  is being fought (the fight's place, else the attacked castle). Events would need to carry
+  the person, the place or the war they concern (bridge/protocol.py).
