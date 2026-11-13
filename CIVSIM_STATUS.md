@@ -130,7 +130,7 @@ the old custom .glb files that lay at the root are in `art/legacy_models/` (both
 
 | Commit | Change |
 |---|---|
-| (this commit) | Villagers cross water in fishing boats, rowing |
+| `363135d` | Villagers cross water as fishing boats, rowing |
 | `874dde0` | Malformed commands refused instead of crashing |
 | `c22bcbc` | The Narrow Sea's Skerry crossing; Narrow Sea 2–4 civs |
 | `457c9dc`, `1de0466`, `9f27b23`, `9fe4b7b`, `dbe180b` | Balance fixes from the batch; eight-way movement |
