@@ -37,14 +37,14 @@
 		{
 			"bufferView":0,
 			"componentType":5126,
-			"count":568,
+			"count":738,
 			"max":[
-				0.2150000035762787,
+				0.20499999821186066,
 				0.7000000476837158,
 				0.5
 			],
 			"min":[
-				-0.2150000035762787,
+				-0.20499999821186066,
 				0,
 				-0.5
 			],
@@ -53,51 +53,51 @@
 		{
 			"bufferView":1,
 			"componentType":5126,
-			"count":568,
+			"count":738,
 			"type":"VEC3"
 		},
 		{
 			"bufferView":2,
 			"componentType":5126,
-			"count":568,
+			"count":738,
 			"type":"VEC2"
 		},
 		{
 			"bufferView":3,
 			"componentType":5123,
-			"count":882,
+			"count":1152,
 			"type":"SCALAR"
 		}
 	],
 	"bufferViews":[
 		{
 			"buffer":0,
-			"byteLength":6816,
+			"byteLength":8856,
 			"byteOffset":0,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":6816,
-			"byteOffset":6816,
+			"byteLength":8856,
+			"byteOffset":8856,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":4544,
-			"byteOffset":13632,
+			"byteLength":5904,
+			"byteOffset":17712,
 			"target":34962
 		},
 		{
 			"buffer":0,
-			"byteLength":1764,
-			"byteOffset":18176,
+			"byteLength":2304,
+			"byteOffset":23616,
 			"target":34963
 		}
 	],
 	"buffers":[
 		{
-			"byteLength":19940,
+			"byteLength":25920,
 			"uri":"civsim_fishing_boat.bin"
 		}
 	]

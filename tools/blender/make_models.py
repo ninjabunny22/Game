@@ -108,17 +108,23 @@ class Model:
         matrix = Matrix.Translation(Vector(at)) @ Matrix.Rotation(twist, 4, "Z") @ Matrix.Translation((0, 0, height / 2))
         self._add(geom, cell, matrix, shade)
 
-    def loft(self, cell, sections, shade=0.7):
-        """A rounded hull through cross-sections (y, half-width, keel height, gunwale height),
-        each a U of seven points; the ends are closed."""
+    def _hull_rings(self, sections, inset=0.0):
         rings = []
         for y, w, keel, top in sections:
+            w, keel = w * (1.0 - inset), keel + inset * (top - keel)
             mid = keel + (top - keel) * 0.45
             ring = [(-w, y, top), (-w * 0.98, y, mid + (top - mid) * 0.5), (-w * 0.85, y, mid),
                     (-w * 0.5, y, keel + (mid - keel) * 0.25), (0.0, y, keel),
                     (w * 0.5, y, keel + (mid - keel) * 0.25), (w * 0.85, y, mid),
                     (w * 0.98, y, mid + (top - mid) * 0.5), (w, y, top)]
             rings.append([self.bm.verts.new(p) for p in ring])
+        return rings
+
+    def loft(self, cell, sections, shade=0.7, lining=None, inset=0.1):
+        """A rounded hull through cross-sections (y, half-width, keel height, gunwale height),
+        each a U of nine points; the ends are closed. With `lining` (a cell) the hull has an
+        inside too, and a rim along the gunwale, so it is not seen through from above."""
+        rings = self._hull_rings(sections)
         faces = []
         for a, b in zip(rings, rings[1:]):
             for i in range(len(a) - 1):
@@ -127,6 +133,18 @@ class Model:
         faces.append(self.bm.faces.new(rings[-1]))
         bmesh.ops.recalc_face_normals(self.bm, faces=faces)
         self._add([v for ring in rings for v in ring], cell, Matrix.Identity(4), shade)
+        if lining is None:
+            return
+        inner = self._hull_rings(sections, inset)
+        for a, b in zip(inner, inner[1:]):  # wound to face inward and up
+            for i in range(len(a) - 1):
+                self.bm.faces.new((a[i], a[i + 1], b[i + 1], b[i]))
+        self.bm.faces.new(inner[0])  # the inside of the bow ...
+        self.bm.faces.new(inner[-1][::-1])  # ... and of the stern
+        for (oa, ia), (ob, ib) in zip(zip(rings, inner), zip(rings[1:], inner[1:])):
+            self.bm.faces.new((oa[0], ia[0], ib[0], ob[0]))  # the rim, port ...
+            self.bm.faces.new((oa[-1], ob[-1], ib[-1], ia[-1]))  # ... and starboard
+        self._add([v for ring in inner for v in ring], lining, Matrix.Identity(4), shade)
 
     def hull(self, cell, length, width, height, at=(0, 0, 0), shade=0.7):
         """A ship's hull, bow toward -y (forward in Godot), stern at +y."""
@@ -213,7 +231,7 @@ def ship() -> None:
     # (y, half-width, keel height, gunwale height).
     m.loft("clay", [(-1.0, 0.04, 0.42, 0.62), (-0.82, 0.22, 0.12, 0.5), (-0.5, 0.36, 0.02, 0.44),
                     (0.0, 0.4, 0.0, 0.42), (0.45, 0.37, 0.03, 0.5), (0.78, 0.3, 0.12, 0.7),
-                    (0.95, 0.24, 0.25, 0.74)])
+                    (0.95, 0.24, 0.25, 0.74)], lining="brick", inset=0.07)
     m.box("plank", (0.6, 1.5, 0.04), at=(0, -0.05, 0.36), shade=0.3)  # the deck
     m.box("brick", (0.62, 0.05, 0.06), at=(0, -0.58, 0.43))  # a wale across the bow
     m.box("clay", (0.5, 0.42, 0.24), at=(0, 0.72, 0.5))  # the stern castle
@@ -245,12 +263,12 @@ def fishing_boat() -> None:
     About 1 long, bow forward."""
     m = Model(HEX)
     m.loft("clay", [(-0.5, 0.02, 0.15, 0.27), (-0.36, 0.13, 0.04, 0.215), (-0.1, 0.2, 0.0, 0.19),
-                    (0.2, 0.2, 0.0, 0.19), (0.42, 0.15, 0.03, 0.21), (0.5, 0.1, 0.08, 0.235)])
+                    (0.2, 0.2, 0.0, 0.19), (0.42, 0.15, 0.03, 0.21), (0.5, 0.1, 0.08, 0.235)],
+           lining="brick")
     m.box("plank", (0.24, 0.56, 0.02), at=(0, 0.06, 0.085), shade=0.3)  # the bottom boards ...
     m.box("plank", (0.1, 0.18, 0.02), at=(0, -0.31, 0.105), shade=0.3)  # ... and the bow's, higher
     for side in (-1, 1):
-        m.box("brick", (0.025, 0.66, 0.025), at=(side * 0.195, 0.05, 0.185))  # the gunwale
-        m.box("iron", (0.03, 0.03, 0.035), at=(side * 0.2, 0.1, 0.205))  # a rowlock
+        m.box("iron", (0.03, 0.03, 0.035), at=(side * 0.19, 0.1, 0.19))  # a rowlock
     m.box("timber", (0.38, 0.07, 0.02), at=(0, 0.28, 0.15))  # the stern bench
     m.box("timber", (0.34, 0.06, 0.02), at=(0, -0.2, 0.15))  # the mast bench
     m.cylinder("hay", 0.055, 0.07, at=(0, -0.33, 0.125), segments=7, top=0.065)  # the basket ...
