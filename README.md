@@ -106,8 +106,9 @@ The overlay is built for watching:
   its capital); **Rule it** takes control. Click the chip again, its X or `Esc` to close.
 - **Ongoing wars** (while watching): a panel under the civ chips at the top right, its heading
   counting the wars going on. Each war is a row, both civs' shields and names in their colours
-  facing each other across crossed swords; click a row to compare the two sides (military
-  strength, armies in the field, regions held), live. Rows come and go with the wars; the − in
+  facing each other across crossed swords; allies fighting the same enemy share one row
+  ("Ossyria + Zhanlu ⚔ Kheshet"), their figures added. Click a row to compare the two sides
+  (military strength, armies in the field, regions held), live. Rows come and go with the wars; the − in
   the heading folds the panel away. It steps aside while a civ's drawer is open.
 - **The ticker and the chronicle** (while watching): the newest headline (wars, peace,
   castles taken, alliances, eras, with a war's proclamation) shows at the bottom left and

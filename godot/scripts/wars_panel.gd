@@ -66,7 +66,8 @@ func _ready() -> void:
 
 
 ## From each tick: the wars going on, and the figures each row compares. `info` is the HUD's
-## civ id -> {name, color} from the init message.
+## civ id -> {name, color} from the init message. Allies fighting the same enemy are one side:
+## a war of A and its ally C against B (and B's allies in it) is one row, their figures added.
 func update(data: Dictionary, info: Dictionary) -> void:
 	var civs := {}
 	for civ: Dictionary in data["civs"]:
@@ -75,34 +76,65 @@ func update(data: Dictionary, info: Dictionary) -> void:
 	for army: Dictionary in data["armies"]:
 		if army["role"] == "field":
 			armies[int(army["civ"])] = armies.get(int(army["civ"]), 0) + 1
-	var seen := {}
+	var at_war := {}  # "a:b" (a < b) -> true
+	var allied := {}
 	for relation: Dictionary in data["relations"]:
-		if relation["status"] != "war":
-			continue
-		var a := int(relation["a"])
-		var b := int(relation["b"])
+		var pair := "%d:%d" % [mini(int(relation["a"]), int(relation["b"])), maxi(int(relation["a"]), int(relation["b"]))]
+		if relation["status"] == "war":
+			at_war[pair] = true
+		elif relation["status"] == "alliance":
+			allied[pair] = true
+	var sides_of := {}  # row key -> [side ids, side ids]
+	for pair: String in at_war:
+		var a := int(pair.split(":")[0])
+		var b := int(pair.split(":")[1])
 		if not (info.has(a) and info.has(b) and civs.has(a) and civs.has(b)):
 			continue
-		var key := "%d:%d" % [a, b]
-		seen[key] = true
+		var left := _side(a, b, civs, at_war, allied)
+		var right := _side(b, a, civs, at_war, allied)
+		if left[0] > right[0]:
+			var swap := left
+			left = right
+			right = swap
+		sides_of["%s|%s" % [",".join(left.map(func(n: int) -> String: return str(n))),
+			",".join(right.map(func(n: int) -> String: return str(n)))]] = [left, right]
+	for key: String in sides_of:
 		if not _rows.has(key):
-			_rows[key] = _make_row(key, a, b, info, str(relation.get("name", "") if relation.get("name") != null else ""))
+			_rows[key] = _make_row(key, sides_of[key][0], sides_of[key][1], info)
 		var values: Dictionary = _rows[key]["values"]
 		for side in 2:
-			var civ: Dictionary = civs[a if side == 0 else b]
-			var civ_id := int(civ["id"])
-			(values["strength"][side] as Label).text = _thousands(int(civ.get("army_strength", 0)))
-			var count := int(armies.get(civ_id, 0))
+			var strength := 0
+			var count := 0
+			var regions := 0
+			for civ_id: int in sides_of[key][side]:
+				strength += int(civs[civ_id].get("army_strength", 0))
+				count += int(armies.get(civ_id, 0))
+				regions += int(civs[civ_id].get("regions", []).size())
+			(values["strength"][side] as Label).text = _thousands(strength)
 			(values["armies"][side] as Label).text = "%d %s" % [count, "army" if count == 1 else "armies"]
-			var regions := int(civ.get("regions", []).size())
 			(values["regions"][side] as Label).text = "%d %s" % [regions, "region" if regions == 1 else "regions"]
 	for key: String in _rows.keys():
-		if not seen.has(key):  # the war is over
+		if not sides_of.has(key):  # the war is over, or its sides have changed
 			(_rows[key]["root"] as Node).queue_free()
 			_rows.erase(key)
 			_open.erase(key)
 	_title.text = "Ongoing Wars (%d)" % _rows.size()
 	_fit.call_deferred()  # once the rows of wars just ended are really gone
+
+
+## One side of the war of `civ_id` against `enemy`: the civ and its allies also at war with
+## that enemy, smallest id first.
+func _side(civ_id: int, enemy: int, civs: Dictionary, at_war: Dictionary, allied: Dictionary) -> Array:
+	var side := [civ_id]
+	for other: int in civs:
+		if other == civ_id or other == enemy or not civs[other].get("alive", true):
+			continue
+		var with_civ := "%d:%d" % [mini(civ_id, other), maxi(civ_id, other)]
+		var with_enemy := "%d:%d" % [mini(enemy, other), maxi(enemy, other)]
+		if allied.has(with_civ) and at_war.has(with_enemy):
+			side.append(other)
+	side.sort()
+	return side
 
 
 func clear() -> void:
@@ -125,11 +157,11 @@ func _fit() -> void:
 
 
 ## One war: a clickable bar with both sides facing each other, and the comparison under it.
-func _make_row(key: String, a: int, b: int, info: Dictionary, war_name: String) -> Dictionary:
+func _make_row(key: String, left: Array, right: Array, info: Dictionary) -> Dictionary:
 	if OS.get_environment("CIVSIM_WARS_OPEN") == "1":  # scripted runs: every war folded open
 		_open[key] = true
-	var color_a := Color.html(info[a]["color"])
-	var color_b := Color.html(info[b]["color"])
+	var color_a := Color.html(info[left[0]]["color"])
+	var color_b := Color.html(info[right[0]]["color"])
 	var root := VBoxContainer.new()
 	root.add_theme_constant_override("separation", 0)
 	_list.add_child(root)
@@ -143,7 +175,7 @@ func _make_row(key: String, a: int, b: int, info: Dictionary, war_name: String) 
 	bar.add_theme_stylebox_override("panel", style)
 	bar.mouse_filter = Control.MOUSE_FILTER_STOP
 	bar.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	bar.tooltip_text = war_name if war_name != "" else "Click to compare the two sides"
+	bar.tooltip_text = "Click to compare the two sides"
 	bar.gui_input.connect(func(event: InputEvent) -> void:
 		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 			if _open.has(key):
@@ -153,16 +185,16 @@ func _make_row(key: String, a: int, b: int, info: Dictionary, war_name: String) 
 			_fit())
 	root.add_child(bar)
 	var line := HBoxContainer.new()
-	line.add_theme_constant_override("separation", 6)
+	line.add_theme_constant_override("separation", 4)
 	line.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bar.add_child(line)
-	line.add_child(_icon("res://assets/icons/shield.svg", 26, color_a.lightened(0.15)))
-	var left := _name(str(info[a]["name"]), color_a, HORIZONTAL_ALIGNMENT_LEFT)
-	line.add_child(left)
+	for civ_id: int in left:
+		line.add_child(_icon("res://assets/icons/shield.svg", 22, Color.html(info[civ_id]["color"]).lightened(0.15)))
+	line.add_child(_names(left, info, false, 15))
 	line.add_child(_icon("res://assets/icons/battle.svg", 22, Color(1, 0.55, 0.5)))
-	var right := _name(str(info[b]["name"]), color_b, HORIZONTAL_ALIGNMENT_RIGHT)
-	line.add_child(right)
-	line.add_child(_icon("res://assets/icons/shield.svg", 26, color_b.lightened(0.15)))
+	line.add_child(_names(right, info, true, 15))
+	for civ_id: int in right:
+		line.add_child(_icon("res://assets/icons/shield.svg", 22, Color.html(info[civ_id]["color"]).lightened(0.15)))
 	# The comparison, folded away until the row is clicked.
 	var details := PanelContainer.new()
 	var inner := StyleBoxFlat.new()
@@ -178,8 +210,8 @@ func _make_row(key: String, a: int, b: int, info: Dictionary, war_name: String) 
 	grid.add_theme_constant_override("v_separation", 6)
 	details.add_child(grid)
 	grid.add_child(Control.new())
-	grid.add_child(_cell(str(info[a]["name"]), color_a.lightened(0.3)))
-	grid.add_child(_cell(str(info[b]["name"]), color_b.lightened(0.3)))
+	grid.add_child(_names(left, info, false, 13, true))
+	grid.add_child(_names(right, info, false, 13, true))
 	var values := {}
 	for stat: Array in [["strength", "Military strength"], ["armies", "Armies in the field"], ["regions", "Regions held"]]:
 		var label := _cell(str(stat[1]), FAINT)
@@ -192,14 +224,23 @@ func _make_row(key: String, a: int, b: int, info: Dictionary, war_name: String) 
 	return {"root": root, "details": details, "values": values}
 
 
-func _name(text: String, color: Color, align: HorizontalAlignment) -> Label:
-	var label := Label.new()
-	label.text = text
-	label.horizontal_alignment = align
+## A side's names, each in its civ's colour, joined by "+".
+func _names(side: Array, info: Dictionary, right_aligned: bool, font_size: int, centred := false) -> RichTextLabel:
+	var parts: Array[String] = []
+	for civ_id: int in side:
+		parts.append("[color=#%s]%s[/color]" % [Color.html(info[civ_id]["color"]).lightened(0.3).to_html(false),
+			info[civ_id]["name"]])
+	var label := RichTextLabel.new()
+	label.bbcode_enabled = true
+	label.fit_content = true
+	label.scroll_active = false
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART  # a long alliance wraps; the panel keeps its width
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	label.clip_text = true
-	label.add_theme_font_size_override("font_size", 16)
-	label.add_theme_color_override("font_color", color.lightened(0.3))
+	label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.add_theme_font_size_override("normal_font_size", font_size)
+	var text := " + ".join(parts)
+	label.text = ("[center]%s[/center]" if centred else ("[right]%s[/right]" if right_aligned else "%s")) % text
 	return label
 
 
