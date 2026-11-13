@@ -255,6 +255,9 @@ class Geography:
             if self.mines[r]:
                 economic += p.mine * self.mines[r] * (0.5 + prices["gold"] / 2)
                 reasons.insert(0, f"{'a gold mine' if self.mines[r] == 1 else f'{self.mines[r]} gold mines'}")
+            for tile, name in sorted(world.rich.items()):  # a rich node is the first thing said of it
+                if world.region_of[tile] == r:
+                    reasons.insert(0, name)
             strategic = sum(p.tag.get(tag, 0.0) for tag in region.tags) + p.centrality * self.centrality[r]
             for tag in region.tags:
                 if tag in ("gate", "neck", "crossroads", "bridge"):

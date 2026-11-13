@@ -49,13 +49,60 @@ def place_deposits(world: WorldMap, rng: random.Random) -> None:
                 world.mines.append(centre)  # no dice thrown: the map is the same as before
 
 
+RICH_YIELD = 3  # a rich node's tiles yield this many times their deposit's bonus
+RICH_SHARE = 1 / 3  # about this share of the regions that start neutral hold a rich node
+RICH_REACH = 2  # tiles of the same deposit within this many steps of the centre belong to the node
+RICH_NAMES = {
+    "iron": ["the Great Iron Vein", "the Deep Iron Vein", "the Red Iron Hills"],
+    "gold": ["the Golden Seam", "the King's Gold", "the Sunlit Seam"],
+    "stone": ["the White Quarries", "the Marble Shelf", "the Giant's Steps"],
+    "fertile_soil": ["the Black Earth", "the Golden Fields", "the Garden of Plenty"],
+    "fish": ["the Silver Shoals", "the Teeming Banks", "the Herring Run"],
+    "game": ["the Royal Forest", "the Great Hunt", "the Stag Woods"],
+}
+
+
+RICH_WORTH = {"gold": 2.0, "iron": 1.6, "stone": 1.2, "fertile_soil": 1.0, "fish": 0.9, "game": 0.8}
+
+
+def choose_rich_nodes(world: WorldMap, start_regions: set[int], rng) -> None:
+    """Rich nodes in about RICH_SHARE of the regions that are not a start region (at least
+    one a map). In each, the best of its deposits (the most tiles near one spot, weighted by
+    how scarce the resource is, and against kinds already chosen, for variety), at the tile
+    nearest that spot, with the deposit's tiles within RICH_REACH. Start regions never get
+    one, so starts stay fair."""
+    world.rich, world.rich_tiles = {}, set()
+    candidates = [r for r in world.regions if r.id not in start_regions and any(t in world.deposits for t in r.tiles)]
+    rng.shuffle(candidates)
+    used: dict[str, int] = {}
+    for region in candidates[:max(1, round(RICH_SHARE * len(candidates)))]:
+        best = None
+        for kind in sorted({world.deposits[t] for t in region.tiles if t in world.deposits}):
+            tiles = [t for t in region.tiles if world.deposits.get(t) == kind]
+            mx = sum(world.xy(t)[0] for t in tiles) / len(tiles)
+            my = sum(world.xy(t)[1] for t in tiles) / len(tiles)
+            centre = min(tiles, key=lambda t: ((world.xy(t)[0] - mx) ** 2 + (world.xy(t)[1] - my) ** 2, t))
+            cx, cy = world.xy(centre)
+            node = [t for t in tiles if max(abs(world.xy(t)[0] - cx), abs(world.xy(t)[1] - cy)) <= RICH_REACH]
+            bonus = sum(DEPOSIT_TYPES[kind].bonus.values())
+            score = len(node) * bonus * RICH_WORTH.get(kind, 1.0) * 0.5 ** used.get(kind, 0)
+            if best is None or score > best[0]:
+                best = (score, kind, centre, node)
+        _, kind, centre, node = best
+        names = RICH_NAMES[kind]
+        world.rich[centre] = names[used.get(kind, 0) % len(names)]
+        used[kind] = used.get(kind, 0) + 1
+        world.rich_tiles |= set(node)
+
+
 def compute_yields(world: WorldMap) -> None:
     for i, biome in enumerate(world.biomes):
         yields = dict(BIOME_INFO[biome].yields)
         deposit = world.deposits.get(i)
         if deposit:
+            rich = RICH_YIELD if i in world.rich_tiles else 1
             for res, amount in DEPOSIT_TYPES[deposit].bonus.items():
-                yields[res] = yields.get(res, 0) + amount
+                yields[res] = yields.get(res, 0) + rich * amount
         if i in world.rivers and biome in RIVERSIDE_FARMLAND:
             yields["food"] = yields.get("food", 0) + 1
         world.yields[i] = yields

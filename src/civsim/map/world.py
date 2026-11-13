@@ -26,6 +26,10 @@ class WorldMap:
         self.heights: list[float] = [0.0] * size
         self.biomes: list[Biome] = [Biome.OCEAN] * size
         self.deposits: dict[int, str] = {}
+        # Rich nodes: deposits yielding RICH_YIELD times as much. Centre tile -> its name, and
+        # every tile of the node (the deposit's tiles of that kind within reach of the centre).
+        self.rich: dict[int, str] = {}
+        self.rich_tiles: set[int] = set()
         # Gold mines: one at the heart of every gold vein. Each pays its region's owner.
         self.mines: list[int] = []
         # Rivers run through land tiles: tile -> size (1 near the source, up to 3 downstream).

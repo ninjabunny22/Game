@@ -203,6 +203,8 @@ var _view_distance := 110.0  # how far the camera is, for what is sized to the s
 var _batches: Node3D  # batches.gd: every finished building of the pack's
 var _batched := {}  # building key -> true, for the ones drawn there
 var _marker_cache := {}
+var _rich_nodes: Array = []  # {"material", "label", "phase"} for each rich node, glowing
+var _glow := 0.0
 var _link_material: StandardMaterial3D
 
 
@@ -214,6 +216,7 @@ func setup(terrain: Node3D, init: Dictionary, civ_colors: Array, models: RefCoun
 	_nodes.clear()
 	_batched.clear()
 	_marker_cache.clear()
+	_rich_nodes.clear()
 	_batches = Batches.new()
 	add_child(_batches)
 	_link_labels.clear()
@@ -339,6 +342,8 @@ func set_view_distance(distance: float) -> void:
 
 func set_detail(detail: int) -> void:
 	_detail = detail
+	for rich: Dictionary in _rich_nodes:
+		(rich["label"] as Label3D).visible = detail >= 1
 	for node: Node3D in _nodes.values():
 		_show_capital_label(node)
 		_show_settled(node)
@@ -884,6 +889,45 @@ func _add_deposits(all_deposits: Array, deposit_types: Dictionary, regions: Arra
 	var instance := MultiMeshInstance3D.new()
 	instance.multimesh = multimesh
 	add_child(instance)
+	for deposit: Dictionary in deposits:
+		if deposit.get("rich"):
+			_add_rich_node(deposit, Color.html(deposit_types[deposit["type"]]["color"]), deposit_types[deposit["type"]])
+
+
+## Rich nodes glow, slowly and each on its own beat.
+func _process(delta: float) -> void:
+	_glow += delta
+	for rich: Dictionary in _rich_nodes:
+		(rich["material"] as StandardMaterial3D).emission_energy_multiplier = 0.25 + 0.35 * (0.5 + 0.5 * sin(_glow * 1.6 + rich["phase"]))
+
+
+## A rich node (a deposit yielding three times as much): a bigger marker in its colour that
+## glows slowly, with its name over it from mid zoom.
+func _add_rich_node(deposit: Dictionary, color: Color, dtype: Dictionary) -> void:
+	var origin: Vector3 = _terrain.tile_position(int(deposit["x"]), int(deposit["y"]))
+	var material := _flat_material(color)
+	material.emission_enabled = true
+	material.emission = color
+	material.emission_energy_multiplier = 0.4
+	var mesh := BoxMesh.new()
+	mesh.size = Vector3(0.46, 0.46, 0.46)
+	mesh.material = material
+	var node := MeshInstance3D.new()
+	node.mesh = mesh
+	node.transform = Transform3D(Basis.from_euler(Vector3(PI / 4, PI / 4, 0)), origin + Vector3(0, 0.42, 0))
+	add_child(node)
+	var label := Label3D.new()
+	label.text = "%s\n%s x3" % [str(deposit["rich"]), str(dtype.get("name", deposit["type"]))]
+	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	label.font_size = 40
+	label.outline_size = 10
+	label.pixel_size = 0.004
+	label.modulate = color.lightened(0.35)
+	label.position = origin + Vector3(0, 1.0, 0)
+	label.no_depth_test = true
+	add_child(label)
+	_rich_nodes.append({"material": material, "label": label, "phase": float(deposit["x"] * 7 + deposit["y"])})
+	label.visible = _detail >= 1
 
 
 func _flat_material(color: Color) -> StandardMaterial3D:

@@ -23,6 +23,8 @@ def to_data(world: WorldMap) -> dict:
         "format": FORMAT, "id": world.map_id, "width": world.width, "height": world.height, "seed": world.seed,
         "heights": world.heights, "biomes": [int(b) for b in world.biomes],
         "deposits": {str(t): d for t, d in sorted(world.deposits.items())},
+        "rich": {str(t): name for t, name in sorted(world.rich.items())},
+        "rich_tiles": sorted(world.rich_tiles),
         "mines": world.mines,
         "rivers": {str(t): s for t, s in sorted(world.rivers.items())},
         "river_flow": {str(t): to for t, to in sorted(world.river_flow.items())},
@@ -52,6 +54,8 @@ def from_data(data: dict) -> WorldMap:
     world.heights = list(data["heights"])
     world.biomes = [Biome(b) for b in data["biomes"]]
     world.deposits = {int(t): d for t, d in data["deposits"].items()}
+    world.rich = {int(t): name for t, name in data.get("rich", {}).items()}
+    world.rich_tiles = set(data.get("rich_tiles", []))
     world.mines = list(data["mines"])
     world.rivers = {int(t): s for t, s in data["rivers"].items()}
     world.river_flow = {int(t): to for t, to in data["river_flow"].items()}

@@ -17,7 +17,7 @@ from opensimplex import OpenSimplex
 
 from .biomes import BIOME_INFO, Biome
 from .regions import Region
-from .resources import DEPOSIT_TYPES, _grow_cluster, _pick_centre, compute_yields
+from .resources import DEPOSIT_TYPES, _grow_cluster, _pick_centre, choose_rich_nodes, compute_yields
 from .passes import carve_passes
 from .shapes import Shape, distance_to_line
 from .world import WorldMap
@@ -189,6 +189,10 @@ def build(bp: Blueprint) -> WorldMap:
     world.starts = {slot: (_key(bp, home), _key(bp, second)) for slot, (home, second) in bp.starts.items()}
     world.start_sets = {n: [list(s) for s in (slots if isinstance(slots[0], list) else [slots])]
                         for n, slots in bp.sets.items()}
+    # Rich nodes, from a stream of their own so the rest of the map is as it was.
+    starts = {r for pair in world.starts.values() for r in pair}
+    choose_rich_nodes(world, starts, random.Random(bp.seed * 7919 + 13))
+    compute_yields(world)
     assign_points(world)
     return world
 

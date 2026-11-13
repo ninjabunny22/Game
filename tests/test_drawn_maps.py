@@ -8,7 +8,7 @@ import pytest
 from civsim.config import MAPS, game_config
 from civsim.diplomacy.natives import Natives
 from civsim.diplomacy import rules
-from civsim.map import Biome, WorldMap, find_path
+from civsim.map import BIOME_INFO, Biome, WorldMap, find_path
 from civsim.map.blueprint import build, check, walking_links
 from civsim.map.designs import DESIGNS, blueprint
 from civsim.map.regions import Region
@@ -103,3 +103,18 @@ def test_no_two_regions_touch_unless_drawn_so(map_id):
     world = load_map(map_id)
     drawn = {(min(a, b), max(a, b)) for a, b, kind in world.links if not kind.startswith("sea:")}
     assert walking_links(world) == drawn
+
+
+@pytest.mark.parametrize("map_id", DESIGNS)
+def test_rich_nodes_lie_outside_the_starts_and_yield_three_times_as_much(map_id):
+    from civsim.map.resources import DEPOSIT_TYPES, RICH_YIELD
+    world = load_map(map_id)
+    assert world.rich, "every map has places worth fighting over"
+    starts = {r for pair in world.starts.values() for r in pair}
+    for tile in world.rich_tiles:
+        assert world.region_of[tile] not in starts, "starts stay fair"
+        dtype = DEPOSIT_TYPES[world.deposits[tile]]
+        for res, amount in dtype.bonus.items():
+            plain = BIOME_INFO[world.biomes[tile]].yields.get(res, 0)
+            assert world.yields[tile][res] - plain - RICH_YIELD * amount in (0, 1)  # 1: riverside farmland
+    assert set(world.rich) <= world.rich_tiles

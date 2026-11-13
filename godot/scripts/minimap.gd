@@ -22,6 +22,7 @@ const ARMY_SIZE := 4.0
 const MOVE_SPEED := 6.0  # tiles a second, as the figures on the map
 const FAR_GROUND := 600.0  # how far a ray toward the horizon is followed for the view's outline
 
+var _rich: Array = []  # [map position, colour] of each rich node
 var _width := 0
 var _height := 0
 var _scale := 1.0  # pixels per tile
@@ -60,6 +61,11 @@ func setup(init: Dictionary, civ_colors: Array) -> void:
 	_width = int(map["width"])
 	_height = int(map["height"])
 	_scale = LONGEST_SIDE / float(maxi(_width, _height))
+	_rich.clear()
+	for deposit: Dictionary in map.get("deposits", []):
+		if deposit.get("rich"):
+			_rich.append([Vector2(int(deposit["x"]), int(deposit["y"])),
+				Color.html(init["deposit_types"][deposit["type"]]["color"])])
 	_pixels = Vector2i(roundi(_width * _scale), roundi(_height * _scale))
 	var size_px := Vector2(_pixels) + Vector2(MARGIN, MARGIN) * 2.0
 	custom_minimum_size = size_px
@@ -182,6 +188,10 @@ func _draw() -> void:
 	draw_style_box(_style, Rect2(Vector2.ZERO, size))
 	var picture := Rect2(Vector2(MARGIN, MARGIN), Vector2(_pixels))
 	draw_texture_rect(_texture, picture, false)
+	for rich: Array in _rich:  # rich nodes: small diamonds in their resource's colour
+		var at := _to_map(rich[0])
+		draw_colored_polygon(PackedVector2Array([at + Vector2(0, -3), at + Vector2(3, 0), at + Vector2(0, 3), at + Vector2(-3, 0)]),
+			rich[1])
 	for capital: Vector2 in _capitals:
 		draw_circle(_to_map(capital), 2.2, Color(0, 0, 0, 0.6))
 		draw_circle(_to_map(capital), 1.5, Color.WHITE)
