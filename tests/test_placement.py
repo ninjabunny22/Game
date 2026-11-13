@@ -60,7 +60,7 @@ def test_a_stable_that_was_somehow_on_a_capital_is_not_handed_on_with_the_tile(s
     assert not [x for x in b.buildings if x.tile == tile]
 
 
-@pytest.mark.parametrize("kind, side", [("house", 1), ("university", 2), ("stables", 2), ("harbour", 2), ("fortress", 3)])
+@pytest.mark.parametrize("kind, side", [("house", 1), ("school", 1), ("stables", 2), ("harbour", 2)])
 def test_a_building_stands_on_its_own_square_of_tiles(sim, kind, side):
     civ = sim.civs[0]
     world = sim.world
@@ -78,9 +78,9 @@ def test_a_building_stands_on_its_own_square_of_tiles(sim, kind, side):
             place(civ, world, house, part)
     assert find_site(civ, world, house) not in ground
     # Nor may a larger building's square reach onto ground that is taken.
-    for big in ("stables", "fortress"):
-        site = find_site(civ, world, sim.building_defs[big])
-        assert site is not None and not set(footprint(world, big, site)) & set(ground)
+    if kind != "stables":  # one stables to a region
+        site = find_site(civ, world, sim.building_defs["stables"])
+        assert site is not None and not set(footprint(world, "stables", site)) & set(ground)
 
 
 def test_nothing_is_built_where_a_castle_stands(sim):

@@ -90,6 +90,15 @@ func base_material() -> StandardMaterial3D:
 	return _base_material
 
 
+var _goods_material: StandardMaterial3D
+
+## The material of the KayKit ResourceBits models (logs, stone, bars, cogs...): their own texture.
+func goods_material() -> StandardMaterial3D:
+	if _goods_material == null:
+		_goods_material = _material_for(Image.load_from_file(ProjectSettings.globalize_path(DIR + "resource_bits_texture.png")))
+	return _goods_material
+
+
 ## The pack's material with its faction colour repainted as `color`.
 func tinted_material(color: Color) -> StandardMaterial3D:
 	var key := color.to_html(false)

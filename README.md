@@ -88,7 +88,7 @@ viewer reconnects on its own.
 
 Viewer controls: drag to pan, right-drag to orbit, wheel to zoom, `Space` to
 pause, `.` to step one tick, `-` / `=` to change speed, `1`–`5` a civ's drawer, `Tab`
-diplomacy, `T` the tech tree, `L` the chronicle, `Esc` closes the top panel, `H` the keys.
+diplomacy, `T` the tech tree, `L` the chronicle, `Esc` closes the top panel (with none open, it offers the way back to the menu), `H` the keys.
 
 The overlay is built for watching:
 
@@ -135,8 +135,9 @@ The overlay is built for watching:
   the top says how many; click it to go to the largest, again for the next. A finished
   fight's box stays a few days with how it ended.
 - **Tech tree** (while watching; a drawer's Tech tab, or `T`; hover a tech for its exact bonuses,
-  its cost, and the civs that know it in their colours): one column per
-  era, a dot in each civ's colour on every tech it knows, and a frame and progress bar on what
+  its cost, and the civs that know it in their colours): one shaded column per
+  era, each tech a card with a stripe for what it is for (army, water, travel, learning,
+  economy; legend in the header) and curved links to what it needs, a dot in each civ's colour on every tech it knows, and a frame and progress bar on what
   each is learning now. Resting the mouse on a tech says what it does, its cost and who knows
   it; with a civ's drawer open, the tree shows that civ's path.
 - **Text size.** The whole overlay is drawn 35% larger than Godot's default;
@@ -882,13 +883,30 @@ those on a captured tile change sides and wait for their new owner's orders.
   something already built, or beside a castle, to breaking new ground;
   buildings placed by yield weigh that against the yield. With no room left it
   clears whatever stands on the least useful square the new building would fit.
-- **A cap per region, and levels.** A region holds at most 3 villages (a village is a `house`
-  site), 3 farms, 2 lumber camps, 2 quarries, 2 mines and one of every other building. Once
-  the regions are full, a civ upgrades what stands instead of building more: a village up to
-  level 5 (each level houses as many as a house did; it is drawn as one more house in its
-  cluster), everything else up to level 3 (drawn larger). A building's effects count once per
-  level (`region_cap`, `max_level` in `data/buildings.json`). More land is the only way to more
-  room, one more reason to fight over regions.
+- **Eleven buildings, each with one job, upgraded by level** (`data/buildings.json`):
+
+  | Building | What it does | Levels (the tech each higher level needs) | Per city |
+  |---|---|---|---|
+  | Village | houses people | 1-5; 4-5 need Engineering and add growth and water | 3 |
+  | Farm | food | 1-3 | 2 |
+  | Lumber camp | wood | 1-3 | 1 |
+  | Mine | stone, and ore from level 2 (Bronze Working) | 1-3 | 1 |
+  | Storehouse | stores every resource | 1-3; 3 needs Waterworks (more water) | 1 |
+  | Market | gold | 1-3; 2 is a bank (Banking) | 1 |
+  | School | research | 1-3; 2 is a university (Education) | 1 |
+  | Workshop | builds faster; more wood, stone, ore | 1-3; 3 is a factory (Steam Power) | 1 |
+  | Barracks | trains soldiers, army strength | 1-3; 2 is an academy (Military Academy) | 1 |
+  | Stables | horses | 1-3 | 1 |
+  | Harbour | food, gold, boats | 1-3 | 1 |
+
+  Each level counts its effects once more, plus what it becomes at the levels named. With a
+  city's plots full, a civ upgrades what stands instead of building more, so more land is the
+  only way to more room. Town buildings stand on fixed plots in a ring round the castle (the
+  four sides, the corners, then a second ring), farms, lumber camps and mines on good ground
+  nearby, a harbour on the shore. Walls and fortresses are no longer buildings: Masonry (+30%
+  defence) and Fortification (+45%) wall the castles themselves. An upgrade shows: a village
+  is a growing cluster of houses, and the others gather goods beside them (logs, stone, iron,
+  gold, crates). Click a castle to see its city's buildings, their levels and what they do.
 - **Villages.** Every capital a civ holds is the centre of its own town. A
   building joins the nearest village or town of its civ within 4 tiles that
   still has room (a town holds 60 buildings, a village 40); if there is none

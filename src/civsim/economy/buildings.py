@@ -31,6 +31,8 @@ class BuildingDef:
     # Outside the walls: at most this many of it in one region (a house is a village site) ...
     region_cap: int | None = None
     max_level: int = 1  # ... each upgraded up to this level instead of built again; effects count once per level
+    level_techs: dict = field(default_factory=dict)  # level -> the tech needed to reach it (a library becomes a university)
+    level_bonus: dict = field(default_factory=dict)  # level -> extra effects from that level on
     size: int = 1  # tiles a side of the square it stands on
     color: str = "#ffffff"
     height: float = 0.5
@@ -162,6 +164,30 @@ def may_stand(world: WorldMap, building_type: str, tile: int) -> bool:
     return not castle_ground(world, tile) and tile not in world.mines
 
 
+# The plots round a castle where its town buildings stand, in the order they are taken: the
+# four sides first, then the corners, then a second ring. (x, y) offsets from the castle's tile.
+PLOTS = ((0, -3), (3, 0), (0, 3), (-3, 0), (3, -3), (3, 3), (-3, 3), (-3, -3),
+         (0, -4), (4, 0), (0, 4), (-4, 0), (4, -4), (4, 4), (-4, 4), (-4, -4))
+# A city's villages stand apart, out in its land: three hamlets spread round it (a third of the
+# way round from each other), with places further on where those are water, rock or not its own.
+VILLAGE_PLOTS = ((0, -7), (6, 4), (-6, 4), (7, -3), (-7, -3), (0, 7), (5, -6), (-5, -6), (0, 8),
+                 (8, 1), (-8, 1), (3, 7), (-3, 7), (0, -6), (6, -1), (-6, -1), (5, 5), (-5, 5))
+
+
+def town_plots(civ, world: WorldMap, offsets=PLOTS) -> dict[int, int]:
+    """Each plot round the civ's castles, by the order it is taken in (the capital's first);
+    only plots in the castle's own region."""
+    order: dict[int, int] = {}
+    for rank, settlement in enumerate(civ.settlements):
+        x, y = world.xy(settlement.tile)
+        region = world.region_of[settlement.tile]
+        for index, (dx, dy) in enumerate(offsets):
+            px, py = x + dx, y + dy
+            if 0 <= px < world.width and 0 <= py < world.height and world.region_of[py * world.width + px] == region:
+                order.setdefault(py * world.width + px, rank * len(offsets) + index)
+    return order
+
+
 def survey_ground(civ, world: WorldMap) -> tuple[set[int], set[int]]:
     """The civ's tiles that are free to build on, and the tiles beside something built.
     The same rule as placement_problem, worked out once for the whole territory; good until
@@ -215,7 +241,7 @@ def find_site(civ, world: WorldMap, bdef: BuildingDef, ground: tuple | None = No
     """
     free, beside_something = ground or survey_ground(civ, world)
     cx, cy = world.xy(civ.capital.tile)
-    resource = bdef.placement.partition(":")[2]
+    resources = [r for r in bdef.placement.partition(":")[2].split(",") if r]  # a mine: stone or ore
     # A harbour is for getting somewhere: it goes on the shore nearest a capital the civ does
     # not hold, and well away from any harbour it already has.
     own = {s.tile for s in civ.settlements}
@@ -230,6 +256,9 @@ def find_site(civ, world: WorldMap, bdef: BuildingDef, ground: tuple | None = No
             if b.type == bdef.id:
                 held[world.region_of[b.tile]] = held.get(world.region_of[b.tile], 0) + 1
         full = {region for region, n in held.items() if n >= bdef.region_cap}
+    plots = {}
+    if bdef.placement == "center":
+        plots = town_plots(civ, world, VILLAGE_PLOTS if bdef.id == "house" else PLOTS)
     best, best_score = None, -math.inf
     for tile in sorted(free):
         if world.region_of[tile] in full:
@@ -242,8 +271,13 @@ def find_site(civ, world: WorldMap, bdef: BuildingDef, ground: tuple | None = No
         beside = any(part in beside_something for part in ground)
         x, y = world.xy(tile)
         distance = math.hypot(x - cx, y - cy)
-        if resource:
-            tile_yield = max(world.yields[part].get(resource, 0) for part in ground)
+        if bdef.placement == "center":
+            # A town building takes the first free plot in the ring round a castle, the capital's first.
+            if tile not in plots:
+                continue
+            score = -plots[tile]
+        elif resources:
+            tile_yield = max(world.yields[part].get(resource, 0) for part in ground for resource in resources)
             if tile_yield <= 0:
                 continue
             score = 2 * tile_yield - 0.15 * distance + (FILL_FIRST_YIELD if beside else 0.0)

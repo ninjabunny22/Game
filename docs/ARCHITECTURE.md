@@ -57,7 +57,7 @@ about structure and data flow.
 | Package | Responsibility | Uses |
 |---|---|---|
 | `map/` | drawn maps: shapes, blueprints and their builder and checker (`blueprint.py`), the nine designs (`designs/`), saved maps (`saved.py`, files in `data/maps`), PNG previews; generated maps for tests (noise, biomes, rivers, lakes, deposits); regions; pathfinding | none |
-| `economy/` | production, population, buildings and placement (one rule), modifiers, villagers, horses, harbours | map |
+| `economy/` | production, population, buildings and placement (one rule; `town_plots` gives the fixed plots, `PLOTS` for town buildings and `VILLAGE_PLOTS` for villages; caps per region and levels from `buildings.json`, effects counted once per level), modifiers, villagers, horses, harbours | map |
 | `tech/` | tech tree (`data/techs.json`), research progress | none |
 | `civ/` | civ state, personalities, the rule-based AI | economy, tech |
 | `military/` | units and tiers, armies, commanders, warfare (march, battle, siege, capital hold, rally, reinforcing allies, holding own castles, scouting, hospitals) | map, economy, diplomacy, strategy.geography |

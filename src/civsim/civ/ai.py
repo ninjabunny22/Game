@@ -327,7 +327,8 @@ class CivAI:
 
     def _to_upgrade(self, civ: Civilization, bdef: BuildingDef):
         """The finished building of this kind with the lowest level below its top, if any."""
-        candidates = [b for b in civ.buildings if b.type == bdef.id and b.complete and b.level < bdef.max_level]
+        candidates = [b for b in civ.buildings if b.type == bdef.id and b.complete and b.level < bdef.max_level
+                      and bdef.level_techs.get(str(b.level + 1), None) in (None, *civ.known_techs)]
         return min(candidates, key=lambda b: (b.level, b.tile)) if candidates else None
 
     def _building_score(self, civ: Civilization, bdef: BuildingDef, needs: dict, count: int) -> float:
@@ -357,7 +358,7 @@ class CivAI:
         if tick - civ.last_demolition < DEMOLITION_COOLDOWN:
             return None
         world = self.world
-        resource = wanted.placement.partition(":")[2]
+        resource = wanted.placement.partition(":")[2].split(",")[0]
         cx, cy = world.xy(civ.capital.tile)
 
         def worth(building: Building) -> float:

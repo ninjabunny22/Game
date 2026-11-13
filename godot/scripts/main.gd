@@ -196,7 +196,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		KEY_1, KEY_2, KEY_3, KEY_4, KEY_5:
 			_hud.toggle_card(event.keycode - KEY_1)
 		KEY_ESCAPE:
-			_hud.close_top()
+			if not _hud.close_top() and not _menu.visible:
+				_hud.ask_leave()
 
 
 ## Labels and figures are shown according to zoom, so the far view stays readable.

@@ -169,7 +169,7 @@ def produce(civ, mods: Modifiers, building_defs, tick: int | None = None) -> Non
 
 def training_rate(civ) -> float:
     """Soldiers the civ can train per tick: a levy that grows with its people, and its barracks."""
-    barracks = sum(1 for b in civ.buildings if b.type == "barracks" and b.complete and b.active)
+    barracks = sum(b.level for b in civ.buildings if b.type == "barracks" and b.complete and b.active)
     return TRAIN_LEVY + TRAIN_LEVY_PER_POP * civ.population + TRAIN_PER_BARRACKS * barracks
 
 

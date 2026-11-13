@@ -22,37 +22,35 @@ const PLINTH_HEIGHT := 0.12
 ## Where the houses of a village stand on its tile, by level (one more at each).
 const HOUSE_CLUSTER := [Vector3(0, 0, 0), Vector3(0.32, 0, 0.22), Vector3(-0.32, 0, 0.2), Vector3(0.24, 0, -0.32),
 	Vector3(-0.26, 0, -0.3)]
+## How each building is drawn: its model, and the goods (KayKit ResourceBits) piled beside
+## it from a level on, so an upgrade shows: [model, size, offset] for each level and up.
 const BUILDING_MODELS := {
 	"house": {"model": "building_home_A_green", "alt": "building_home_B_green", "size": 0.78, "tinted": true},
-	"farm": {"model": "building_grain", "size": 0.95},
-	"lumber_camp": {"model": "building_lumbermill_green", "size": 0.9, "tinted": true},
-	"quarry": {"model": "building_mine_green", "size": 0.9, "tinted": true, "marker": true},
-	"mine": {"model": "building_mine_green", "size": 0.9, "tinted": true},
-	"granary": {"model": "building_windmill_green", "size": 0.85, "tinted": true},
-	"lumber_yard": {"model": "resource_lumber", "size": 0.8},
-	"stone_yard": {"model": "resource_stone", "size": 0.7},
-	"ore_depot": {"model": "crate_A_big", "size": 0.55, "marker": true},
-	"treasury": {"model": "building_tavern_green", "size": 0.85, "tinted": true, "marker": true},
-	"cistern": {"model": "building_well_green", "size": 0.6, "tinted": true},
-	"reservoir": {"model": "building_well_green", "size": 0.8, "tinted": true, "marker": true},
-	"library": {"model": "building_church_green", "size": 0.8, "tinted": true},
-	"university": {"model": "building_church_green", "size": 0.95, "tinted": true, "marker": true},
+	"farm": {"model": "building_grain", "size": 0.95,
+		"goods": {2: [["sack", 0.16, Vector3(0.4, 0, 0.4)]], 3: [["Pallet_Wood_Covered_A", 0.22, Vector3(-0.38, 0, 0.4)]]}},
+	"lumber_camp": {"model": "building_lumbermill_green", "size": 0.9, "tinted": true,
+		"goods": {2: [["Wood_Log_Stack", 0.24, Vector3(0.4, 0, 0.38)]], 3: [["Wood_Planks_Stack_Large", 0.26, Vector3(-0.38, 0, 0.4)]]}},
+	"mine": {"model": "building_mine_green", "size": 0.9, "tinted": true,
+		"goods": {1: [["Stone_Chunks_Small", 0.18, Vector3(0.4, 0, 0.38)]], 2: [["Iron_Nuggets", 0.16, Vector3(-0.38, 0, 0.4)]],
+			3: [["Iron_Bars_Stack_Small", 0.2, Vector3(0.42, 0, -0.36)]]}},
+	"storehouse": {"model": "building_windmill_green", "size": 0.85, "tinted": true,
+		"goods": {1: [["Pallet_Wood_Covered_A", 0.2, Vector3(0.4, 0, 0.38)]], 2: [["Textiles_Stack_Small", 0.18, Vector3(-0.38, 0, 0.4)]],
+			3: [["Stone_Bricks_Stack_Small", 0.2, Vector3(0.42, 0, -0.36)], ["Textiles_Stack_Large_Colored", 0.22, Vector3(-0.4, 0, -0.36)]]}},
 	"market": {"model": "building_market_green", "size": 0.9, "tinted": true,
-		"props": [["crate_A_small", 0.12, Vector3(0.42, 0, 0.36)], ["sack", 0.12, Vector3(0.3, 0, 0.44)]]},
-	"bank": {"model": "building_tavern_green", "size": 0.95, "tinted": true, "marker": true},
-	"workshop": {"model": "building_blacksmith_green", "size": 0.9, "tinted": true},
-	"factory": {"model": "building_blacksmith_green", "size": 0.98, "tinted": true, "marker": true},
-	"aqueduct": {"model": "building_bridge_A", "size": 0.95, "lift": 0.45},
+		"props": [["crate_A_small", 0.12, Vector3(0.42, 0, 0.36)], ["sack", 0.12, Vector3(0.3, 0, 0.44)]],
+		"goods": {2: [["Gold_Bars_Stack_Small", 0.16, Vector3(-0.38, 0, 0.4)]], 3: [["Gold_Bars_Stack_Large", 0.2, Vector3(0.42, 0, -0.36)]]}},
+	"school": {"model": "building_church_green", "size": 0.85, "tinted": true,
+		"goods": {2: [["Textiles_Stack_Small", 0.16, Vector3(0.4, 0, 0.4)]], 3: [["Textiles_Stack_Large_Colored", 0.2, Vector3(-0.4, 0, 0.4)]]}},
+	"workshop": {"model": "building_blacksmith_green", "size": 0.9, "tinted": true,
+		"goods": {1: [["Parts_Pile_Small", 0.16, Vector3(0.4, 0, 0.38)]], 2: [["Parts_Cog", 0.16, Vector3(-0.38, 0, 0.4)]],
+			3: [["Parts_Pile_Medium", 0.22, Vector3(0.42, 0, -0.36)], ["Iron_Bars_Stack_Small", 0.18, Vector3(-0.4, 0, -0.36)]]}},
 	# A quay with a warehouse and a ship alongside; it is turned so the quay is on the water.
 	# Made in Blender (tools/blender/make_models.py): turned so its pier runs out over the water.
 	"harbour": {"model": "civsim_harbour", "size": 0.95, "faces_water": true, "tinted": true},
-	# Barracks keep their arms racked outside, and a butt to practise on.
+	# Barracks keep their arms racked outside, and a butt to practise on; an academy's tent from level 2.
 	"barracks": {"model": "building_barracks_green", "size": 0.88, "tinted": true,
-		"props": [["weaponrack", 0.2, Vector3(0.4, 0, 0.3)], ["target", 0.2, Vector3(0.36, 0, -0.38)]]},
-	"academy": {"model": "building_archeryrange_green", "size": 0.9, "tinted": true,
-		"props": [["target", 0.2, Vector3(0.4, 0, 0.36)], ["tent", 0.3, Vector3(-0.34, 0, 0.36)]]},
-	"walls": {"model": "wall_straight", "alt": "wall_straight_gate", "size": 0.98},
-	"fortress": {"model": "building_tower_catapult_green", "size": 0.8, "tinted": true},
+		"props": [["weaponrack", 0.2, Vector3(0.4, 0, 0.3)], ["target", 0.2, Vector3(0.36, 0, -0.38)]],
+		"goods": {2: [["tent", 0.28, Vector3(-0.36, 0, 0.36)]]}},
 	# Its own model, from assets/characters.
 	"stables": {"model": "civsim_stable", "size": 0.95, "tinted": true},  # made in Blender
 }
@@ -816,6 +814,18 @@ func _batch_building(key: String, civ_id: int, building: Dictionary) -> void:
 		var beside := Transform3D(Basis(), (prop[2] as Vector3) * tiles)
 		for part: Array in _models.parts(prop[0], float(prop[1]) * tiles):
 			_batches.add(key, part[0], _models.tinted_material(color), placed * beside * (part[1] as Transform3D))
+	# Goods piled beside it from a level on: an upgraded building shows it. The Hexagon pack's
+	# own props (a sack, a tent) take its tinted material; the ResourceBits models their own.
+	var goods: Dictionary = spec.get("goods", {})
+	for from_level: int in goods:
+		if level < from_level:
+			continue
+		for good: Array in goods[from_level]:
+			var model := str(good[0])
+			var stuff: Material = _models.goods_material() if model[0] == model[0].to_upper() else _models.tinted_material(color)
+			var beside := Transform3D(Basis(), (good[2] as Vector3) * tiles)
+			for part: Array in _models.parts(model, float(good[1]) * tiles):
+				_batches.add(key, part[0], stuff, placed * beside * (part[1] as Transform3D))
 	if not spec.get("tinted", false):
 		var at := Transform3D(Basis(), Vector3(0.36, 0.0, 0.36) * tiles)
 		for part: Array in _models.parts("flag_green", 0.42):

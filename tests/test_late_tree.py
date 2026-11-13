@@ -12,8 +12,9 @@ from civsim.military import Army, Commander
 from civsim.simulation import Simulation
 
 NEW_ERAS = {4: "Renaissance", 5: "Age of Reason", 6: "Industrial"}
-NEW_BUILDINGS = {"bank": "banking", "academy": "military_academy", "harbour": "navigation",
-                 "fortress": "fortification", "reservoir": "waterworks", "factory": "steam_power"}
+# The late techs raise buildings a level (a market becomes a bank, a workshop a factory) or open the harbour.
+NEW_LEVELS = {("market", 2): "banking", ("barracks", 2): "military_academy", ("storehouse", 3): "waterworks",
+              ("workshop", 3): "steam_power"}
 
 
 @pytest.fixture
@@ -54,12 +55,13 @@ def test_the_original_eighteen_techs_are_unchanged(sim):
     assert tree.techs["boatbuilding"].effects == {"boats": 1}
 
 
-def test_new_buildings_are_unlocked_by_their_techs(sim):
-    for building_id, tech_id in NEW_BUILDINGS.items():
-        assert sim.building_defs[building_id].requires_tech == tech_id
+def test_new_levels_are_unlocked_by_their_techs(sim):
+    for (building_id, level), tech_id in NEW_LEVELS.items():
+        assert sim.building_defs[building_id].level_techs[str(level)] == tech_id
         assert sim.tech_tree.techs[tech_id].era >= 4
-    assert sim.building_defs["reservoir"].stores == {"water": 600}
-    assert sim.building_defs["bank"].effects["income"]["gold"] > 0
+    assert sim.building_defs["harbour"].requires_tech == "navigation"
+    assert sim.building_defs["storehouse"].level_bonus["3"]["store"] == {"water": 400}
+    assert sim.building_defs["market"].level_bonus["2"]["income"]["gold"] > 0
 
 
 def test_a_harbour_must_stand_on_the_water(sim):
@@ -130,7 +132,7 @@ def test_war_techs_change_the_fight(sim):
     assert mods.military == pytest.approx(0.1) and mods.tier == 2
     assert mods.casualties == pytest.approx(-0.1)
     assert mods.capture_speed == pytest.approx(0.5)
-    assert mods.defense == pytest.approx(0.25)
+    assert mods.defense == pytest.approx(0.45), "fortification makes the castles fortresses"
     assert mods.home_speed == 1 and mods.reinforce == 1.0
 
     # On home ground a railway army covers two tiles where it used to cover one.

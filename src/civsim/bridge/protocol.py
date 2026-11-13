@@ -275,7 +275,8 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
             "buildings": [
                 {"id": b.id, "type": b.type, "x": b.tile % world.width, "y": b.tile // world.width,
                  "village": b.village,
-                 "progress": round(b.progress, 2), "complete": b.complete, "active": b.active, "level": b.level}
+                 "progress": round(b.progress, 2), "complete": b.complete, "active": b.active, "level": b.level,
+                 "region": world.region_of[b.tile]}
                 for b in civ.buildings
             ],
             # Villages and towns: named groups of buildings. "capital" marks the town around

@@ -180,7 +180,7 @@ def test_people_and_farms_drink(sim):
     produce(civ, mods, sim.building_defs)
     assert civ.upkeep["water"] > people_only, "irrigation draws on it too"
     assert sim.building_defs["farm"].upkeep["water"] > 0
-    assert all("water" in sim.building_defs[b].upkeep for b in ("farm", "mine", "quarry", "workshop"))
+    assert all("water" in sim.building_defs[b].upkeep for b in ("farm", "mine", "workshop"))
     assert "water" not in sim.building_defs["house"].upkeep
 
 

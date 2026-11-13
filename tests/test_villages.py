@@ -8,7 +8,7 @@ from civsim.bridge import protocol
 from civsim.civ import VILLAGE_RANGE, Building
 from civsim.config import SimConfig
 from civsim.economy import advance_construction, manage_villagers
-from civsim.economy.buildings import CASTLE_REACH, find_site
+from civsim.economy.buildings import CASTLE_REACH, PLOTS, VILLAGE_PLOTS, find_site, town_plots
 
 BESIDE = CASTLE_REACH + 1  # the first ring outside a castle's ground
 from civsim.map import BIOME_INFO
@@ -42,29 +42,25 @@ def test_a_tile_holds_one_building(sim):
     civ = sim.civs[0]
     house, market = sim.building_defs["house"], sim.building_defs["market"]
     first = find_site(civ, sim.world, house)
-    assert reach(sim, first, civ.capital.tile) == BESIDE, "right beside the castle, which has its own ground"
+    assert first in town_plots(civ, sim.world, VILLAGE_PLOTS), "a village goes on one of its region's village sites"
     civ.buildings.append(Building("house", first))
     assert find_site(civ, sim.world, house) != first
     assert find_site(civ, sim.world, market) != first, "nothing shares a tile"
 
 
-def test_sites_beside_what_is_built_are_taken_before_new_ground_is_broken(sim):
+def test_town_buildings_take_the_plots_round_the_castle_in_turn(sim):
     civ = sim.civs[0]
-    far = tile_at(sim, civ, 5)
-    workshop = sim.building_defs["workshop"]
-    assert reach(sim, find_site(civ, sim.world, workshop), civ.capital.tile) == BESIDE
-    civ.buildings.append(Building("house", far))
-    # Fill the ground beside the castles: the next site is beside the far house.
-    for _ in range(200):
-        site = find_site(civ, sim.world, workshop)
-        if min(reach(sim, site, s.tile) for s in civ.settlements) > BESIDE and reach(sim, site, far) == 1:
-            break
-        civ.buildings.append(Building("granary", site))
-    else:
-        raise AssertionError("never built beside the far house")
-    assert all(reach(sim, b.tile, far) <= 1 or any(reach(sim, b.tile, o.tile) <= 1 or
-               min(reach(sim, b.tile, s.tile) for s in civ.settlements) <= BESIDE for o in civ.buildings if o is not b)
-               for b in civ.buildings), "the town grew outward from what stood, never off on its own"
+    plots = town_plots(civ, sim.world, PLOTS)
+    taken = []
+    for kind in ("storehouse", "workshop", "barracks"):
+        bdef = sim.building_defs[kind]
+        civ.known_techs = list({*civ.known_techs, bdef.requires_tech} - {None})
+        site = find_site(civ, sim.world, bdef)
+        assert site in plots and site not in taken, "each on a free plot of its own"
+        assert reach(sim, site, civ.capital.tile) in (3, 4), "in the ring round the castle"
+        civ.buildings.append(Building(kind, site))
+        taken.append(site)
+    assert find_site(civ, sim.world, sim.building_defs["barracks"]) != taken[-1]
 
 
 def test_buildings_on_one_tile_each_need_their_own_villager(sim):
@@ -72,7 +68,7 @@ def test_buildings_on_one_tile_each_need_their_own_villager(sim):
     mods = sim.modifiers[civ.id]
     mods.build_slots = 3
     tile = civ.capital.tile
-    sites = [Building(kind, tile) for kind in ("house", "market", "library")]
+    sites = [Building(kind, tile) for kind in ("house", "market", "school")]
     civ.buildings += sites
     civ.population = 30  # two villagers, no more
     del civ.villagers[2:]
@@ -225,7 +221,7 @@ def test_a_full_town_takes_no_more_and_growth_founds_villages_beside_it(sim):
     capital = civ.capital.tile
     near = [t for t in sorted(civ.territory) if reach(sim, t, capital) <= 4
             and min(reach(sim, t, s.tile) for s in civ.settlements) == reach(sim, t, capital)]
-    kinds = ("house", "market", "library")
+    kinds = ("house", "market", "school")
     civ.buildings = [Building(kinds[i % 3], near[i // 3]) for i in range(70)]
     events: list = []
     sim.villages.update(1, events)

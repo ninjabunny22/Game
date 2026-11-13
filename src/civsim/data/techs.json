@@ -11,13 +11,13 @@
       "id": "pottery", "name": "Pottery", "era": 0, "prereqs": [],
       "cost": {"science": 30, "wood": 20},
       "effects": {"storage": 100},
-      "description": "+100 storage for every resource; unlocks the storage buildings"
+      "description": "+100 storage for every resource; unlocks the Storehouse"
     },
     {
       "id": "mining", "name": "Mining", "era": 0, "prereqs": [],
       "cost": {"science": 35, "wood": 25},
       "effects": {"yield_mult": {"stone": 0.15}, "demolition_refund": 0.03},
-      "description": "+15% stone, demolition refund up to 13%; unlocks Quarry"
+      "description": "+15% stone, demolition refund up to 13%; unlocks the Mine (stone)"
     },
     {
       "id": "animal_husbandry", "name": "Animal Husbandry", "era": 0, "prereqs": ["agriculture"],
@@ -35,19 +35,19 @@
       "id": "writing", "name": "Writing", "era": 1, "prereqs": ["pottery"],
       "cost": {"science": 90, "wood": 40},
       "effects": {"science_mult": 0.15},
-      "description": "+15% science; unlocks Library"
+      "description": "+15% science; unlocks the School"
     },
     {
       "id": "bronze_working", "name": "Bronze Working", "era": 1, "prereqs": ["mining"],
       "cost": {"science": 100, "wood": 30, "stone": 40},
       "effects": {"yield_mult": {"ore": 0.25}, "military": 0.1},
-      "description": "+25% ore, +10% army strength; unlocks Mine and Barracks"
+      "description": "+25% ore, +10% army strength; Mines dig ore too (Mine level 2)"
     },
     {
       "id": "masonry", "name": "Masonry", "era": 1, "prereqs": ["mining"],
       "cost": {"science": 90, "stone": 50},
-      "effects": {"build_speed": 0.25, "housing": 10, "defense": 0.1, "demolition_refund": 0.04},
-      "description": "+25% construction speed, +10 housing, +10% defence, demolition refund up to 17%; unlocks Walls"
+      "effects": {"build_speed": 0.25, "housing": 10, "defense": 0.3, "demolition_refund": 0.04},
+      "description": "+25% construction speed, +10 housing, +30% defence (the castles are walled), demolition refund up to 17%"
     },
     {
       "id": "the_wheel", "name": "The Wheel", "era": 1, "prereqs": ["animal_husbandry"],
@@ -95,13 +95,13 @@
       "id": "engineering", "name": "Engineering", "era": 2, "prereqs": ["masonry", "the_wheel"],
       "cost": {"science": 360, "stone": 80, "ore": 20},
       "effects": {"build_slots": 1, "demolition_refund": 0.04},
-      "description": "+1 simultaneous construction, demolition refund up to 21%; unlocks Aqueduct (+20% water)"
+      "description": "+1 simultaneous construction, demolition refund up to 21%; Villages grow to level 4-5 (aqueducts: +15% growth, +20% water)"
     },
     {
       "id": "education", "name": "Education", "era": 3, "prereqs": ["mathematics", "currency"],
       "cost": {"science": 800, "wood": 80, "gold": 60},
       "effects": {"science_mult": 0.2},
-      "description": "+20% science; unlocks University"
+      "description": "+20% science; School level 2 (a university)"
     },
     {
       "id": "machinery", "name": "Machinery", "era": 3, "prereqs": ["engineering", "iron_working"],
@@ -137,7 +137,7 @@
       "id": "banking", "name": "Banking", "era": 4, "prereqs": ["guilds"],
       "cost": {"science": 3500, "stone": 150, "gold": 150},
       "effects": {"income": {"gold": 1.0}, "deal_fee": -0.5},
-      "description": "+1 gold per tick, trade deals cost half to open; unlocks Bank"
+      "description": "+1 gold per tick, trade deals cost half to open; Market level 2 (a bank)"
     },
     {
       "id": "quartermasters", "name": "Quartermasters", "era": 4, "prereqs": ["logistics"],
@@ -148,14 +148,14 @@
     {
       "id": "fortification", "name": "Fortification", "era": 4, "prereqs": ["engineering", "machinery"],
       "cost": {"science": 3700, "stone": 200, "ore": 100},
-      "effects": {"defense": 0.25},
-      "description": "+25% defence; unlocks Fortress"
+      "effects": {"defense": 0.45},
+      "description": "+45% defence (the castles become fortresses)"
     },
     {
       "id": "military_academy", "name": "Military Academy", "era": 4, "prereqs": ["education", "iron_working"],
       "cost": {"science": 3700, "wood": 150, "gold": 120},
       "effects": {"commander_xp": 0.5, "commander_start": 1, "officer_appointment": 1},
-      "description": "Commanders gain experience 50% faster and new ones start at level 2; trained officers can be appointed for gold, two levels higher; unlocks Academy"
+      "description": "Commanders gain experience 50% faster and new ones start at level 2; trained officers can be appointed for gold, two levels higher; Barracks level 2 (an academy)"
     },
     {
       "id": "navigation", "name": "Navigation", "era": 4, "prereqs": ["boatbuilding", "mathematics"],
@@ -167,7 +167,7 @@
       "id": "waterworks", "name": "Waterworks", "era": 4, "prereqs": ["water_purification", "engineering"],
       "cost": {"science": 3500, "stone": 200, "wood": 100},
       "effects": {"water_mult": 0.25, "store": {"water": 200}},
-      "description": "+25% water supply, +200 water storage; unlocks Reservoir"
+      "description": "+25% water supply, +200 water storage; Storehouse level 3 (a reservoir)"
     },
     {
       "id": "scientific_method", "name": "Scientific Method", "era": 5, "prereqs": ["printing_press"],
@@ -221,7 +221,7 @@
       "id": "steam_power", "name": "Steam Power", "era": 6, "prereqs": ["scientific_method", "civil_engineering"],
       "cost": {"science": 20500, "ore": 450, "wood": 400},
       "effects": {"yield_mult": {"all": 0.25}},
-      "description": "+25% to all resource yields; unlocks Factory"
+      "description": "+25% to all resource yields; Workshop level 3 (a factory)"
     },
     {
       "id": "railways", "name": "Railways", "era": 6, "prereqs": ["steam_power"],

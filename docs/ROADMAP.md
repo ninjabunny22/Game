@@ -11,6 +11,12 @@ state is in CIVSIM_STATUS.md.
 
 ## Immediate priorities (agreed)
 
+- **Next: an AI that sees its attacks through and understands the game.** Armies often
+  attack a castle, then give up mid-fight though they have the troops: find why (campaign or
+  siege abandonment, intent flips, home-guard recalls) and fix it. Then rework what the
+  strategist values (`Params`, context, region values) so its choices follow the game's real
+  economy, war odds, regions and alliances.
+
 0. ~~**The nine drawn maps: judge them by play.**~~ Done: the balance batch (5 games per civ,
    every map and civ count) is in CIVSIM_STATUS.md; victory is by region points (80% and half
    the regions). Fixed from it: eight-way movement, centrality, Gilded Isle's 4-civ homes,

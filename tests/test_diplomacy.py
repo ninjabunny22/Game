@@ -332,7 +332,7 @@ def test_buildings_on_a_tile_follow_the_tile_both_ways(sim):
            and t != b.capital.tile and BIOME_INFO[sim.world.biomes[t]].buildable]
     done, unfinished = far[0], far[1]
     # A building the captor has no tech for, and one still under construction.
-    b.buildings += [Building("university", done, 1.0, True), Building("house", unfinished, 0.4, False)]
+    b.buildings += [Building("school", done, 1.0, True), Building("house", unfinished, 0.4, False)]
     assert "education" not in a.known_techs
 
     events: list = []
@@ -340,19 +340,19 @@ def test_buildings_on_a_tile_follow_the_tile_both_ways(sim):
         sim.diplomacy._capture_tile(relation, a, b, tile, sim.tick, events)
     assert not b.buildings
     assert {(bld.type, bld.tile, bld.progress, bld.complete) for bld in a.buildings} == {
-        ("university", done, 1.0, True), ("house", unfinished, 0.4, False)}
+        ("school", done, 1.0, True), ("house", unfinished, 0.4, False)}
     assert sum("captures a" in e["text"] for e in events) == 2
 
     # The captor now runs them: it gets the output and pays the upkeep.
     a.resources["gold"] = 50
     sim.step()
-    assert sim.modifiers[a.id].science >= 2.0 and sim.modifiers[b.id].science == 0
-    assert a.upkeep["gold"] >= sim.building_defs["university"].upkeep["gold"]
+    assert sim.modifiers[a.id].science >= 0.6 and sim.modifiers[b.id].science == 0
+    assert a.upkeep["gold"] >= sim.building_defs["school"].upkeep["gold"]
 
     for tile in (done, unfinished):
         sim.diplomacy._capture_tile(relation, b, a, tile, sim.tick, events)
     assert not [bld for bld in a.buildings if bld.tile in (done, unfinished)]
-    assert {bld.type for bld in b.buildings if bld.tile in (done, unfinished)} == {"university", "house"}
+    assert {bld.type for bld in b.buildings if bld.tile in (done, unfinished)} == {"school", "house"}
     assert all(sim.world.owner[bld.tile] == b.id for bld in b.buildings)
 
 
@@ -411,15 +411,15 @@ def test_captured_stores_are_shared_but_the_building_goes_to_the_captor(sim):
     tile = next(t for t in sorted(enemy.territory) if t != enemy.capital.tile
                 and t not in set(sim.world.neighbors(enemy.capital.tile, diagonal=True))
                 and BIOME_INFO[sim.world.biomes[t]].buildable)
-    enemy.buildings.append(Building("granary", tile, 1.0, True))
+    enemy.buildings.append(Building("storehouse", tile, 1.0, True))
     enemy.resources["food"] = 250
-    sim.modifiers[enemy.id].storage["food"] = 600.0  # so this granary (300) holds half the stock
+    sim.modifiers[enemy.id].storage["food"] = 600.0  # so this storehouse (200) holds a third of the stock
     a.resources["food"] = ally.resources["food"] = 0
-    held = 250 * 300 / 600
+    held = 250 * 200 / 600
 
     events: list = []
     sim.diplomacy._capture_tile(relation, a, enemy, tile, sim.tick, events)
-    assert [b.type for b in a.buildings if b.tile == tile] == ["granary"], "the weaker ally took it, so it owns it"
+    assert [b.type for b in a.buildings if b.tile == tile] == ["storehouse"], "the weaker ally took it, so it owns it"
     assert not [b for b in ally.buildings if b.tile == tile] and tile in a.territory
     assert a.resources["food"] == pytest.approx(0.25 * held)
     assert ally.resources["food"] == pytest.approx(0.75 * held), "the stronger ally gets the larger share"

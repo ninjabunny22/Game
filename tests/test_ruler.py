@@ -79,7 +79,7 @@ def test_research_and_building_orders_are_carried_out_then_cleared(sim):
     tech = state["research_options"][-1]["id"]
     assert ruler.command("set_research", {"tech": "not_a_tech"}) is not None
     assert ruler.command("set_research", {"tech": tech}) is None
-    assert ruler.command("set_build", {"building": "factory"}) == "that cannot be built", "its tech is unknown"
+    assert ruler.command("set_build", {"building": "workshop"}) == "that cannot be built", "its tech is unknown"
     assert ruler.command("set_build", {"building": "house"}) is None
     houses = civ.count("house")
     run(sim, 400)

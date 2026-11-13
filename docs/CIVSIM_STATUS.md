@@ -27,15 +27,19 @@ style). Balance and timing have not had their dedicated pass yet.
 - **Region valuation** (`strategy/geography.py`): one value per region per civ, used by
   expansion, native campaigns (including across water), war targets, harbour siting and the
   strategist's war reasons.
-- **Economy:** workers, six resources (food, wood, stone, ore, gold, water), buildings with
-  upkeep and placement rules, storage, villagers, horses, harbours, trade deals, early
+- **Economy:** workers, six resources (food, wood, stone, ore, gold, water), storage,
+  eleven buildings (README table), each with one job, a cap per region and levels (village
+  1–5, the rest 1–3) that the old techs unlock; the AI upgrades rather than builds again once
+  a region is full. Town buildings take fixed plots in a ring round each castle, villages
+  their own sites 5–8 tiles out; walls and fortress became castle defence (Masonry,
+  Fortification); villagers, horses, harbours, trade deals, early
   growth bonus, gold mines on every gold vein (1 gold a day to the region's holder, once it
   knows Mining).
 - **Research:** 42 techs in 7 eras, including soldier-cost efficiency, troop tiers (1–4) and
   castle hospital beds.
 - **Military:** trained and paid soldiers, up to 5 field armies per civ under commanders with
   limited capacity, garrisons, unit counters, battles, routs, pursuit, captured commanders,
-  sieges with a 60-day capital hold, rallies between allies, reinforcing an ally's
+  sieges (a castle taken is its region won at once), rallies between allies, reinforcing an ally's
   capital, generals leaving part of their army to hold a threatened castle of their own,
   refitting only at home, hospitals (10-day healing), scouting.
 - **Diplomacy:** stances, alliances (wear out after 100 days of peace), betrayal, peace terms
@@ -79,7 +83,8 @@ Plan (agreed 2026-11-13): war on the AI's own judgement with a home guard; fight
   Gates). Still open: once two or three big civs remain they rarely take land from each other
   (Highgate after day ~3,900, Five Gates after ~4,700); all three games ended on score.
 - **Fights you can follow** (boxes over battles and sieges, a battle alert), the **icon bar**,
-  and the **tech tree** viewer, all while spectating.
+  and the **tech tree** viewer (era bands, cards striped by kind, full names), all while
+  spectating. No menu button in the bar: `Esc` with nothing open asks to go back to the menu.
 - **Rich nodes** (a deposit yielding 3x, named, in about a third of the regions that start
   neutral; never in a start region) and **more reasons for war**: a rich node of something the
   civ lacks, lost lands (most of all its old home), no room to grow, a refused trade, a gate

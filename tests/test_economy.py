@@ -9,8 +9,8 @@ from civsim.strategy import RuleBrain
 def test_unpaid_buildings_stop_working():
     sim = Simulation(SimConfig(seed=3))
     civ = sim.civs[0]
-    civ.buildings.append(Building("library", tile=next(iter(civ.territory)), progress=1.0, complete=True))
-    assert sim.building_defs["library"].upkeep == {"gold": 0.15}
+    civ.buildings.append(Building("school", tile=next(iter(civ.territory)), progress=1.0, complete=True))
+    assert sim.building_defs["school"].upkeep == {"gold": 0.15}
 
     civ.resources["gold"] = 50
     produce(civ, sim.modifiers[civ.id], sim.building_defs)

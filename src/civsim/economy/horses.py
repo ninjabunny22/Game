@@ -15,7 +15,7 @@ STABLES = "stables"
 
 def stables(civ) -> int:
     """Working stables: built and with their upkeep paid."""
-    return sum(1 for b in civ.buildings if b.type == STABLES and b.complete and b.active)
+    return sum(b.level for b in civ.buildings if b.type == STABLES and b.complete and b.active)
 
 
 def tend_horses(civ) -> None:

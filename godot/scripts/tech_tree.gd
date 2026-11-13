@@ -7,12 +7,26 @@ extends PanelContainer
 ## Everything comes from the simulation: the tree from the init message, each civ's techs and
 ## research from every tick.
 
-const BOX := Color(0.16, 0.17, 0.2, 0.95)
-const BOX_EDGE := Color(1, 1, 1, 0.16)
-const LINK := Color(1, 1, 1, 0.18)
+const BOX := Color(0.15, 0.16, 0.19, 1.0)
+const BOX_KNOWN := Color(0.2, 0.22, 0.26, 1.0)  # a tech somebody knows stands out a little
+const BOX_EDGE := Color(1, 1, 1, 0.12)
+const BAND := Color(1, 1, 1, 0.025)
+const LINK := Color(1, 1, 1, 0.12)
+const LINK_LIT := Color(0.95, 0.85, 0.6, 0.35)  # a link into a tech somebody knows
 const TEXT := Color(0.93, 0.9, 0.84)
 const DIM := 0.28  # how far a tech off the picked civ's path fades
-const DOT := 4.0
+const DOT := 3.5
+const ROMAN := ["I", "II", "III", "IV", "V", "VI", "VII", "VIII"]
+## What a tech is for, by its effects: [effect keys, stripe colour, legend name].
+const KINDS := {
+	"army": [["military", "tier", "casualties", "capture_speed", "defense", "mobilization", "soldier_cost",
+		"commander_xp", "commander_start", "officer_appointment", "beds", "home_speed", "reinforce"],
+		Color(0.86, 0.36, 0.33), "Army"],
+	"water": [["water_mult", "water_use", "purification"], Color(0.3, 0.72, 0.8), "Water"],
+	"travel": [["boats", "bridges", "boat_range", "villager_speed"], Color(0.9, 0.7, 0.3), "Travel"],
+	"learning": [["science_mult"], Color(0.45, 0.6, 0.95), "Learning"],
+	"economy": [[], Color(0.45, 0.78, 0.42), "Economy"],
+}
 
 var _eras: Array = []
 var _techs: Array = []  # tech dictionaries from the init message
@@ -30,7 +44,7 @@ var _title := Label.new()
 
 func _ready() -> void:
 	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.08, 0.09, 0.11, 0.98)
+	style.bg_color = Color(0.08, 0.09, 0.11, 1.0)
 	style.set_corner_radius_all(10)
 	style.set_content_margin_all(12)
 	add_theme_stylebox_override("panel", style)
@@ -42,6 +56,17 @@ func _ready() -> void:
 	_title.add_theme_font_size_override("font_size", 18)
 	_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(_title)
+	for kind: String in KINDS:  # the legend for the stripes
+		var chip := ColorRect.new()
+		chip.color = KINDS[kind][1]
+		chip.custom_minimum_size = Vector2(10, 10)
+		chip.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		header.add_child(chip)
+		var label := Label.new()
+		label.text = KINDS[kind][2] + "   "
+		label.add_theme_font_size_override("font_size", 13)
+		label.modulate = Color(1, 1, 1, 0.75)
+		header.add_child(label)
 	var close := Button.new()
 	close.icon = load("res://assets/icons/close.svg")
 	close.expand_icon = true
@@ -117,6 +142,8 @@ func update(data: Dictionary) -> void:
 		if civ.get("research") != null and civ.get("alive", true):
 			_research[civ_id] = civ["research"]
 	if visible:
+		if get_index() < get_parent().get_child_count() - 1:
+			move_to_front()  # stay over the minimap and panels added after it opened
 		_canvas.queue_redraw()
 
 
@@ -165,38 +192,56 @@ func _draw_tree() -> void:
 		return
 	var font := get_theme_default_font()
 	var col_w := _canvas.size.x / maxi(1, _eras.size())
+	# Era bands: every other column a shade lighter, each headed by its number and name.
 	for era in _eras.size():
-		_canvas.draw_string(font, Vector2(era * col_w + 6.0, 16.0), str(_eras[era]), HORIZONTAL_ALIGNMENT_LEFT,
-			col_w - 12.0, 13, Color(TEXT, 0.7))
+		if era % 2 == 0:
+			_canvas.draw_rect(Rect2(era * col_w, 0.0, col_w - 6.0, _canvas.size.y), BAND)
+		var head := "%s  %s" % [ROMAN[mini(era, ROMAN.size() - 1)], str(_eras[era])]
+		_canvas.draw_string(font, Vector2(era * col_w, 17.0), head, HORIZONTAL_ALIGNMENT_CENTER,
+			col_w - 6.0, 13, Color(TEXT, 0.75))
 	var path := _path(_picked)
-	# Links first, under the boxes: from each prerequisite's right edge to the tech's left.
+	# Links first, under the boxes: a soft curve from each prerequisite's right edge to the tech's left.
 	for tech: Dictionary in _techs:
 		var rect: Rect2 = _rects[tech["id"]]
+		var lit := _known_by_any(tech["id"])
 		for need: Variant in tech["prereqs"]:
 			if not _rects.has(need):
 				continue
 			var from: Rect2 = _rects[need]
 			var a := Vector2(from.end.x, from.get_center().y)
 			var b := Vector2(rect.position.x, rect.get_center().y)
-			if a.x > b.x:  # within one era: join the sides facing each other
-				a = Vector2(from.position.x + 4.0, from.get_center().y)
-				b = Vector2(rect.position.x + 4.0, rect.get_center().y)
 			var faded := _picked >= 0 and not (path.has(tech["id"]) and path.has(need))
-			_canvas.draw_line(a, b, Color(LINK, LINK.a * (DIM if faded else 1.0)), 1.0, true)
+			var color := Color(LINK_LIT if lit else LINK, (LINK_LIT.a if lit else LINK.a) * (DIM if faded else 1.0))
+			if a.x > b.x:  # within one era: a loop out to the left between the two
+				a = Vector2(from.position.x, from.get_center().y)
+				_canvas.draw_polyline(_curve(a, b, -14.0), color, 1.2, true)
+			else:
+				_canvas.draw_polyline(_curve(a, b, (b.x - a.x) * 0.5), color, 1.2, true)
 	for tech: Dictionary in _techs:
 		var tech_id: String = tech["id"]
 		var rect: Rect2 = _rects[tech_id]
 		var fade := 1.0 if _picked < 0 or path.has(tech_id) else DIM
-		_canvas.draw_rect(rect, Color(BOX, BOX.a * fade))
-		_canvas.draw_rect(rect, Color(BOX_EDGE, BOX_EDGE.a * fade), false, 1.0)
-		var size := clampi(int(rect.size.y * 0.42), 9, 13)
-		_canvas.draw_string(font, rect.position + Vector2(5, rect.size.y * 0.5 + size * 0.38), str(tech["name"]),
-			HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 10 - DOT * 2.4 * 2, size, Color(TEXT, fade))
-		# Who knows it: a dot each, along the right edge.
+		var known := _known_by_any(tech_id)
+		var box := StyleBoxFlat.new()
+		box.bg_color = Color(BOX_KNOWN if known else BOX, BOX.a * fade)
+		box.set_corner_radius_all(6)
+		box.set_border_width_all(1)
+		box.border_color = Color(BOX_EDGE, BOX_EDGE.a * fade)
+		box.anti_aliasing = true
+		_canvas.draw_style_box(box, rect)
+		# A stripe down the left in the colour of what the tech is for.
+		var stripe := StyleBoxFlat.new()
+		stripe.bg_color = Color(KINDS[_kind(tech)][1], 0.9 * fade)
+		stripe.corner_radius_top_left = 6
+		stripe.corner_radius_bottom_left = 6
+		_canvas.draw_style_box(stripe, Rect2(rect.position, Vector2(4.0, rect.size.y)))
+		_draw_name(font, str(tech["name"]), rect, Color(TEXT, fade if known or _picked >= 0 else 0.8 * fade))
+		# Who knows it: a dot each, in a row along the bottom right.
 		var dot := 0
 		for civ_id: int in _civs:
 			if _known.get(civ_id, {}).has(tech_id):
-				var at := Vector2(rect.end.x - DOT - 2 - (dot % 3) * (DOT * 2 + 1), rect.position.y + DOT + 2 + (dot / 3) * (DOT * 2 + 1))
+				var at := Vector2(rect.end.x - DOT - 5.0 - dot * (DOT * 2 + 2), rect.end.y - DOT - 5.0)
+				_canvas.draw_circle(at, DOT + 1.0, Color(0, 0, 0, 0.5 * fade))
 				_canvas.draw_circle(at, DOT, Color(_civs[civ_id]["color"], fade))
 				dot += 1
 		# Who is learning it now: a frame and a bar of its progress, one strip per civ.
@@ -205,10 +250,61 @@ func _draw_tree() -> void:
 			if _research[civ_id]["id"] != tech_id:
 				continue
 			var color: Color = _civs[civ_id]["color"]
-			_canvas.draw_rect(rect.grow(-1.0 - strip * 2.0), Color(color, fade), false, 2.0)
-			var bar := Rect2(rect.position.x + 2, rect.end.y - 4 - strip * 4, (rect.size.x - 4) * float(_research[civ_id]["progress"]), 3)
+			var frame := StyleBoxFlat.new()
+			frame.draw_center = false
+			frame.set_corner_radius_all(6)
+			frame.set_border_width_all(2)
+			frame.border_color = Color(color, fade)
+			_canvas.draw_style_box(frame, rect.grow(-strip * 2.0))
+			var bar := Rect2(rect.position.x + 8, rect.end.y - 5 - strip * 4, (rect.size.x - 16) * float(_research[civ_id]["progress"]), 3)
 			_canvas.draw_rect(bar, Color(color, fade))
 			strip += 1
+
+
+## A tech's name in its box: as large as fits, on two lines if it must, never cut short.
+func _draw_name(font: Font, title: String, rect: Rect2, color: Color) -> void:
+	var room := rect.size.x - 16.0
+	var top := rect.position.y + rect.size.y * 0.42
+	for size in range(clampi(int(rect.size.y * 0.3), 11, 15), 10, -1):
+		if font.get_string_size(title, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x <= room:
+			_canvas.draw_string(font, Vector2(rect.position.x + 10.0, top + size * 0.38), title,
+				HORIZONTAL_ALIGNMENT_LEFT, room, size, color)
+			return
+	var words := title.split(" ")
+	var cut := maxi(1, words.size() / 2)
+	var lines := [" ".join(words.slice(0, cut)), " ".join(words.slice(cut))]
+	for i in 2:
+		_canvas.draw_string(font, Vector2(rect.position.x + 10.0, top + (i - 0.5) * 13.0 + 4.0), lines[i],
+			HORIZONTAL_ALIGNMENT_LEFT, room, 12, color)
+
+
+## A smooth curve from a to b, leaving and arriving level, bowed `reach` pixels sideways.
+func _curve(a: Vector2, b: Vector2, reach: float) -> PackedVector2Array:
+	var points := PackedVector2Array()
+	var c1 := a + Vector2(reach, 0.0)
+	var c2 := b - Vector2(absf(reach) if reach < 0.0 else reach, 0.0)
+	for i in 17:
+		var t := i / 16.0
+		var u := 1.0 - t
+		points.append(a * u * u * u + c1 * 3.0 * u * u * t + c2 * 3.0 * u * t * t + b * t * t * t)
+	return points
+
+
+func _known_by_any(tech_id: String) -> bool:
+	for civ_id: int in _known:
+		if _known[civ_id].has(tech_id):
+			return true
+	return false
+
+
+## What a tech is mainly for, from its effects: army, water, travel, learning or the economy.
+func _kind(tech: Dictionary) -> String:
+	var keys: Dictionary = tech.get("effects", {})
+	for kind: String in ["army", "water", "travel", "learning"]:
+		for key: String in keys:
+			if key in KINDS[kind][0]:
+				return kind
+	return "economy"
 
 
 ## A civ's path: what it knows, what it is learning, and what it could start next. Empty for -1.

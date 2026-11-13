@@ -22,33 +22,33 @@ def buildable_tiles(sim, civ):
 def test_demolishing_frees_the_tile_and_refunds_part_of_the_cost(sim):
     civ = sim.civs[0]
     tile = buildable_tiles(sim, civ)[0]
-    library = Building("library", tile, 1.0, True)
-    civ.buildings.append(library)
+    school = Building("school", tile, 1.0, True)
+    civ.buildings.append(school)
     civ.resources.update(wood=0, stone=0)
     assert tile in civ.buildings_by_tile()
 
     events: list = []
-    demolish(civ, library, sim.modifiers[civ.id], sim.building_defs, events)
-    cost = sim.building_defs["library"].cost
-    assert library not in civ.buildings and tile not in civ.buildings_by_tile()
+    demolish(civ, school, sim.modifiers[civ.id], sim.building_defs, events)
+    cost = sim.building_defs["school"].cost
+    assert school not in civ.buildings and tile not in civ.buildings_by_tile()
     assert civ.resources["wood"] == pytest.approx(DEMOLITION_REFUND * cost["wood"])
     assert civ.resources["stone"] == pytest.approx(DEMOLITION_REFUND * cost["stone"])
-    assert events == [{"civ": civ.id, "kind": "demolition", "text": f"{civ.name} demolished a Library"}]
+    assert events == [{"civ": civ.id, "kind": "demolition", "text": f"{civ.name} demolished a School"}]
 
 
 def test_unfinished_buildings_refund_in_proportion_to_progress(sim):
     civ = sim.civs[0]
-    half_built = Building("library", buildable_tiles(sim, civ)[0], 0.5, False)
+    half_built = Building("school", buildable_tiles(sim, civ)[0], 0.5, False)
     civ.buildings.append(half_built)
     civ.resources["wood"] = 0
     demolish(civ, half_built, sim.modifiers[civ.id], sim.building_defs, [])
-    assert civ.resources["wood"] == pytest.approx(0.5 * DEMOLITION_REFUND * sim.building_defs["library"].cost["wood"])
+    assert civ.resources["wood"] == pytest.approx(0.5 * DEMOLITION_REFUND * sim.building_defs["school"].cost["wood"])
 
 
 def test_buildings_the_civ_cannot_keep_up_are_eventually_torn_down(sim):
     civ = sim.civs[0]
     tiles = buildable_tiles(sim, civ)
-    civ.buildings += [Building("university", tiles[0], 1.0, True), Building("university", tiles[1], 1.0, True)]
+    civ.buildings += [Building("school", tiles[0], 1.0, True), Building("school", tiles[1], 1.0, True)]
     events: list = []
     for tick in range(1, ABANDON_AFTER + DEMOLITION_COOLDOWN + 5):
         civ.resources["gold"] = 0  # never enough for their upkeep
@@ -56,10 +56,10 @@ def test_buildings_the_civ_cannot_keep_up_are_eventually_torn_down(sim):
             building.unpaid_ticks += 1
         sim.ai._abandon_unaffordable(civ, sim.modifiers[civ.id], tick, events)
         if tick == ABANDON_AFTER - 2:
-            assert civ.count("university") == 2, "not before it has been unpaid for a long while"
+            assert civ.count("school") == 2, "not before it has been unpaid for a long while"
         if tick == ABANDON_AFTER + 2:
-            assert civ.count("university") == 1, "one at a time"
-    assert civ.count("university") == 0
+            assert civ.count("school") == 1, "one at a time"
+    assert civ.count("school") == 0
     assert [e["kind"] for e in events] == ["demolition", "demolition"]
 
 
@@ -69,7 +69,7 @@ def test_a_full_territory_gives_up_its_least_useful_building_for_a_much_better_o
     civ.known_techs = ["pottery"]
     # Fill every buildable tile, then make housing the pressing need.
     everywhere = [t for t in sorted(civ.territory) if BIOME_INFO[sim.world.biomes[t]].buildable]
-    kinds = ("lumber_camp", "quarry", "mine")
+    kinds = ("lumber_camp", "farm", "mine")
     civ.buildings = [Building(kinds[i % 3], t, 1.0, True) for i, t in enumerate(everywhere)]
     house = sim.building_defs["house"]
     assert find_site(civ, sim.world, house) is None
@@ -112,12 +112,12 @@ def test_nothing_is_demolished_for_a_marginal_gain(sim):
     assert any(sim.world.yields[t].get("food", 0) > 0 for t in ground), "the freed ground suits the new building"
     assert len(civ.buildings) == before - 1
 
-    # A larger building needs its whole square cleared: four houses go for a 2x2 university.
+    # A larger building needs its whole square cleared: four houses go for 2x2 stables.
     civ.last_demolition = -10_000
-    university = sim.building_defs["university"]
+    stables = sim.building_defs["stables"]
     before = len(civ.buildings)
-    site = sim.ai._make_room(civ, mods, university, 1e9, needs, tick=100, events=events)
-    assert university.size == 2 and site is not None
+    site = sim.ai._make_room(civ, mods, stables, 1e9, needs, tick=100, events=events)
+    assert stables.size == 2 and site is not None
     assert len(civ.buildings) in (before - 4, before - 3), "three if the farm's freed tile is part of the square"
 
 
@@ -139,11 +139,11 @@ def test_construction_techs_raise_the_refund_step_by_step_to_a_quarter(sim):
         civ.known_techs = REFUND_TECHS[:level]
         mods = compute_modifiers(civ, sim.building_defs, tree)
         rates.append(round(mods.demolition_refund, 2))
-        library = Building("library", tile, 1.0, True)
-        civ.buildings = [library]
+        school = Building("school", tile, 1.0, True)
+        civ.buildings = [school]
         civ.resources["wood"] = 0
-        demolish(civ, library, mods, sim.building_defs, [])
-        assert civ.resources["wood"] == pytest.approx(mods.demolition_refund * sim.building_defs["library"].cost["wood"])
+        demolish(civ, school, mods, sim.building_defs, [])
+        assert civ.resources["wood"] == pytest.approx(mods.demolition_refund * sim.building_defs["school"].cost["wood"])
     assert rates == [0.10, 0.13, 0.17, 0.21, 0.25, 0.35]
 
 

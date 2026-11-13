@@ -22,7 +22,11 @@ const ROUTINE_WINDOW := 100  # days over which routine events are counted for th
 const HEADLINE_KINDS := ["war", "diplomacy", "region", "era", "family", "rally"]
 const ROUTINE_LABELS := {"capture": "buildings captured", "village": "village changes", "tech": "discoveries",
 	"trade": "trade changes", "building": "buildings finished", "demolition": "buildings pulled down"}
-const MAX_TECHS_LISTED := 6  # the most recent ones; the full list no longer fits a card
+const MAX_TECHS_LISTED := 6
+## What each building is for, in a few words (the castle popup's list).
+const PURPOSES := {"house": "houses people", "farm": "food", "lumber_camp": "wood", "mine": "stone, and ore from level 2",
+	"storehouse": "stores every resource", "market": "gold", "school": "research", "workshop": "builds faster, more wood, stone, ore",
+	"barracks": "trains soldiers, army strength", "stables": "horses", "harbour": "food, gold, boats"}  # the most recent ones; the full list no longer fits a card
 const RESOURCE_LABELS := {"food": "Food", "wood": "Wood", "stone": "Stone", "ore": "Ore", "gold": "Gold", "water": "Water"}
 const STANCE_COLORS := {"trade": "#7ccf7c", "ally": "#6fb7ff", "ignore": "#8a93a0", "aggression": "#e07a6a"}
 
@@ -103,6 +107,9 @@ var _relations := {}  # "a:b" with a < b -> relation from the latest tick
 var _deals := {}  # "a:b" with a < b -> deal
 
 
+var _leave: ConfirmationDialog  # the Esc "back to the menu?" question
+
+
 func _ready() -> void:
 	var root := Control.new()
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -144,7 +151,7 @@ func _ready() -> void:
 	var help := Label.new()
 	help.text = ("Drag: pan   Right-drag: orbit   Wheel: zoom   B: region borders\n"
 			+ "Space: pause   . : step   - / = : speed   Tab: diplomacy   T: tech tree   1-5: a civ\n"
-			+ "[ and ] : smaller / larger text   Esc: close   L: chronicle\n"
+			+ "[ and ] : smaller / larger text   Esc: close, or the menu   L: chronicle\n"
 			+ "Lines between castles: red war, blue alliance, green trade, grey neutral")
 	help.add_theme_font_size_override("font_size", 12)
 	help.modulate = Color(1, 1, 1, 0.6)
@@ -153,7 +160,6 @@ func _ready() -> void:
 	_help = help
 	_icon_button(buttons, "chronicle", "The chronicle: every headline so far  (L)", toggle_chronicle)
 	_icon_button(buttons, "help", "Keys and controls  (H)", toggle_help)
-	_icon_button(buttons, "menu", "Back to the menu", func() -> void: command_requested.emit("end_game", {}))
 	var legend := RichTextLabel.new()
 	legend.bbcode_enabled = true
 	legend.fit_content = true
@@ -817,6 +823,16 @@ func _refresh_castle() -> void:
 			lines.append("[color=#8a93a0]%s[/color]" % ("The capital of the realm" if main else "A regional capital"))
 			if settlement.get("ruled_by") != null:
 				lines.append("[color=#8a93a0]Ruled by:[/color] [color=#e8cf8a]%s[/color]" % settlement["ruled_by"])
+			var city: Dictionary = _regions_at.get(_castle_at, {})
+			if not city.is_empty():
+				var standing: Array[String] = []
+				for building: Dictionary in civ.get("buildings", []):
+					if int(building.get("region", -1)) == int(city["id"]) and building["complete"]:
+						var kind := str(building["type"])
+						standing.append("%s %d [color=#8a93a0](%s)[/color]" % [_building_names.get(kind, kind),
+							int(building.get("level", 1)), PURPOSES.get(kind, "")])
+				if not standing.is_empty():
+					lines.append("[color=#8a93a0]Buildings (level):[/color]\n  " + "\n  ".join(standing))
 			var region: Dictionary = _regions_at.get(_castle_at, {})
 			if not region.is_empty():
 				var worth := "[color=#8a93a0]%s · worth %d point%s[/color]" % [str(region["name"]), int(region.get("points", 1)),
@@ -1324,6 +1340,19 @@ func _first_alive() -> int:
 func show_family_tree() -> void:
 	if _families.has(_drawer_civ):
 		_family_tree.show_house(_families[_drawer_civ], Color.html(_civ_info[_drawer_civ]["color"]))
+
+
+## Esc with nothing open: ask before leaving, so a stray key never ends a game.
+func ask_leave() -> void:
+	if _leave == null:
+		_leave = ConfirmationDialog.new()
+		_leave.title = "Leave the game"
+		_leave.dialog_text = "Go back to the menu? This game ends."
+		_leave.ok_button_text = "Back to the menu"
+		_leave.cancel_button_text = "Keep playing"
+		_leave.confirmed.connect(func() -> void: command_requested.emit("end_game", {}))
+		add_child(_leave)
+	_leave.popup_centered()
 
 
 func close_top() -> bool:
