@@ -83,7 +83,10 @@ def blueprint() -> Blueprint:
         zones=zones, patches=patches,
         ridges=[Ridge(((-2, RIDGE_Y), (98, RIDGE_Y)), width=3.2, flank=1.6, gaps=passes)],
         deposits=deposits, scatter=[("fish", 16, None)],
-        mines=[(43, 43), (58, 40), _turn(58, 40)],
+        # The Kingsgate's mine, and two on each half, one either side of the Kingsgate's foothills
+        # (with one a half, east of the middle, a middle start and the east fought over it and
+        # the west did best).
+        mines=[(43, 43), (37, 40), (58, 40), _turn(37, 40), _turn(58, 40)],
         regions=regions, links=links,
         starts={"NW": ("frostwick", "westwatch"), "NE": ("seal_bay", "eastwatch"), "N5": ("pinemere", "ironwater"),
                 "SW": ("goldfield", "westgate_vale"), "SE": ("sunreach", "eastgate_vale"),
