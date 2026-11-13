@@ -81,6 +81,9 @@ def blueprint() -> Blueprint:
         regions=regions, links=links,
         # With four, each pair of slots faces the other across a Narrows, and each slot holds one
         # of the four regions an inlet cuts into, so all four start alike.
-        starts={"A": slot(0), "B": slot(60), "C": slot(120), "D": slot(180), "E": slot(240)},
-        sets={2: ["A", "D"], 3: ["A", "C", "E"], 4: ["A", "B", "D", "E"]},
+        # With four, every home castle stands back from the Narrows it faces, its second region
+        # on the Narrows (homes on the front lost far more often in play).
+        starts={"A": slot(0), "B": slot(60)[::-1], "C": slot(120), "D": slot(180), "E": slot(240),
+                "E4": slot(240)[::-1]},
+        sets={2: ["A", "D"], 3: ["A", "C", "E"], 4: ["A", "B", "D", "E4"]},
     )
