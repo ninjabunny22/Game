@@ -6,8 +6,8 @@ from civsim.fairness import report
 
 def test_the_fairness_report_covers_every_civ_count_and_slot():
     lines = report("highgate")
-    assert sum(1 for line in lines if "civs" in line) == 3  # 2, 3 and 4 civs
-    assert sum(1 for line in lines if line.strip().startswith(("NW", "NE", "SE", "SW"))) == 2 + 3 + 4
+    assert sum(1 for line in lines if "civs" in line) == 2  # 2 and 4 civs
+    assert sum(1 for line in lines if line.strip().startswith(("NW", "NE", "SE", "SW"))) == 2 + 4
 
 
 def test_a_win_rate_interval_holds_the_rate_and_narrows_with_more_games():

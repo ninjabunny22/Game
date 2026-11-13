@@ -35,7 +35,8 @@ from ..economy.harbours import ports
 from ..config import HEADCOUNT
 from ..economy.production import soldier_cost
 from ..economy.rules import HEAL_TICKS, INFIRMARY_BEDS, MIN_POPULATION
-from ..map import WorldMap, find_path, region_neighbours, step_cost
+from ..map import WorldMap, find_path, region_neighbours
+from ..map.pathfinding import move_cost
 from .army import LEADERLESS_CAPACITY, XP_PER_LEVEL_STEP, Army, Captive, Commander, Rally
 from .units import BASE_UNIT, MAX_TIER, UNIT_TYPES, tier_strength, unit_strength
 
@@ -1145,7 +1146,7 @@ class Military:
                 # Enemy ground: it has to be taken before the army can move onto it.
                 army.move_points = 0.0  # waiting does not bank movement
                 return
-            cost = step_cost(world, step, bool(mods.bridges), bool(mods.boats))
+            cost = move_cost(world, army.tile, step, bool(mods.bridges), bool(mods.boats))
             embarking = world.is_boat_water(step) and not world.is_boat_water(army.tile)
             if cost is None or (embarking and army.tile not in ports(civ, world)):
                 # No way on: the harbour it was to sail from may have been lost since the

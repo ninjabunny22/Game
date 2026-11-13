@@ -463,7 +463,10 @@ strategists follow this directly, and whatever one answers is corrected to the
 first two rules (`strategy/checkin.py`).
 
 **Crossing water and mountains.** One rule (`WorldMap.walkable` and `crossing_cost`)
-governs how armies and villagers move, war reach, and how settling spreads:
+governs how armies and villagers move, war reach, and how settling spreads. Armies and
+villagers step eight ways, a diagonal step costing about 1.41 times a straight one and never
+cutting the corner between two tiles that cannot be entered, so every direction on the map is
+equally far:
 - **No one walks on water,** deep or shallow, except over a **bridge**. Water is crossed by
   boat only (armies from near a harbour; villagers with boats from any shore). Shallows can
   still be claimed, as fishing grounds, but settling steps from them onto land only by boat.

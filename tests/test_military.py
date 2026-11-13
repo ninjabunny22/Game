@@ -190,7 +190,7 @@ def test_armies_march_tile_by_tile_and_take_the_ground_in_their_way(sim):
     assert len(moves) > 3, "the army moved"
     for p, q in moves:
         (px, py), (qx, qy) = sim.world.xy(p), sim.world.xy(q)
-        assert abs(px - qx) + abs(py - qy) == 1, "one tile at a time, never a jump"
+        assert max(abs(px - qx), abs(py - qy)) == 1, "one tile at a time (diagonals too), never a jump"
 
 
 @pytest.mark.usefixtures("no_war_minimum")  # this one is about the battle, not the declaration

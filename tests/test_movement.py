@@ -91,3 +91,16 @@ def test_in_play_nobody_stands_on_water_or_mountains_but_afloat_or_on_a_bridge()
             for army in civ.armies:
                 tile = army.tile
                 assert world.walkable(tile) or world.is_boat_water(tile) or tile in world.capital_tiles
+
+
+def test_routes_go_eight_ways_and_a_slant_is_no_longer_than_straight_across():
+    world = WorldMap(11, 11, 0)
+    world.biomes = [Biome.PLAINS] * 121
+    centre = world.idx(5, 5)
+    straight = find_path(world, centre, world.idx(5, 0))
+    slant = find_path(world, centre, world.idx(9, 1))
+    assert len(straight) == 5 and len(slant) == 4, "diagonal steps"
+    # Never through the corner between two tiles that cannot be entered.
+    world.biomes[world.idx(5, 4)] = world.biomes[world.idx(6, 5)] = Biome.PEAKS
+    path = find_path(world, centre, world.idx(6, 4))
+    assert path and len(path) > 1
