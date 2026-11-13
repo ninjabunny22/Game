@@ -20,10 +20,9 @@ from .regions import Region
 from .resources import DEPOSIT_TYPES, _grow_cluster, _pick_centre, compute_yields
 from .passes import carve_passes
 from .shapes import Shape, distance_to_line
-from .world import BOAT_RANGE, WorldMap
+from .world import WorldMap
 
 LAND_LINKS = ("land", "pass", "neck", "river", "bridge", "causeway")  # links walked overland; "sea:N" is by boat
-SETTLING_REACH = BOAT_RANGE  # open-water tiles a civ with boats (and no Navigation) can settle across
 MIN_REGION_LAND = 25
 SPECK = 10  # land smaller than this, holding no capital, is washed away
 HOLE = 5  # enclosed water smaller than this is filled in, unless drawn as sea or shallows

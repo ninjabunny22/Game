@@ -55,16 +55,16 @@ class Params:
     STRATEGY_MIN: int = 200  # ticks a long-term goal is held before another may replace it
     PLAN_MAX: int = 150  # ticks a war is prepared against one target before the plan is dropped
     PLAN_BONUS: float = 0.4  # how much the target already being prepared against is preferred
-    PLAN_ABANDON: float = 0.9  # forecast below which a plan is given up: the target has grown too strong
+    PLAN_ABANDON: float = 0.765  # forecast below which a plan is given up: the target has grown too strong
     # Forecasting a war: what the simple comparison of strength leaves out.
     MARCH_FREE: int = 20  # tiles an army marches without it counting against the attack ...
     MARCH_SCALE: float = 100.0  # ... and the further distance that halves it
-    WALLS_FREE: float = 3.0  # how strongly a capital may be held before it counts against the attack ...
+    WALLS_FREE: float = 3.45  # how strongly a capital may be held before it counts against the attack ...
     WALLS_WEIGHT: float = 0.03  # ... and how much each point above that does
     ALLY_WEIGHT: float = 0.6  # how much of an ally's strength is counted, theirs or ours
     RESERVE: float = 0.25  # share of the army kept at home while another neighbour is hostile
     # Preparing and striking.
-    PREP_MIN: int = 25  # ticks spent mustering before a war is declared ...
+    PREP_MIN: int = 29  # ticks spent mustering before a war is declared ...
     PREP_READY: float = 0.8  # ... and the share of the army meant for it that must be under arms
     DEMAND_EDGE: float = 1.5  # forecast from which tribute is demanded before attacking ...
     DEMAND_MILITARY: float = 1.3  # ... by civs less warlike than this; the rest just attack

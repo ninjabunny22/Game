@@ -26,7 +26,8 @@ state is in CIVSIM_STATUS.md.
 2. **Tune by league** for entertaining games in which civs play to the objectives:
    `python -m civsim.league --aim fun --evolve N` (every civ plays the variant; kept if games
    are better to watch: length, wars, alliances, rallies, lead changes, prizes taken, someone
-   near winning, varied winners).
+   near winning, varied winners). First 10 rounds kept PREP_MIN 29, WALLS_FREE 3.45,
+   PLAN_ABANDON 0.765; more rounds can be run on top.
 
 ## Next development stages
 

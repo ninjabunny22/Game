@@ -346,7 +346,7 @@ in `Params` in `strategy/utility.py`; rules in `diplomacy/rules.py`, `military/w
 | Early growth bonus | first 750 | `EARLY_GROWTH_UNTIL` |
 | Campaigns against the natives: rest between / after a failure | 150 / 200 | `CAMPAIGN_REST`, `CAMPAIGN_RETRY` |
 | Peace lasts before any civ grows restless | 350 ÷ its taste for war | `LONG_PEACE` |
-| Mustering before a war; preparing one at most | 25+ / 150 | `PREP_MIN`, `PLAN_MAX` |
+| Mustering before a war; preparing one at most | 29+ / 150 | `PREP_MIN`, `PLAN_MAX` |
 | A war is fought at least | 50 | `MIN_WAR`, `WAR_MIN` |
 | Peace terms (tribute) listened to after | 150 | `TERMS_AFTER` |
 | A war is kept up only from strength after | 300 | `WAR_WEARY_TICKS` |

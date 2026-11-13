@@ -63,8 +63,9 @@ style). Balance and timing have not had their dedicated pass yet.
 Finishing the to-do list (see ROADMAP "Immediate priorities"):
 - done: victory by region points (80% and half the regions), the strategist playing to it,
   rallies called when an ally can reach the gathering city, the timing table;
-- next: league tuning for entertaining games (`civsim.league --aim fun --evolve`), then the
-  balance batch on all nine maps (approved), then fixes for the slots it flags;
+- league tuning for entertaining games: 10 rounds kept PREP_MIN 29, WALLS_FREE 3.45 and
+  PLAN_ABANDON 0.765 (watchability 0.873 → 0.921 over 6 games);
+- next: the balance batch on all nine maps (approved), then fixes for the slots it flags;
 - after that: the rest of the stabilisation review (the unused models are gone and the root
   is tidied).
 
@@ -121,6 +122,5 @@ the old custom .glb files that lay at the root are in `art/legacy_models/` (both
 
 ## Immediate next steps
 
-1. League tuning for entertaining, objective-aware games; put what is kept into `Params`.
-2. The balance batch on all nine maps; fix or drop the start setups it flags.
-3. The rest of the stabilisation review: three unused Python names, then a pass for bugs.
+1. The balance batch on all nine maps; fix or drop the start setups it flags.
+2. The rest of the stabilisation review: a pass for bugs.
