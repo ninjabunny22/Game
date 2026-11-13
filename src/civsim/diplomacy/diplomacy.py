@@ -285,12 +285,30 @@ class Diplomacy:
             self.natives.update(tick, events)
         self._issue_orders(tick)
 
-    def war_army(self, civ) -> float:
-        """Soldiers a civ must have under arms before it will declare war on another civ."""
-        return max(rules.WAR_MIN_SOLDIERS, rules.WAR_MIN_SHARE * civ.population)
+    def home_guard(self, civ, exclude=()) -> float:
+        """Soldiers the civ keeps at home to hold off everyone it is not fighting (or about to
+        fight): HOME_GUARD of the strongest other civ in reach that is not its ally, counted
+        in full if it is at war with it or set on attacking it and at half otherwise."""
+        return self.home_threat(civ, exclude)[0]
 
-    def war_ready(self, civ) -> bool:
-        return civ.soldiers >= self.war_army(civ)
+    def home_threat(self, civ, exclude=()) -> tuple[float, int | None]:
+        """The home guard and the civ it watches for (None when nobody is in reach)."""
+        worst, watched = 0.0, None
+        for other_id in self.others(civ.id):
+            other = self.civs[other_id]
+            if other_id in exclude or not other.alive or self.relation(civ.id, other_id).status == "alliance":
+                continue
+            if not self.in_reach(other_id, civ.id, self.now):
+                continue
+            hostile = (self.relation(civ.id, other_id).status == "war"
+                       or self.intent(other_id, civ.id).stance is Stance.AGGRESSION)
+            threat = self.strength(other) * (1.0 if hostile else 0.5)
+            if threat > worst:
+                worst, watched = threat, other_id
+        if watched is None:
+            return 0.0, None
+        per_soldier = self.strength(civ) / civ.soldiers if civ.soldiers >= 1 else self.quality(civ)
+        return rules.HOME_GUARD * worst / max(per_soldier, 0.1), watched
 
     def _resolve_pair(self, a: int, b: int, tick: int, events: list) -> None:
         relation = self.relations[(a, b)]
@@ -336,7 +354,7 @@ class Diplomacy:
             # A civ still mustering, or waiting on a demand, holds its hand.
             striking = [civ for civ in hostile if not self.intents[(civ.id, (civ_b if civ is civ_a else civ_a).id)].hold]
             declarer = next((civ for civ in striking
-                             if civ.diplomacy_points >= rules.WAR_COST and self.war_ready(civ)), None)
+                             if civ.diplomacy_points >= rules.WAR_COST), None)
             target = civ_b if declarer is civ_a else civ_a
             if declarer and tick >= relation.truce_until and self.in_reach(declarer.id, target.id, tick):
                 declarer.diplomacy_points -= rules.WAR_COST
@@ -828,10 +846,10 @@ class Diplomacy:
                     # Muster ahead of a war once the declaration itself is affordable, or if threatened.
                     if theirs.stance is Stance.AGGRESSION or civ.diplomacy_points >= rules.WAR_COST:
                         mobilisation = max(mobilisation, rules.MUSTER * cap)
-                    if mine.stance is Stance.AGGRESSION:  # and enough to be allowed to declare at all
-                        mobilisation = max(mobilisation, min(cap, 1.05 * self.war_army(civ) / max(civ.population, 1.0)))
-                        if mine.hold:  # preparing a war: raise the army it means to fight with first
-                            mobilisation = max(mobilisation, mine.commitment * cap)
+                    if mine.stance is Stance.AGGRESSION and mine.hold:
+                        # Preparing a war: raise the army it means to fight with, and the home guard besides.
+                        guard = self.home_guard(civ, exclude={other_id}) / max(civ.population, 1.0)
+                        mobilisation = max(mobilisation, min(cap, mine.commitment * cap + guard))
                     if (mine.stance is Stance.AGGRESSION and civ.march_target is None
                             and not self.in_reach(civ.id, other_id, tick)):
                         civ.march_target = other_id

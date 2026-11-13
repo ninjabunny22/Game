@@ -195,7 +195,6 @@ def test_armies_march_tile_by_tile_and_take_the_castle_in_their_way(sim):
         assert max(abs(px - qx), abs(py - qy)) == 1, "one tile at a time (diagonals too), never a jump"
 
 
-@pytest.mark.usefixtures("no_war_minimum")  # this one is about the battle, not the declaration
 def test_battle_the_stronger_army_wins_and_the_loser_falls_back(sim, monkeypatch):
     monkeypatch.setattr("civsim.military.warfare.OUTMATCHED", 1e9)  # it fights on regardless: this is about the battle
     a, b = sim.civs[0], sim.civs[1]
@@ -503,3 +502,23 @@ def test_long_game_keeps_armies_consistent():
         assert len(civ.villagers) >= 2
         tiles = [b.tile for b in civ.buildings]
         assert set(tiles) <= civ.territory
+
+
+def test_an_army_at_war_leaves_the_home_guard_behind(sim):
+    """With a third civ in reach and set on attacking it, a civ at war keeps enough at home
+    to hold it off, more than the usual fifth."""
+    a, b, c = sim.civs[0], sim.civs[1], sim.civs[2]
+    edge = next(n for t in sorted(a.territory) for n in sim.world.neighbors(t)
+                if sim.world.owner[n] < 0 and sim.world.walkable(n))
+    sim.world.claim(edge, c.id)
+    c.territory.add(edge)
+    c.population, c.soldiers = 400, 120
+    sim.military._sync(c)
+    sim.diplomacy.set_intents(c.id, {a.id: Intent(Stance.AGGRESSION, commitment=1.0)})
+    c.diplomacy_points = 0.0  # set on attacking, but not (yet) at war: a threat to watch, not an enemy to fight
+    sim.diplomacy._reach_cache.clear()
+    go_to_war(sim, a, b, soldiers=(100, 20))
+    assert sim.diplomacy.relation(a.id, c.id).status != "war"
+    guard = sim.diplomacy.home_guard(a, exclude={b.id})
+    assert guard > 0.2 * a.soldiers, "a strong hostile neighbour calls for more than a fifth"
+    assert a.garrison.size >= min(a.soldiers, guard) - 1

@@ -559,14 +559,22 @@ them.
   alliance without attacking carries no penalty.
 - **War.** `aggression` declares war (100 diplomacy points) once the two territories are
   within 4 tiles (further across water, by ship from a harbour); until then the aggressor
-  takes the native regions that lie toward the target first. Troop commitment mobilises up to 35% of the
-  population as soldiers. Wars end when a civ's own capital falls, when
-  neither side is aggressive (after 50 ticks), or after 400 ticks.
+  takes the native regions that lie toward the target first. There is no minimum army: the
+  strategist declares when it judges it can win, on day 1 or day 2,000. Troop commitment
+  mobilises up to 35% of the population as soldiers. Wars end when a civ's own capital
+  falls, when neither side is aggressive (after 50 ticks), or after 400 ticks.
+- **The home guard.** A civ keeps enough soldiers at home to hold off the strongest other civ
+  in reach that is not its ally: 0.6 of that civ's strength, counted in full if it is at war
+  with it or set on attacking it, and at half otherwise (`Diplomacy.home_guard`). Armies
+  sent to war and expeditions against the natives leave at least that behind, and never less
+  than a fifth of the army. The strategist counts only the soldiers above it when it judges
+  a war and while it musters ("Mustering against Valmere (63% ready); 80 stay home to watch
+  Tamari").
 
 **Armies.** Soldiers are grouped into armies that move on the map
 (`military/warfare.py`). Every civ has a garrison at its capital; at war it
-also fields one army per enemy, taking four fifths of its soldiers between
-them, each under a commander.
+also fields one army per enemy, taking what the home guard leaves (at most four fifths of
+its soldiers) between them, each under a commander.
 
 - **Unit types** (`data/units.json`): spearmen (from the start), archers (The
   Wheel), swordsmen (Bronze Working), cavalry (Animal Husbandry and Iron

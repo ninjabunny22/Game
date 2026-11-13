@@ -62,7 +62,6 @@ class Params:
     WALLS_FREE: float = 3.45  # how strongly a capital may be held before it counts against the attack ...
     WALLS_WEIGHT: float = 0.03  # ... and how much each point above that does
     ALLY_WEIGHT: float = 0.6  # how much of an ally's strength is counted, theirs or ours
-    RESERVE: float = 0.25  # share of the army kept at home while another neighbour is hostile
     # Preparing and striking.
     PREP_MIN: int = 29  # ticks spent mustering before a war is declared ...
     PREP_READY: float = 0.8  # ... and the share of the army meant for it that must be under arms
@@ -118,8 +117,7 @@ class UtilityBrain:
         military = you["weights"].get("military", 1.0)
         thirst = you["water"]["urgency"]
         need, prep, zeal = TACTICS.get(you.get("personality"), (0.0, 1.0, 0.0))
-        can_declare = (you["diplomacy_points"] >= context["diplomacy_costs"]["declare_war"]
-                       and you["max_soldiers"] >= you["soldiers_needed_to_declare_war"])
+        can_declare = you["diplomacy_points"] >= context["diplomacy_costs"]["declare_war"]
         edges = {n["id"]: self._edge(you, n) for n in neighbors}
         by_name = {n["name"]: n for n in neighbors}
         my_wars = [n for n in neighbors if n["relation"] == "war"]
@@ -164,7 +162,7 @@ class UtilityBrain:
                 continue
 
             others = [m for m in neighbors if m is not n]
-            forecast = self._forecast(n, edge, others, edges, backing if n["name"] in friends_wars else 0.0)
+            forecast = self._forecast(you, n, edge, others, edges, backing if n["name"] in friends_wars else 0.0)
             attack, why_attack = self._attack(you, n, edge, forecast, military, thirst, supplier, can_declare,
                                               bool(my_wars), runaway, strategy, friends_wars, need,
                                               context.get("player"), context.get("difficulty"))
@@ -229,7 +227,9 @@ class UtilityBrain:
         commitment = self._commitment(forecast, wars, zeal)
         since = plan["since"] if plan.get("target") == n["name"] else tick
         days = tick - since
-        raised = you["soldiers"] / max(1.0, commitment * you["max_soldiers"])
+        guard = n.get("home_guard", 0)
+        spare = max(0, you["soldiers"] - guard)  # the home guard stays behind
+        raised = spare / max(1.0, commitment * you["max_soldiers"])
         ready = raised >= p.PREP_READY and days >= p.PREP_MIN * prep
         entry.update(stance="aggression", troop_commitment=commitment, give="none", give_per_tick=0,
                      want="none", want_per_tick=0)
@@ -243,6 +243,8 @@ class UtilityBrain:
         elif not ready:
             entry["hold"] = True
             text = f"Mustering against {n['name']} ({min(99, round(100 * min(raised / p.PREP_READY, days / max(1.0, p.PREP_MIN * prep))))}% ready)"
+            if guard and n.get("watching"):
+                text += f"; {guard} stay home to watch {n['watching']}"
             notes.append((4, f"{why}: preparing for war with {n['name']}"))
         elif asks and (asked is None or asked < p.DEMAND_PATIENCE):
             entry.update(hold=True, demand=True)
@@ -320,7 +322,7 @@ class UtilityBrain:
         share = 0.9 - 0.2 * (edge - 1.0) + zeal
         return round(max(0.4, min(0.95, share / max(1, wars) ** 0.5)), 2)
 
-    def _forecast(self, n: dict, edge: float, others: list, edges: dict, backing: float) -> float:
+    def _forecast(self, you: dict, n: dict, edge: float, others: list, edges: dict, backing: float) -> float:
         """How a war on this neighbour would go, as our strength over theirs once everything
         is counted: the march to its capital and how well that is held, who would stand with
         it and with us, and what has to stay at home because someone else is hostile. Equal
@@ -329,9 +331,9 @@ class UtilityBrain:
         p = self.p
         if n.get("march") is None:
             return 0.0
-        hostile = any(m["relation"] != "alliance" and m["in_reach"]
-                      and (m["relation"] == "war" or m["their_stance_toward_you"] == "aggression") for m in others)
-        ours = 1.0 - (p.RESERVE if hostile else 0.0) + p.ALLY_WEIGHT * backing
+        # What must stay at home to hold off whoever else is in reach (the home guard) does not march.
+        guard = n.get("home_guard", 0) / max(1.0, you.get("max_soldiers", 1))
+        ours = 1.0 - min(0.8, guard) + p.ALLY_WEIGHT * backing
         theirs = 1.0
         for m in others:  # whoever is allied to them and not to us
             if m["name"] in n["allied_with"] and m["relation"] != "alliance":

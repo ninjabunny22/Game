@@ -40,8 +40,7 @@ from ..map.pathfinding import move_cost
 from .army import LEADERLESS_CAPACITY, XP_PER_LEVEL_STEP, Army, Captive, Commander, Rally
 from .units import BASE_UNIT, MAX_TIER, UNIT_TYPES, tier_strength, unit_strength
 
-GARRISON_KEEP = 0.2  # share of the soldiers that stays to hold the capital during a war ...
-GUARDED_KEEP = 0.35  # ... or while a civ it is not yet fighting is set on attacking it
+GARRISON_KEEP = 0.2  # share of the soldiers that always stays to hold the capitals, at the least
 WALL_DETOUR = 4  # tiles further an army will go for a capital one point less strongly held
 MAX_ARMIES = 5  # field armies a civ can have out at once; the rest of its soldiers hold its capitals
 FULL = 0.9  # share of what its commander can lead at which an army counts as full
@@ -361,17 +360,19 @@ class Military:
         base = army.commander.capacity if army.commander else LEADERLESS_CAPACITY
         return base * (EXPEDITION_CAPACITY if army.target_region is not None else 1.0)
 
+    def keep_home(self, civ) -> float:
+        """Soldiers that stay at home: a fifth of the army at the least, and the home guard
+        against everyone it is not already fighting (diplomacy.home_guard)."""
+        enemies = set(self.diplomacy.enemies(civ.id))
+        return max(GARRISON_KEEP * civ.soldiers, min(civ.soldiers, self.diplomacy.home_guard(civ, exclude=enemies)))
+
     def _organise(self, civ, tick: int) -> None:
         """Field armies against each enemy, each as large as its commander can lead and no more
         than MAX_ARMIES in all; the rest of the soldiers hold the capitals, and fill the ranks
         of armies that come home. Nobody is sent out to an army in the field."""
         enemies = self.diplomacy.enemies(civ.id)
         garrison = civ.garrison
-        # More stays at home while someone it is not yet fighting is set on attacking it.
-        watched = any(self.diplomacy.intent(other, civ.id).stance.value == "aggression"
-                      for other in self.diplomacy.others(civ.id)
-                      if self.civs[other].alive and other not in enemies)
-        keep = (GUARDED_KEEP if watched else GARRISON_KEEP) * civ.soldiers
+        keep = self.keep_home(civ)
 
         def out() -> int:
             return sum(1 for a in civ.armies if a.role == "field" and a.state != "returning")
@@ -1497,7 +1498,7 @@ class Military:
         civ.campaign_muster = 1.1 * soldiers / max(civ.population, 1.0)
         # Only soldiers at home and not needed there go: never those already out against an
         # enemy, and never the share that holds the castles.
-        spare = civ.garrison.size - GARRISON_KEEP * civ.soldiers
+        spare = civ.garrison.size - self.keep_home(civ)
         ready = (unit_strength(civ.garrison.units) * tier_strength(civ.garrison.tier) * self.diplomacy.quality(civ)
                  * spare / max(civ.garrison.size, 1e-9))
         if spare <= 0 or ready < need:

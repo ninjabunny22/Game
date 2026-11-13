@@ -85,6 +85,7 @@ def stance_context(sim, civ) -> dict:
         if theirs.give:
             offer = {"gives": theirs.give, "wants": theirs.want}
         prize = _prize(sim, civ, other_id)
+        guard, watched = diplomacy.home_threat(civ, exclude={other_id} | set(diplomacy.enemies(civ.id)))
         neighbors.append({
             "id": other_id,
             "name": other.name,
@@ -112,6 +113,10 @@ def stance_context(sim, civ) -> dict:
             "allied_with": [sim.civs[e].name for e in diplomacy.allies(other_id)],
             "truce": sim.tick < relation.truce_until,
             "in_reach": diplomacy.in_reach(civ.id, other_id, sim.tick),
+            # In a war on them: the soldiers that would have to stay at home to hold off whoever
+            # else is in reach (the home guard), and who that is.
+            "home_guard": math.ceil(guard),
+            "watching": sim.civs[watched].name if watched is not None else None,
             # What anyone can see of their army: whether most of it is away from home, and how
             # long ago it was last beaten in the field (None if not lately).
             "army_abroad": _abroad(sim, other),
@@ -172,8 +177,7 @@ def stance_context(sim, civ) -> dict:
             "territory": len(civ.territory),
             "capitals": [s.name for s in civ.settlements],
             "soldiers": int(civ.soldiers),
-            # War cannot be declared with fewer soldiers than this; max_soldiers is the most it can raise.
-            "soldiers_needed_to_declare_war": math.ceil(diplomacy.war_army(civ)),
+            # The most soldiers it can raise. (There is no minimum for declaring war.)
             "max_soldiers": int(diplomacy.mobilization_cap(civ) * civ.population),
             # Soldiers it can train per tick (a levy, plus its barracks); each costs gold and ore.
             "training_per_tick": round(training_rate(civ), 2),

@@ -35,9 +35,9 @@ DISTRUST_RATE_FACTOR = 0.5  # and is sent only this share of what its partner of
 
 # War
 WAR_COST = 100  # diplomacy points: about two check-ins' worth
-# A civ will not declare war without an army worth the name: at least this many soldiers ...
-WAR_MIN_SOLDIERS = 20
-WAR_MIN_SHARE = 0.10  # ... and this share of its population under arms
+# There is no minimum army for declaring war: the strategist judges when it can win. What it
+# must keep at home is the home guard: enough to hold off the strongest other civ in reach.
+HOME_GUARD = 0.6  # ... as a share of that civ's strength (defenders fight on their own ground)
 REACH = 4  # max gap, in tiles, across which two territories can fight
 MIN_WAR = 50  # ticks before a war can end by mutual consent
 MAX_WAR = 400  # ticks after which both sides are exhausted
