@@ -96,3 +96,8 @@ state is in CIVSIM_STATUS.md.
 - **To do (asked for 2026-11-13): more names for generals.** The list of commander names
   (`COMMANDER_NAMES`, military/warfare.py) is short, so the same names keep coming back. Make
   it much longer, perhaps with a flavour per civ.
+- **To do (asked for 2026-11-13): a castle taken is a region won at once.** Drop the 60-day
+  hold (`CAPITAL_HOLD`, diplomacy/rules.py): when an army breaks into an enemy castle, the
+  region passes to it that day. Then re-check balance (castles change hands faster; the home
+  guard and peace terms were tuned with the hold) in 3 games, and update the README and the
+  map's hold display.
