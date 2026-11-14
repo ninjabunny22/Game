@@ -44,6 +44,21 @@ class Params:
     BULLY: float = 1.4  # from this many times a neighbour's size a civ wants the war for its own sake ...
     BULLY_MAX: float = 0.8  # ... more the bigger the gap, up to this
     OVERBEARING: float = 1.6  # ... and from this, no past friendship stands in the way
+    # The map gone still (no castle taken anywhere for STALL_DAYS, once the game is STALL_START
+    # old) drives every civ toward deciding it: war wanted more each season, at worse odds,
+    # past failures forgotten, and wars already begun pressed rather than given up.
+    STALL_START: int = 2000
+    STALL_DAYS: int = 300
+    STALL_PER_TICK: float = 1.0 / 300
+    STALL_MAX: float = 1.5
+    STALL_PARITY: float = 1.0  # ... from the side at least as strong (the weaker one holds its walls)
+    STALL_HOLD_EDGE: float = 1.0  # in a stalled game the stronger side presses its war to the end
+    # Playing to win: a civ this far toward domination (victory share) presses every war it has
+    # down to FINISH_EDGE, and wants each new one FINISH_PUSH more, at odds down to STALL_PARITY.
+    FINISH_SHARE: float = 0.55
+    FINISH_EDGE: float = 0.8
+    FINISH_PUSH: float = 0.5
+    IDLE_REALM: float = 0.4  # in the endgame, a realm long at peace wants war this much more (its governors stir)
     LONG_PEACE: float = 350  # ticks at peace, divided by its taste for war, after which any civ starts to itch
     RESTLESS_PER_TICK: float = 0.8 / 250  # ... more with every season that passes, up to RESTLESS_MAX
     RESTLESS_MAX: float = 1.6
@@ -74,6 +89,7 @@ class Params:
     # Preparing and striking.
     PREP_MIN: int = 29  # ticks spent mustering before a war is declared ...
     PREP_READY: float = 0.8  # ... and the share of the army meant for it that must be under arms
+    PREP_LIMIT: int = 100  # ... or after this long mustering, it goes with what it has (the treasury may allow no more)
     DEMAND_EDGE: float = 1.5  # forecast from which tribute is demanded before attacking ...
     DEMAND_MILITARY: float = 1.3  # ... by civs less warlike than this; the rest just attack
     DEMAND_PATIENCE: int = 20  # ticks a demand is given to be answered
@@ -87,7 +103,7 @@ class Params:
     PRIZE_FREE: float = 2.0
     PRIZE_WEIGHT: float = 0.1
     PRIZE_MAX: float = 0.4
-    # The race to domination (80% of the map's region points): a civ this close to the target
+    # The race to domination (90% of the regions and every rival's home seat): a civ this close to the target
     # is everyone's runaway, a war against it is not given up while it can be fought, and a
     # civ this close itself pushes for the prizes that would finish it.
     NEAR_VICTORY: float = 0.75
@@ -122,6 +138,7 @@ class UtilityBrain:
     def __init__(self, **tweaks: float):
         """`tweaks` change any of the numbers in Params, for playing variants against each other."""
         self._motive: tuple[str | None, str | None] = (None, None)  # what the last war scored was about
+        self._stall = 0  # days the map has stood still past STALL_DAYS, as of the last decision
         unknown = set(tweaks) - {f.name for f in fields(Params)}
         if unknown:
             raise ValueError(f"unknown strategist parameters: {', '.join(sorted(unknown))}")
@@ -131,6 +148,7 @@ class UtilityBrain:
         p = self.p
         context = request.context
         you = context["you"]
+        you.setdefault("victory", context.get("victory", {}))  # how near we are to winning, read with the rest of us
         neighbors = context["neighbors"]
         tick = context["tick"]
         military = you["weights"].get("military", 1.0)
@@ -162,6 +180,8 @@ class UtilityBrain:
         if plan and (tick - plan.get("since", tick) > p.PLAN_MAX or plan.get("target") not in by_name):
             plan = {}
 
+        quiet = min(context.get("last_conquest_ticks_ago", 0), tick - p.STALL_START)
+        self._stall = max(0, quiet - p.STALL_DAYS)
         stances, notes = [], []
         candidates: list[tuple[float, str, dict, float, dict]] = []  # worth, why, neighbour, forecast, entry
         for n in neighbors:
@@ -233,6 +253,15 @@ class UtilityBrain:
             entry.update(stance="aggression", troop_commitment=self._commitment(edge, wars, zeal))
             notes.append((3, f"{n['name']} is close to ruling the map: the war goes on"))
             return
+        if (you.get("victory", {}).get("share", 0.0) >= p.FINISH_SHARE and edge >= p.FINISH_EDGE
+                and not disaster):
+            entry.update(stance="aggression", troop_commitment=self._commitment(edge, wars, zeal))
+            notes.append((3, f"the map is nearly ours: the war on {n['name']} goes on"))
+            return
+        if self._stall > 0 and edge >= p.STALL_HOLD_EDGE and not disaster:
+            entry.update(stance="aggression", troop_commitment=self._commitment(edge, wars, zeal))
+            notes.append((3, f"the war with {n['name']} must decide the game: pressing on"))
+            return
         course = n.get("war_course") or {}
         won, lost = course.get("castles_won", 0), course.get("castles_lost", 0)
         ours, theirs = course.get("our_losses", 0), course.get("their_losses", 0)
@@ -267,7 +296,7 @@ class UtilityBrain:
         guard = n.get("home_guard", 0)
         spare = max(0, you["soldiers"] - guard)  # the home guard stays behind
         raised = spare / max(1.0, commitment * you["max_soldiers"])
-        ready = raised >= p.PREP_READY and days >= p.PREP_MIN * prep
+        ready = (raised >= p.PREP_READY or days >= p.PREP_LIMIT) and days >= p.PREP_MIN * prep
         entry.update(stance="aggression", troop_commitment=commitment, give="none", give_per_tick=0,
                      want="none", want_per_tick=0)
         asked = n.get("your_demand_ticks")
@@ -385,7 +414,8 @@ class UtilityBrain:
                 friends_wars, need=0.0, player=None, difficulty="normal") -> tuple[float, str]:
         p = self.p
         self._motive = (None, None)
-        if not (can_declare and n["in_reach"]) or n["truce"] or you.get("sick") or you.get("unrest") or n.get("sworn"):
+        settling = you.get("unrest") and not you.get("idle_realm")  # a new reign, not a long peace
+        if not (can_declare and n["in_reach"]) or n["truce"] or you.get("sick") or settling or n.get("sworn"):
             return 0.0, ""  # nor does a civ that is itself sick, or whose new ruler is not yet settled, start anything
         sick = bool(n.get("sick"))
         # Caught off balance: its army is away, or has just been beaten.
@@ -441,7 +471,7 @@ class UtilityBrain:
             score += min(p.PRIZE_MAX, p.PRIZE_WEIGHT * (prize["value"] - p.PRIZE_FREE))
             why = f"{n['name']} holds {prize['region']}, which we want for {prize['why']}"
             motive, about = "prize", prize["region"]
-        if prize and you.get("points", {}).get("share", 0.0) >= p.NEAR_VICTORY:
+        if prize and you.get("victory", {}).get("share", 0.0) >= p.NEAR_VICTORY:
             score += p.LAST_PUSH
             why = f"{prize['region']} would bring the map within our grasp"
             motive, about = "victory", prize["region"]
@@ -531,7 +561,24 @@ class UtilityBrain:
             if score >= p.ATTACK_THRESHOLD and forecast < p.PARITY:
                 why = f"the long peace has run its course and {n['name']} is no stronger than we are"
                 motive, about = "restless", None
-        if forecast < (p.RESTLESS_PARITY if restless else p.PARITY) + need + caution:
+        if you.get("idle_realm"):
+            score += p.IDLE_REALM  # the people are restless and the governors look up: a war quiets them
+        finishing = you.get("victory", {}).get("share", 0.0) >= p.FINISH_SHARE
+        if finishing:
+            score += p.FINISH_PUSH
+            if score >= p.ATTACK_THRESHOLD and motive != "victory":  # a named prize says it better
+                why = f"{n['name']} stands between us and the map"
+                motive, about = "victory", (prize or {}).get("region")
+        if self._stall > 0:
+            score += min(p.STALL_MAX, self._stall * p.STALL_PER_TICK)
+            if score >= p.ATTACK_THRESHOLD and not finishing:
+                why = f"the map has stood still too long: {n['name']} must be fought for it"
+                motive, about = "stalemate", None
+        if self._stall > 0 or finishing:
+            gate = min(p.STALL_PARITY, (p.RESTLESS_PARITY if restless else p.PARITY) + need)  # past failures forgotten
+        else:
+            gate = (p.RESTLESS_PARITY if restless else p.PARITY) + need + caution
+        if forecast < gate:
             score = min(score, 0.0)  # never start a war it does not expect to win
         self._motive = (motive, about)
         return score, why

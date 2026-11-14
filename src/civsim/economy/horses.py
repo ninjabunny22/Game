@@ -13,9 +13,13 @@ from .rules import HERD_PER_STABLE, HORSE_BREED_TICKS, MOUNTED_SHARE
 STABLES = "stables"
 
 
+STABLES_USED = 2  # a civ keeps horses in its best two stables, however many it builds or captures
+
+
 def stables(civ) -> int:
-    """Working stables: built and with their upkeep paid."""
-    return sum(b.level for b in civ.buildings if b.type == STABLES and b.complete and b.active)
+    """Working stables, counted by level: built, with their upkeep paid, and among its best two."""
+    levels = sorted((b.level for b in civ.buildings if b.type == STABLES and b.complete and b.active), reverse=True)
+    return sum(levels[:STABLES_USED])
 
 
 def tend_horses(civ) -> None:

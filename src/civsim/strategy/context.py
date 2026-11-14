@@ -8,6 +8,8 @@ intel: exact army numbers, where the army is committed, and what is in store.
 
 import math
 
+from civsim.civ.family import ENDGAME_PEACE
+
 from ..diplomacy.rules import ALLIANCE_COST, DEAL_FEE, SURPLUS_FILL, WAR_COST
 from ..economy import training_rate
 from ..economy import water_balance, water_urgency
@@ -78,7 +80,6 @@ def _march(sim, civ, other) -> tuple[int | None, float]:
 
 def stance_context(sim, civ) -> dict:
     diplomacy = sim.diplomacy
-    need_points, need_regions = sim.domination_target()
     tree = sim.tech_tree
     mods = sim.modifiers[civ.id]
 
@@ -175,13 +176,17 @@ def stance_context(sim, civ) -> dict:
             "your_current_stance": diplomacy.intent(civ.id, other_id).stance.value,
             # Their region worth most to you (strategy/geography.py), and why.
             "prize": prize,
-            # Region points they hold, as a share of what wins by domination (1.0: they have won).
-            "victory_share": round(sim.points_held(other) / max(1, need_points), 2),
+            # How near they are to winning by domination (90% of the regions and every rival's
+            # home seat; 1.0: they have won), and whether they hold our home seat.
+            "victory_share": sim.victory_share(other),
         })
 
     surplus, lacking = _surplus_and_lacking(civ, mods)
     return {
         "tick": sim.tick,
+        # Days since any castle last fell in a war between civs, anywhere on the map: a long
+        # stillness pushes everyone toward deciding the game.
+        "last_conquest_ticks_ago": sim.tick - sim.diplomacy.last_conquest,
         "you": {
             "id": civ.id,
             "name": civ.name,
@@ -203,6 +208,9 @@ def stance_context(sim, civ) -> dict:
             "unrest": _unrest(sim, civ.id),
             # How long since it was last at war with anyone.
             "peace_ticks": sim.tick - civ.last_war,
+            # In the endgame, a peace this long makes the people restless and the governors
+            # restive (civ/family.py): a war is what quiets them.
+            "idle_realm": sim.endgame(sim.tick) and sim.tick - civ.last_war >= ENDGAME_PEACE,
             "population": int(civ.population),
             "territory": len(civ.territory),
             "capitals": [s.name for s in civ.settlements],
@@ -234,9 +242,12 @@ def stance_context(sim, civ) -> dict:
         "player": sim.civs[sim.ruler.civ_id].name if sim.ruler.civ_id is not None else None,
         "difficulty": sim.config.difficulty,
         "neutral_regions": sum(1 for region in sim.world.regions if region.neutral),
-        # Domination: region points held, and what wins (that many points and regions).
-        "points": {"held": sim.points_held(civ), "needed": need_points, "regions_needed": need_regions,
-                   "share": round(sim.points_held(civ) / max(1, need_points), 2)},
+        # Domination: regions held and needed, the rival home seats held and still missing, and
+        # how near it all is (1.0: won).
+        "victory": {"regions": sim.regions_held(civ), "regions_needed": sim.domination_target(),
+                    "seats": list(sim.seats_held(civ)),
+                    "missing_seats": [r.name for r in sim.rival_seats(civ) if r.owner != civ.id],
+                    "share": sim.victory_share(civ)},
         # The regions it does not hold that are worth most to it, and why (strategy/geography.py).
         "prizes": [{"region": sim.world.regions[r].name, "held_by": _holder(sim, r), "value": round(v.total, 1),
                     "why": v.reason} for r, v in sim.geography.prizes(civ, sim.tick)],

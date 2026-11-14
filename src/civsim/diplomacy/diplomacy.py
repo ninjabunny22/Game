@@ -53,6 +53,8 @@ class Diplomacy:
         self.now = 0
         self.refused_since: dict[tuple[int, int], tuple[int, str]] = {}  # (a, b) -> (tick, resource) b would not trade a
         self.wars_started = 0  # how many wars between civs there have been in the game
+        self.last_conquest = 0  # tick a castle last fell to another civ in war (0: none yet)
+        self.last_taken: dict[int, int] = {}  # civ id -> tick it last took a castle, from a civ or the natives
         self.caution: dict[tuple[int, int], float] = {}  # (civ, other) -> extra edge it wants before attacking it
         self.betrayed: set[tuple[int, int]] = set()  # (victim, betrayer): never forgotten
         self.feuds: set[frozenset] = set()  # pairs of realms that will never ally: one executed the other's blood
@@ -659,6 +661,7 @@ class Diplomacy:
         recompute_capacity(defender, world)
         relation.war.regions_taken[attacker.id] += 1
         relation.war.last_gain = tick
+        self.last_conquest = self.last_taken[attacker.id] = tick
         self._reach_cache.clear()
         region_id = world.capital_tiles.get(tile)
         if region_id is not None and world.regions[region_id].owner == defender.id:
@@ -693,6 +696,7 @@ class Diplomacy:
         region.garrison = 0.0
         region.held_by, region.hold = None, 0
         captor.settlements.append(Settlement(region.capital_name, region.capital))
+        self.last_taken[captor.id] = tick
         recompute_capacity(captor, world)
         self._reach_cache.clear()
         if peaceful:

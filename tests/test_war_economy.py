@@ -98,7 +98,7 @@ def at_war(sim, a, b, soldiers):
     return [x for x in a.armies if x.role == "field" and x.target_civ == b.id]
 
 
-def test_a_big_enough_army_sends_a_second_column_at_another_capital(sim):
+def test_a_big_enough_army_sends_a_second_column_and_they_march_on_one_capital_together(sim):
     a, b = sim.civs[0], sim.civs[1]
     assert len(b.settlements) >= 2
     armies = at_war(sim, a, b, soldiers=300)
@@ -116,7 +116,8 @@ def test_a_big_enough_army_sends_a_second_column_at_another_capital(sim):
         sim.military._plan(a, army, 5)
     goals = {army.wing: army.path[-1] for army in armies if army.path}
     capitals = {s.tile for s in b.settlements}
-    assert set(goals.values()) == capitals, "between them the columns go for every capital"
+    assert len(set(goals.values())) == 1 and set(goals.values()) <= capitals, \
+        "the columns go for one capital together, so the enemy meets their whole strength"
 
     small = Simulation(SimConfig(seed=3))
     armies = at_war(small, small.civs[0], small.civs[1], soldiers=14)

@@ -75,9 +75,10 @@ concentrates on, what to research and build next, and how to stand toward each o
 civ; whatever is left on Auto is still decided by the civ itself, and the civ can be
 handed back at any time (`ruler.py`).
 
-**Winning.** The last civ standing wins by conquest. A civ holding 80% of the map's region
-**points** (each region is worth 1 to 3, by its land and riches) and at least half of its
-regions wins by domination; each civ's card shows its points against the target. Otherwise
+**Winning.** The last civ standing wins by conquest. A civ holding 90% of the map's regions
+and the **home seat of every rival** (the castle each realm started in; a rebel realm's, the
+one it rose in) wins by domination; each civ's card shows its regions against the target and
+the rival seats it holds. Otherwise
 the highest score (region points, people, techs) wins on the
 last day (6,000 / 8,000 / 10,000 by map size, `SimConfig.end_tick`), but only once a war has
 been fought. The game pauses when it is decided and can be played on.
@@ -96,7 +97,7 @@ The overlay is built for watching:
   minute (the map on hover), one row of icons (pause/resume, one day on, slower, faster,
   diplomacy, the keys, back to the menu; resting the mouse on one says what it does and its
   key; icons made by `tools/make_icons.py`), and while watching a **scoreboard**: one chip
-  per civ in its colour with its region points, crossed swords while it is at war, dimmed
+  per civ in its colour with the regions it holds, crossed swords while it is at war, dimmed
   once it has fallen. Resting on a chip gives a short summary. A banner appears while the
   sim is paused.
 - **A civ's drawer** (while watching): click a chip, or press `1`–`5`, to open one panel on the
@@ -253,6 +254,19 @@ The overlay is built for watching:
 - **No peace lasts for ever.** The longer a civ has gone without a war the more it wants one,
   the warlike soonest, until even an equal will do; and a civ whose army is away or has just
   been beaten is attacked sooner. A game nobody has fought in does not end on score.
+- **The endgame.** Once no free land is left, or half the age is gone, a realm at peace for
+  300 days grows restless: each month its people may fall into unrest (4%, more with every
+  further year of peace), and each of its royal governors may rise with the castle he holds
+  as a new realm (0.6% a month, the same, and up to three times as likely under a weak king:
+  a child or a regent on the throne, a small army for its land, no castle taken in 1,000
+  days). Such a realm wants war more, not less.
+- **No stalemates.** When no castle has fallen anywhere for 300 days (after day 2,000), every
+  civ wants war more with each season, forgets past failures, and the side at least as strong
+  presses its war to the end while the weaker holds its walls. Every rival's home seat is a
+  prize in itself, worth more the more of the map a civ already holds. A civ 55% of the way to
+  domination presses every war it has (down to 0.8 of the enemy's strength) and wants each
+  new one more. A war being prepared is declared when 80% of the army meant for it is raised,
+  or after 100 days with what there is.
 - **Reasons for war.** Besides weakness, sickness, an exposed army, a grudge, an ally's war, a
   runaway leader, a region worth having, the last push to victory and thirst, a civ goes to war
   for: a **rich node** of something it is short of in a neighbour's hands; **land taken from
@@ -333,11 +347,22 @@ The overlay is built for watching:
   at war with the same enemy make for the same capital, and a second army in the breach
   brings a held capital down half as fast again.
 - **Seeing an attack through.** An attacking army waits at home until it is 90% of what its
-  general can lead (at most 45 days), then keeps to the castle it set out for until it falls,
-  the war ends or the army is beaten. It falls back from enemies within 3 tiles 1.8 times
-  stronger than itself and the friendly armies beside it (2.5 times, at the walls).
+  general can lead (at most 45 days), then makes for the castle its civ's other columns are
+  already marching on (so the enemy meets their whole strength) and keeps to it until it
+  falls, the war ends or the army is beaten. Every friendly army at the same walls, its own
+  civ's and its allies', besieges as one force; a siege that makes no headway for 10 days
+  calls the civ's other columns to it, whichever enemy they were sent against. A castle under
+  siege starves: its defence falls 1% for each day the siege holds, down to a fifth (the
+  chronicle tells when its defenders are starving at half); a siege lifted for 5 days lets it
+  restock. A castle seen held by enemy armies stronger than the
+  whole attacking side is passed over for one they are not there to hold. Columns against one
+  army fight as one side: it splits its blows among them, and a side breaks only when its
+  whole strength falls below half the other's. An attack is only raised with a general; one
+  that loses its general goes home for another (or back into the garrison). An army falls
+  back from enemies within 3 tiles 1.8 times stronger than itself and the friendly armies
+  beside it (2.5 times, at the walls).
 - **Generals and garrisons.** A general leads only so many (30 units at level 1, 8 more a
-  level; every head count shown is four to the unit), and a civ has at most five armies
+  level; every head count shown is four to the unit), and a civ has at most eight armies
   out. The rest of its soldiers wait in its capitals, defend them, and fill the ranks of
   armies that come home.
 - **Rallies.** A civ at war can call a rally in one of its cities against one enemy city.
@@ -906,7 +931,9 @@ those on a captured tile change sides and wait for their new owner's orders.
   | Stables | horses | 1-3 | 1 |
   | Harbour | food, gold, boats | 1-3 | 1 |
 
-  Each level counts its effects once more, plus what it becomes at the levels named. With a
+  Each level counts its effects once more, plus what it becomes at the levels named. A civ
+  draws on at most 4 barracks and 2 stables and harbours (its best, built or captured), and
+  buildings give at most +70% army strength, so conquest does not feed on itself. With a
   city's plots full, a civ upgrades what stands instead of building more, so more land is the
   only way to more room. Town buildings stand on fixed plots in a ring round the castle (the
   four sides, the corners, then a second ring), farms, lumber camps and mines on good ground

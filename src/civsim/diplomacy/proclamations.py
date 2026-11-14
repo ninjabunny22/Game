@@ -47,6 +47,8 @@ LINES = {
               "{target} should have known its place. We will teach it."],
     "restless": ["Too long have our swords rested. {target} will feel them!",
                  "The long peace has made us soft. {target} will remind us what we are."],
+    "stalemate": ["There can be only one master of these lands. {target}, it will be {us}!",
+                  "Enough waiting. Between {us} and {target}, the sword decides."],
     "inheritance": ["The crown of {target} is ours by blood, and {about} will wear it!",
                     "{target}'s throne has no heir but {about}. We come to claim it!"],
     "rebellion": ["The crown belongs to the worthy! {about}'s reign begins, and {target}'s old order ends.",
@@ -57,7 +59,7 @@ LINES = {
 }
 DEFAULT = ["{us} declares war on {target}!"]
 # Motives that say little on their own: a history between the two speaks louder.
-PLAIN = {"weaker", "busy", "exposed", "bully", "restless", None}
+PLAIN = {"weaker", "busy", "exposed", "bully", "restless", "stalemate", None}
 
 
 def proclaim(declarer: str, target: str, motive: str | None, about: str | None, rng) -> str:

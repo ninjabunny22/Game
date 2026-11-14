@@ -35,10 +35,10 @@ from .strategy import CHECKIN_INTERVAL, Brain, CheckinRequest, parse_stances, st
 from .tech import TechTree, advance_research
 
 EASY_INTERVAL = 10  # days between the other civs' decisions on the easy setting
-# Domination: holding this share of the map's region points (1 to 3 a region: what it is
-# worth) and at least DOMINATION_REGIONS of its regions wins the game.
-DOMINATION_SHARE = 0.8
-DOMINATION_REGIONS = 0.5
+# Domination: holding this share of the map's regions and the home seat of every rival realm
+# (the castle each started in; a rebel realm's, the one it rose in) wins the game.
+DOMINATION_REGIONS = 0.9
+ENDGAME_FROM = 0.5  # share of the age's length after which it is the endgame, free land or not
 SCORE_PER_POINT = 60
 SCORE_PER_TECH = 20
 
@@ -83,6 +83,7 @@ class Simulation:
         self.military.families = self.families
         self.families.military = self.military
         self.families.spawn = self._spawn_rebel
+        self.families.endgame = self.endgame
         self.diplomacy.families = self.families
         # What each region is worth to each civ: one valuation for campaigns, war
         # targets, harbours and the strategist.
@@ -159,6 +160,7 @@ class Simulation:
         rebel.home_region = region.id
         rebel.focus = "military"
         self.civs.append(rebel)  # world.civs is this same list
+        self.geography.civs[rebel.id] = rebel  # it values and is valued like any realm
         for keeper in (self.natives, self.families, self.villages, self.military, self.geography):
             keeper.civs[rebel.id] = rebel
         self.diplomacy.add_civ(rebel)
@@ -181,10 +183,37 @@ class Simulation:
         """The region points of the regions the civ holds."""
         return sum(region.points for region in self.world.regions if region.owner == civ.id)
 
-    def domination_target(self) -> tuple[int, int]:
-        """What domination takes: (points, regions)."""
-        total = sum(region.points for region in self.world.regions)
-        return math.ceil(DOMINATION_SHARE * total - 1e-9), math.ceil(DOMINATION_REGIONS * len(self.world.regions) - 1e-9)
+    def endgame(self, tick: int) -> bool:
+        """The endgame: no free land is left, or half the age is gone. A long peace then breeds
+        unrest, and governors who turn on their king (civ/family.py)."""
+        if all(region.owner is not None for region in self.world.regions):
+            return True
+        return bool(self.config.end_tick) and tick >= ENDGAME_FROM * self.config.end_tick
+
+    def domination_target(self) -> int:
+        """The regions domination takes (with every rival's home seat)."""
+        return math.ceil(DOMINATION_REGIONS * len(self.world.regions) - 1e-9)
+
+    def regions_held(self, civ) -> int:
+        return sum(1 for region in self.world.regions if region.owner == civ.id)
+
+    def rival_seats(self, civ) -> list:
+        """The home regions of every other realm there has been: all of them are needed to win."""
+        return [self.world.regions[other.home_region] for other in self.civs
+                if other is not civ and 0 <= other.home_region < len(self.world.regions)
+                and other.home_region != civ.home_region]
+
+    def victory_share(self, civ) -> float:
+        """How near the civ is to winning by domination, 0 to 1: the land it needs counts 70%,
+        the rival home seats 30%; 1.0 only when it has both."""
+        land = min(1.0, self.regions_held(civ) / max(1, self.domination_target()))
+        held, seats = self.seats_held(civ)
+        return round(0.7 * land + 0.3 * (held / seats if seats else 1.0), 2)
+
+    def seats_held(self, civ) -> tuple[int, int]:
+        """(rival home seats the civ holds, all there are)."""
+        seats = {region.id: region for region in self.rival_seats(civ)}
+        return sum(1 for region in seats.values() if region.owner == civ.id), len(seats)
 
     def score(self, civ) -> int:
         """How a civ stands: the points of its regions first, then its people and what it has learned."""
@@ -201,13 +230,12 @@ class Simulation:
         if not living:
             return
         winner, kind = None, ""
-        points = {civ.id: self.points_held(civ) for civ in living}
-        regions = {civ.id: sum(1 for r in self.world.regions if r.owner == civ.id) for civ in living}
-        leader = max(living, key=lambda civ: (points[civ.id], regions[civ.id], civ.id))
-        need_points, need_regions = self.domination_target()
+        regions = {civ.id: self.regions_held(civ) for civ in living}
+        leader = max(living, key=lambda civ: (regions[civ.id], self.points_held(civ), civ.id))
+        held, seats = self.seats_held(leader)
         if len(living) == 1 and len(self.civs) > 1:
             winner, kind = living[0], "conquest"
-        elif points[leader.id] >= need_points and regions[leader.id] >= need_regions:
+        elif regions[leader.id] >= self.domination_target() and held == seats:
             winner, kind = leader, "domination"
         elif self.config.end_tick and self.tick >= self.config.end_tick and self.diplomacy.wars_started:
             # A game in which nobody has yet fought is not over: the age runs on until someone does.

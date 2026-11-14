@@ -93,11 +93,11 @@ def watch(size: str, seed: int, tweaks: dict) -> dict:
             counts["alliances"] += "form an alliance" in text
             counts["rallies"] += "calls a rally" in text
         if sim.tick % 100 == 0:
-            lead = max(sim.civs, key=lambda c: (sim.points_held(c), c.id))
+            lead = max(sim.civs, key=lambda c: (sim.regions_held(c), c.id))
             if not leaders or leaders[-1] != lead.id:
                 leaders.append(lead.id)
-            best = max(best, sim.points_held(lead))
-    need = sim.domination_target()[0]
+            best = max(best, sim.regions_held(lead))
+    need = sim.domination_target()
     home = {}
     for civ in sim.civs:
         home[civ.id] = next((s for s, (h, _) in world.starts.items() if h == world.region_of[civ.capital.tile]), civ.id) \

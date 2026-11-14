@@ -127,8 +127,9 @@ content; code reads it through `economy/buildings.py`, `tech/tree.py` and `milit
   Tiles change hands only through `Diplomacy.capture_region` (a native capital stormed, an
   enemy castle held for 60 days, a treaty) and `_eliminate`; there is no tile-by-tile
   settling, defection or capture.
-- **Victory by points:** `Simulation.points_held` and `domination_target` (80% of the map's
-  region points and half its regions); `score()` counts the same points.
+- **Victory:** `Simulation.domination_target` (90% of the regions), `rival_seats` / `seats_held`
+  (every rival's home region) and `victory_share` (how near, for the strategist and the HUD);
+  `score()` counts region points (`points_held`).
 - **Research** changes the modifiers, such as troop tier, soldier cost and hospital beds,
   which every system reads.
 

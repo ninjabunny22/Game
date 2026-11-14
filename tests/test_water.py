@@ -330,6 +330,6 @@ def test_long_run_water_stays_consistent():
         sim.step_with(brain)
     for civ in sim.civs:
         assert civ.resources["water"] >= 0
-        assert civ.population >= MIN_POPULATION
+        assert civ.population >= MIN_POPULATION or not civ.alive
         assert not any(sim.world.is_open_water(t) for t in civ.territory)
     assert any(sim.modifiers[c.id].purification > 0 for c in sim.civs)

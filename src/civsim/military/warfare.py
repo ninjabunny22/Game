@@ -37,15 +37,19 @@ from ..economy.production import soldier_cost
 from ..economy.rules import HEAL_TICKS, INFIRMARY_BEDS, MIN_POPULATION
 from ..map import WorldMap, find_path, region_neighbours
 from ..map.pathfinding import move_cost
-from .army import LEADERLESS_CAPACITY, XP_PER_LEVEL_STEP, Army, Captive, Commander, Rally
+from .army import CAPACITY, LEADERLESS_CAPACITY, XP_PER_LEVEL_STEP, Army, Captive, Commander, Rally
 from ..civ.family import GENERAL_DEFECTS
 from .engagements import Engagements
 from .units import BASE_UNIT, MAX_TIER, UNIT_TYPES, tier_strength, unit_strength
 
 GARRISON_KEEP = 0.2  # share of the soldiers that always stays to hold the capitals, at the least
 WALL_DETOUR = 4  # tiles further an army will go for a capital one point less strongly held
-MAX_ARMIES = 5  # field armies a civ can have out at once; the rest of its soldiers hold its capitals
+MAX_ARMIES = 8  # field armies a civ can have out at once; the rest of its soldiers hold its capitals
 FULL = 0.9  # share of what its commander can lead at which an army counts as full (and sets out)
+STARVE_PER_DAY = 0.01  # share of a besieged castle's defence lost each day of the siege ...
+STARVE_FLOOR = 0.2  # ... down to this share
+STARVE_GAP = 5  # days without besiegers after which the castle is restocked and the count starts again
+STUCK_CALL = 10  # days a siege makes no headway before the civ's other columns are called to it
 MUSTER_DAYS = 45  # days an attacking army waits at home for its ranks to fill before going with what it has
 EXPEDITION_CAPACITY = 2.0  # an expedition against natives takes levies along: this many times the usual
 # Rallies: allies gather in one city and march on an enemy city as a single army.
@@ -54,6 +58,9 @@ RALLY_REST = 200  # ticks before a civ calls another
 RALLY_REACH = 30  # tiles: armies further than this from the city could not get there in time, and do not try
 RALLY_SPOILS = 0.15  # share of the leader's gold divided among those who helped take the city
 HOME_CALL = 8  # tiles: an intruder further than this from every army gets a force of its own raised against it
+GUARDED_DETOUR = 30  # tiles further an army will go, per its side's strength in enemy armies at a castle ...
+GUARD_REACH = 3  # ... standing this close to it
+GUARD_ABANDON = 1.0  # a castle seen held by more than the whole attacking side is given up for another
 JOINT_PULL = 10  # tiles further an army will go to attack the capital an ally is already attacking
 OUTMATCHED = 1.8  # an army falls back from enemies within reach this many times its strength
 DANGER_RADIUS = 3  # ... counted this many tiles around it (friendly armies there count on its side)
@@ -185,6 +192,7 @@ class Military:
         self._lost: dict[tuple[int, int], dict[str, float]] = {}  # (army id, enemy id) -> soldiers lost in the battle
         self._stay: dict[int, int] = {}  # reinforcing army id -> tick until which it stays though the threat is gone
         self.probed: dict[tuple[int, int], int] = {}  # (civ, capital tile) -> last tick its armies attacked that castle
+        self.starving: dict[int, list] = {}  # castle tile -> [day its siege began, last day besieged, starving told]
         self._named = 0
         self._names = random.Random(sum(civ.capital.tile for civ in civs))  # naming never disturbs the game's dice
         self.geography = None  # strategy.geography.Geography, set by the simulation
@@ -407,8 +415,11 @@ class Military:
         def raise_army(enemy: int, **kind) -> Army | None:
             if out() >= MAX_ARMIES:
                 return None
+            commander = self._appoint(civ)
+            if commander is None and kind.get("duty", "attack") == "attack":
+                return None  # no general to lead it: the soldiers wait in the garrison, not as a rabble
             army = Army(self.next_id(), civ.id, civ.capital.tile, "field", target_civ=enemy,
-                        commander=self._appoint(civ), **kind)
+                        commander=commander, **kind)
             civ.armies.append(army)
             return army
 
@@ -422,9 +433,13 @@ class Military:
                 raise_army(enemy)
             elif (war and civ.id in war.aggressors and garrison.size - keep >= 2 * MIN_FIELD_ARMY
                   and (civ.commanders or civ.resources["gold"] >= PROMOTION_COST + GOLD_RESERVE)
-                  and all(a.size >= FULL * self.capacity(a) for a in attack)):
-                # Every army against this enemy is as large as its commander can lead, and there
-                # are soldiers to spare: another column sets out, for another of its capitals.
+                  and (all(a.size >= FULL * self.capacity(a) for a in attack)
+                       or (garrison.size - keep >= FULL * CAPACITY  # (those at home with room are filled first)
+                           and not any(self._at_home(civ, a.tile) and a.size < FULL * self.capacity(a)
+                                       for a in attack)))):
+                # Every army against this enemy is as large as its commander can lead, or enough
+                # soldiers wait at home to fill another (the ones out are only refilled at home):
+                # another column sets out.
                 raise_army(enemy, wing=len(attack))
             # Home defence: an enemy on our land with every army far away gets a force of its own.
             intruder = self._besieger(civ, foe) or self._nearest_intruder(civ, garrison, foe)
@@ -434,7 +449,7 @@ class Military:
                 raise_army(enemy, duty="defend")
             elif intruder is None and guard is not None and guard.state not in ("fighting", "retreating"):
                 guard.state, guard.path = "returning", []  # the land is clear: stand down
-        for army in civ.armies:
+        for army in list(civ.armies):
             if army.role != "field":
                 continue
             if (army.target_region is None and army.target_civ not in enemies and army.state != "returning"
@@ -442,6 +457,9 @@ class Military:
                 army.state, army.path, army.siege_progress = "returning", [], 0.0  # the war is over: go home
             if army.commander is None and self._at_home(civ, army.tile) and tick >= army.leaderless_until:
                 army.commander = self._appoint(civ)
+                if (army.commander is None and army.duty == "attack" and army.rally is None
+                        and army.target_region is None):
+                    self._disband(civ, army)  # nobody to lead it: back into the garrison, freeing its place
         if self.roster(civ) < STARTING_COMMANDERS and civ.resources["gold"] >= PROMOTION_COST + GOLD_RESERVE:
             recruit = self._raise_commander(civ)  # keep a few in hand when the treasury allows
             if recruit:
@@ -660,7 +678,9 @@ class Military:
                 # Our side (or an ally) is losing a fight nearby: go to its aid.
                 goal = losing.tile
                 army.state = "marching"
-            elif war and civ.id in war.aggressors and rested and (army.refit or self._worn_down(civ, army)):
+            elif war and civ.id in war.aggressors and rested and (army.refit or army.commander is None
+                                                                  or self._worn_down(civ, army)):
+                # (an attack that has lost its general goes home for another)
                 # Too few left to go on, and more waiting at home: back to fill the ranks.
                 army.refit = True
                 goal = self._refuge(civ, army.tile)
@@ -675,14 +695,33 @@ class Military:
                 # Make for the capital that is cheapest to take: near, and not too strongly held.
                 joint = self._allied_targets(civ, enemy)  # where an ally is already attacking: join it there
                 worth = self.geography.values(civ, tick) if self.geography is not None else {}
+                ours = max(1.0, sum(self.army_strength(a) for a in civ.armies
+                                    if a.role == "field" and a.duty == "attack" and a.target_civ == enemy.id))
+                guards = [(o.tile, self.army_strength(o)) for o in enemy.armies
+                          if o.role == "field" and o.size >= 0.5 and self.scouted(civ, o)]
                 others = sorted((s.tile for s in enemy.settlements),
                                 key=lambda t: (self._gap(army.tile, t) + WALL_DETOUR * self.tile_price(civ, t)
                                                - (JOINT_PULL if t in joint else 0)
-                                               - VALUE_PULL * self._worth(worth, t), t))
+                                               - VALUE_PULL * self._worth(worth, t)
+                                               # a castle its army stands in (as far as we can see) is
+                                               # left for later: take the ones it is not there to hold
+                                               + GUARDED_DETOUR * sum(st for g, st in guards
+                                                                      if self._reach(g, t) <= GUARD_REACH) / ours, t))
+                if (army.objective in others and army.state == "marching" and len(others) > 1
+                        and sum(st for g, st in guards if self._reach(g, army.objective) <= GUARD_REACH)
+                        > GUARD_ABANDON * ours):
+                    army.objective = None  # come in sight of it: held by more than our whole side, choose again
                 if army.objective not in others or army.no_route == army.objective:
-                    # Each column takes the next capital along, so the enemy has several to save;
-                    # chosen once, so a column does not turn from one castle to another on the way.
-                    army.objective = others[army.wing % len(others)]
+                    # Every column makes for the castle the others are already marching on, so the
+                    # enemy meets their whole strength at one wall (a castle's share of a late
+                    # garrison is more than one general can lead); chosen once, and kept on the way.
+                    guarded = {t for t in others
+                               if sum(st for g, st in guards if self._reach(g, t) <= GUARD_REACH) > GUARD_ABANDON * ours}
+                    lead = next((a.objective for a in civ.armies if a is not army and a.role == "field"
+                                 and a.duty == "attack" and a.target_civ == enemy.id and a.rally is None
+                                 and a.objective in others and a.objective != army.no_route
+                                 and a.objective not in guarded), None)
+                    army.objective = lead if lead is not None else others[0]
                 goal = army.objective
                 others = [goal] + [t for t in others if t != goal]
                 if army.state == "idle":
@@ -1286,6 +1325,8 @@ class Military:
 
         busy: set[int] = set()
         seen: set[tuple[int, int]] = set()
+        for one, two in pairs:  # every fight is joined before any is fought, so each side counts in full
+            self._battles.setdefault((one.id, two.id), tick)
         for one, two in pairs:
             for army, other in ((one, two), (two, one)):
                 if other.role == "garrison":  # fighting a castle's garrison shows how many hold it
@@ -1319,8 +1360,19 @@ class Military:
         held = 1 + self.post_defence(civ, army.tile)  # a commander stationed at this capital
         return (strength + militia) * (1 + rules.HOME_BONUS + mods.defense) * held
 
+    def _engaged_with(self, army: Army) -> list[Army]:
+        """Every army in battle with this one now."""
+        ids = [b if a == army.id else a for (a, b) in self._battles if army.id in (a, b)]
+        return [x for x in (self._find_army(i) for i in ids) if x is not None]
+
     def _battle_tick(self, one: Army, two: Army, tick: int, started: int, events: list) -> None:
-        strengths = {one.id: self._battle_strength(one, two, tick), two.id: self._battle_strength(two, one, tick)}
+        own = {one.id: self._battle_strength(one, two, tick), two.id: self._battle_strength(two, one, tick)}
+        # Several armies against one fight as one side: each side's whole strength, and an army
+        # facing several splits its effort among them by their strength.
+        side = {one.id: sum(self._battle_strength(x, two, tick) for x in self._engaged_with(two)) or own[one.id],
+                two.id: sum(self._battle_strength(x, one, tick) for x in self._engaged_with(one)) or own[two.id]}
+        strengths = {one.id: own[one.id] * own[two.id] / max(side[two.id], 1e-9),
+                     two.id: own[two.id] * own[one.id] / max(side[one.id], 1e-9)}
         total = sum(strengths.values())
         war = self.diplomacy.relation(one.civ, two.civ).war
         engaged = min(one.size, two.size)
@@ -1350,7 +1402,7 @@ class Military:
         # The weaker side loses a larger share each tick, so the gap widens until that happens:
         # quickly when the armies are unequal, slowly when they are close.
         for army, enemy in ((one, two), (two, one)):
-            if army.size < 1.0 or strengths[army.id] < ROUT_RATIO * strengths[enemy.id]:
+            if army.size < 1.0 or side[army.id] < ROUT_RATIO * side[enemy.id]:
                 self._defeat(army, enemy, tick, events)
                 return
 
@@ -1832,8 +1884,42 @@ class Military:
         if target in self.world.capital_tiles:
             # Allies standing in the capital help hold it.
             defence += sum(self.army_strength(guest) for guest in self._guests(target)) * (1 + home + mods.defense)
+        # A castle held under siege starves: its defence falls a little each day the siege holds,
+        # so a siege kept up long enough always tells. Lifted for STARVE_GAP days, it is restocked.
+        siege = self.starving.get(target)
+        if siege is None or tick - siege[1] > STARVE_GAP:
+            siege = self.starving[target] = [tick, tick, False]
+        siege[1] = tick
+        hunger = max(STARVE_FLOOR, 1.0 - STARVE_PER_DAY * (tick - siege[0]))
+        defence *= hunger
+        if hunger <= 0.5 and not siege[2]:
+            siege[2] = True
+            name = self._city_name(target)
+            self.diplomacy._log(tick, events, "war", [civ, enemy],
+                                f"The defenders of {name} are starving after {tick - siege[0]} days under {civ.name}'s siege")
+        # Every friendly army at these walls (its own civ's and its war allies') attacks as one:
+        # each moves the siege on in proportion to its share of the whole.
+        own = attack
+        friends = {civ.id} | {ally.id for ally in self._war_allies(civ, enemy.id)}
+        attack += sum(self.army_strength(other) for friend in friends
+                      for other in self.civs[friend].armies
+                      if other is not army and other.state == "besieging" and other.path and other.path[0] == target)
         if attack > defence:
-            gain = rules.CAPTURE_RATE * (attack - defence) / (attack + defence)
+            army.stuck_since = None
+        elif army.stuck_since is None:
+            army.stuck_since = tick
+        elif tick - army.stuck_since >= STUCK_CALL:
+            # Too strongly held for what is here: the civ's other columns come to these walls
+            # instead of each trying a castle of its own, whichever enemy they were sent against
+            # (one wall at a time, not a column at every one), unless their own siege is going well.
+            enemies = set(self.diplomacy.enemies(civ.id))
+            for other in civ.armies:
+                if (other is not army and other.role == "field" and other.duty == "attack" and other.rally is None
+                        and other.target_region is None and other.target_civ in enemies
+                        and not (other.state == "besieging" and other.stuck_since is None)):
+                    other.target_civ, other.objective = enemy.id, target
+        if attack > defence:
+            gain = rules.CAPTURE_RATE * (attack - defence) / (attack + defence) * own / attack
             if surprised:
                 gain *= rules.SURPRISE_CAPTURE
             gain *= 1 + self.mods[civ.id].capture_speed

@@ -241,3 +241,34 @@ def test_a_governor_brings_their_own_bonus_and_a_young_king_invites_plots():
     ruler.birth_day = family.born_aged(15, sim.tick)  # under 18: his competence is doubted
     assert families._troubles(king, sim.tick) > calm
     assert family.RULE_AGE == 12
+
+
+def test_in_the_endgame_a_long_peace_breeds_unrest_and_governors_who_rise(monkeypatch):
+    sim, king = _realm_of_three()
+    families = sim.families
+    families._govern(sim.tick)
+    house = families.house_of(king.id)
+    governors = [p for p in families.line(house) if p.governs is not None]
+    assert governors
+    tick = 3000
+    king.last_war = 0
+    events: list = []
+    families._long_peace(house, king, 200, events)
+    assert not events, "a short peace stirs nobody"
+    monkeypatch.setattr(family, "RESTLESS_MONTHLY", 1.0)
+    monkeypatch.setattr(family, "GOVERNOR_TURN", 1.0)
+    before = len(sim.civs)
+    families._long_peace(house, king, tick, events)
+    assert families.unrest(king.id, tick)
+    assert len(sim.civs) == before + 1, "a governor rose with his castle"
+    assert any("tired of a king who will not fight" in e["text"] for e in events)
+
+
+def test_the_endgame_begins_when_no_free_land_is_left_or_half_the_age_is_gone():
+    sim = Simulation(game_config("small", 3, seed=3))
+    assert not sim.endgame(10)
+    assert sim.endgame(sim.config.end_tick // 2)
+    for region in sim.world.regions:
+        if region.owner is None:
+            region.owner = 0
+    assert sim.endgame(10)

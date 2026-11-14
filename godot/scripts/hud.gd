@@ -69,7 +69,7 @@ var _cards_scroll: ScrollContainer
 var _reserved_bottom_right := 0.0  # height kept clear at the bottom right (the minimap)
 var _diplomacy_panel: PanelContainer
 var _castle_panel: PanelContainer
-var _points_needed := 0  # region points that win by domination
+var _regions_needed := 0  # regions that win by domination (with every rival's home seat)
 var _regions_at := {}  # capital tile -> the region it rules, from init
 var _castle_text: RichTextLabel
 var _castle_title: Label
@@ -642,7 +642,7 @@ func set_status(status: Dictionary) -> void:
 
 func update(tick: int, data: Dictionary) -> void:
 	_tick = tick
-	_points_needed = int(data.get("domination", {}).get("points", 0))
+	_regions_needed = int(data.get("domination", {}).get("regions", 0))
 	set_status(data["status"])
 	_relations.clear()
 	for relation: Dictionary in data["relations"]:
@@ -1081,11 +1081,11 @@ func _refresh_chips() -> void:
 			if int(pair[0]) == civ_id or int(pair[1]) == civ_id:
 				at_war = at_war or _relations[key]["status"] == "war"
 				allied = allied or _relations[key]["status"] == "alliance"
-		chip.text = "%s %d" % [_civ_info[civ_id]["name"], int(civ.get("points", 0))]
+		chip.text = "%s %d" % [_civ_info[civ_id]["name"], int(civ.get("regions_held", 0))]
 		chip.icon = _icon("battle") if at_war and civ["alive"] else null
 		chip.modulate = Color(1, 1, 1, 1.0 if civ["alive"] else 0.45)
-		chip.tooltip_text = "%s (%s): %d of the %d points that win%s\n%s  ·  Pop %d  ·  Army %d\n%s%s%s" % [
-			_civ_info[civ_id]["name"], _personality(civ_id), int(civ.get("points", 0)), _points_needed,
+		chip.tooltip_text = "%s (%s): %s%s\n%s  ·  Pop %d  ·  Army %d\n%s%s%s" % [
+			_civ_info[civ_id]["name"], _personality(civ_id), _toward_victory(civ),
 			"  ·  at war" if at_war else ("  ·  allied" if allied else ""), civ["era_name"], int(civ["population"]),
 			int(civ["soldiers"]), "Goal: %s" % civ["strategy"] if str(civ.get("strategy", "")) != "" else "",
 			"" if civ["alive"] else "\nDestroyed", _ruler_line(civ_id, "\n")]
@@ -1123,8 +1123,8 @@ func _refresh_drawer() -> void:
 		return
 	var info: Dictionary = _civ_info[_drawer_civ]
 	var civ: Dictionary = _latest[_drawer_civ]
-	_drawer_title.text = "[b][color=%s]%s[/color][/b]\n[color=#8a93a0]%s · %d of %d pts · score %d[/color]" % [
-		info["color"], info["name"], _personality(_drawer_civ), int(civ.get("points", 0)), _points_needed, int(civ.get("score", 0))]
+	_drawer_title.text = "[b][color=%s]%s[/color][/b]\n[color=#8a93a0]%s · %s · score %d[/color]" % [
+		info["color"], info["name"], _personality(_drawer_civ), _toward_victory(civ), int(civ.get("score", 0))]
 	_follow_button.text = "Following" if _following == _drawer_civ else "Follow"
 	var tab: String = DRAWER_TABS[_drawer_tabs.current_tab]
 	var text := ""
@@ -1287,13 +1287,13 @@ func _announce_family(tick: int, event: Dictionary, family: Dictionary, color: S
 	var icon: String = "res://assets/icons/%s.svg" % {"assassination": "dagger", "marriage": "rings",
 		"rebellion": "dagger", "execution": "dagger", "usurpation": "dagger", "claim": "battle",
 		"pledge": "rings", "betrayal": "dagger", "captured": "dagger",
-		"exchange": "rings", "rescue": "crown"}.get(kind, "crown")
+		"exchange": "rings", "rescue": "crown", "unrest": "battle"}.get(kind, "crown")
 	var title: String = {"death": "A death in the house", "succession": "The crown passes",
 		"assassination": "Murder!", "marriage": "A royal wedding", "rebellion": "Rebellion!",
 		"execution": "An execution", "usurpation": "The crown is seized", "claim": "A claim to a throne",
 		"ransom": "A prince comes home", "pledge": "An oath to the rebel", "betrayal": "Betrayed!",
 		"captured": "Taken prisoner", "exchange": "An exchange of prisoners",
-		"rescue": "Set free"}.get(kind, "News of the court")
+		"rescue": "Set free", "unrest": "The people stir"}.get(kind, "News of the court")
 	var portrait := str(family.get("portrait", ""))
 	if portrait == "":
 		portrait = str(family.get("crest", ""))
@@ -1353,6 +1353,13 @@ func ask_leave() -> void:
 		_leave.confirmed.connect(func() -> void: command_requested.emit("end_game", {}))
 		add_child(_leave)
 	_leave.popup_centered()
+
+
+## Where a civ stands toward domination: "12 of 16 regions, 2/3 rival seats".
+func _toward_victory(civ: Dictionary) -> String:
+	var seats: Array = civ.get("seats", [0, 0])
+	return "%d of %d regions, %d/%d rival seats" % [int(civ.get("regions_held", 0)), _regions_needed,
+		int(seats[0]), int(seats[1])]
 
 
 func close_top() -> bool:
@@ -1476,9 +1483,8 @@ func _compact_text(info: Dictionary, civ: Dictionary) -> String:
 		info["color"], info["name"], info["personality"]]
 	if not civ["alive"]:
 		return title + "\n[color=#e07a6a]Destroyed[/color]"
-	var facts := "%s   %d region%s (%d of %d pts)   Pop %d   Army %d   [color=#d9c36a]Score %d[/color]" % [
-		civ["era_name"], civ["regions"].size(), "" if civ["regions"].size() == 1 else "s",
-		int(civ.get("points", 0)), _points_needed, int(civ["population"]), int(civ["soldiers"]), int(civ.get("score", 0))]
+	var facts := "%s   %s   Pop %d   Army %d   [color=#d9c36a]Score %d[/color]" % [
+		civ["era_name"], _toward_victory(civ), int(civ["population"]), int(civ["soldiers"]), int(civ.get("score", 0))]
 	var goal := ""
 	if str(civ.get("strategy", "")) != "":
 		goal = "\n[color=#8a93a0]Goal: %s[/color]" % civ["strategy"]

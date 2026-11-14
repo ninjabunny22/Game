@@ -13,6 +13,9 @@ state is in CIVSIM_STATUS.md.
 
 - ~~**Next: an AI that sees its attacks through.**~~ Done 2026-11-14 (mustering, a fixed
   castle per column, friends counted, war judged by its course). Still open: deeper values.
+- ~~**No stalemates.**~~ Done 2026-11-14: the 90%-and-every-seat victory, an AI that plays for
+  it, endgame unrest and governors' risings. (Not done: ungoverned castles breaking free to the
+  natives.)
 - **An AI that understands the game.** Armies often
   attack a castle, then give up mid-fight though they have the troops: find why (campaign or
   siege abandonment, intent flips, home-guard recalls) and fix it. Then rework what the
@@ -20,8 +23,7 @@ state is in CIVSIM_STATUS.md.
   economy, war odds, regions and alliances.
 
 0. ~~**The nine drawn maps: judge them by play.**~~ Done: the balance batch (5 games per civ,
-   every map and civ count) is in CIVSIM_STATUS.md; victory is by region points (80% and half
-   the regions). Fixed from it: eight-way movement, centrality, Gilded Isle's 4-civ homes,
+   every map and civ count) is in CIVSIM_STATUS.md; victory was then by region points (now 90% of the regions and every rival seat). Fixed from it: eight-way movement, centrality, Gilded Isle's 4-civ homes,
    The Divide's mines, the Long March's corners, the Narrow Sea's Skerry; dropped: the Long
    March with 3 or 5 civs, the Narrow Sea with 5. Left as leans to watch (see STATUS).
 1. **Timing pass.** The durations are in one table (README "Timing"). Measured with the new

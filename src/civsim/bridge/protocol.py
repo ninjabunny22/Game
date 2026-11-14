@@ -30,7 +30,7 @@ from ..simulation import Simulation
 from ..config import HEADCOUNT, MAP_SIZES, MAPS, civ_counts, civ_range
 from ..diplomacy import rules
 
-PROTOCOL_VERSION = 22
+PROTOCOL_VERSION = 23
 RULER_COMMANDS = ("take_control", "release_control", "set_stance", "set_focus", "set_research", "set_build",
                   "answer_proposal", "start_rally", "cancel_rally", "reinforce_ally", "recall_reinforcement")
 GAME_COMMANDS = ("new_game", "end_game", "preview_map")  # start a game from the menu; back to it; show a map behind it
@@ -255,7 +255,10 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
             # The sickness a long war has brought on the civ, and how many days it has left; null when well.
             "sickness": {"name": civ.sickness, "days": max(0, civ.sick_until - sim.tick)} if civ.sickness else None,
             "regions": [region.id for region in world.regions if region.owner == civ.id],
-            "points": sim.points_held(civ),  # region points held: domination is counted in these
+            "points": sim.points_held(civ),  # region points held: they count toward the score
+            # Toward domination: regions held, and rival home seats held of all there are.
+            "regions_held": sim.regions_held(civ),
+            "seats": list(sim.seats_held(civ)),
             "mines": sim.mines_held(civ),  # gold mines in its regions, each paying it gold every day
             "population": heads(civ.population),
             "housing": heads(mods.housing),
@@ -409,8 +412,8 @@ def tick_message(sim: Simulation, paused: bool, speed: float) -> str:
         "civs": civs,
         # Who has won, how ("conquest", "domination" or "score") and when; null while undecided.
         "victory": sim.victory,
-        # What domination takes: region points and regions.
-        "domination": dict(zip(("points", "regions"), sim.domination_target())),
+        # What domination takes: this many regions, and every rival's home seat.
+        "domination": {"regions": sim.domination_target()},
         # The civ a human rules and the orders in force, or null when every civ plays itself.
         "ruler": sim.ruler.state(),
         "armies": armies,

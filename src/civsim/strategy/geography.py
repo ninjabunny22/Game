@@ -38,6 +38,8 @@ class ValuationParams:
     tag: dict = field(default_factory=lambda: {"prize": 2.0, "gate": 1.5, "neck": 2.0, "crossroads": 2.0,
                                                "bridge": 1.0})
     centrality: float = 2.0  # for the region most routes between the others pass through
+    seat: float = 2.0  # a rival's home seat: every one is needed to win ...
+    seat_race: float = 4.0  # ... and more so the more of the map the civ already holds (times its share)
     distance_scale: float = 40.0  # tiles of travel at which a region is worth half as much
     by_sea: float = 0.85  # access across water, with boats and a harbour
     settle_only: float = 0.6  # across water with boats but no harbour: settlers can go, armies not
@@ -242,6 +244,9 @@ class Geography:
         ours = max(1.0, diplomacy.power(civ)) if diplomacy is not None else 1.0
         natives = getattr(diplomacy, "natives", None)
         friends = set(diplomacy.allies(civ.id)) if diplomacy is not None else set()
+        # The home seats of every other realm there has been: region id -> whose seat it is.
+        seats = {other.home_region: other.name for other_id, other in self.civs.items()
+                 if other_id != civ.id and other.home_region >= 0 and other.home_region != civ.home_region}
         values = {}
         for region in world.regions:
             r = region.id
@@ -259,6 +264,9 @@ class Geography:
                 if world.region_of[tile] == r:
                     reasons.insert(0, name)
             strategic = sum(p.tag.get(tag, 0.0) for tag in region.tags) + p.centrality * self.centrality[r]
+            if r in seats and r not in held:
+                strategic += p.seat + p.seat_race * len(held) / len(world.regions)
+                reasons.insert(0, f"it is {seats[r]}'s home seat")
             for tag in region.tags:
                 if tag in ("gate", "neck", "crossroads", "bridge"):
                     reasons.append({"gate": "it holds a pass", "neck": "it holds the only land bridge",

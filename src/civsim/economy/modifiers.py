@@ -79,16 +79,28 @@ class Modifiers:
                 setattr(self, key, getattr(self, key) + value)
 
 
+# The most army strength buildings can give a civ (the old ceiling: four barracks, two academies),
+# however many it builds or captures: otherwise every region taken makes the next one easier.
+BUILDING_MILITARY_CAP = 0.7
+
+
 def compute_modifiers(civ, building_defs, tech_tree) -> Modifiers:
     mods = Modifiers()
+    working: dict[str, list] = {}
     for building in civ.buildings:
         if building.complete and building.active:
-            bdef = building_defs[building.type]
+            working.setdefault(building.type, []).append(building)
+    for kind, buildings in working.items():
+        bdef = building_defs[kind]
+        if bdef.max_count:  # a civ draws on its best few of a kind, built or captured
+            buildings = sorted(buildings, key=lambda b: -b.level)[:bdef.max_count]
+        for building in buildings:
             for _ in range(building.level):  # an upgraded building counts once per level
                 mods.apply(bdef.effects)
             for level, bonus in bdef.level_bonus.items():  # and what it becomes at its higher levels
                 if building.level >= int(level):
                     mods.apply(bonus)
+    mods.military = min(mods.military, BUILDING_MILITARY_CAP)
     for tech_id in civ.known_techs:
         mods.apply(tech_tree.techs[tech_id].effects)
     _apply_water_access(civ, mods)

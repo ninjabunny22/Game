@@ -203,11 +203,11 @@ def test_a_civ_close_to_winning_pushes_for_the_prizes_that_would_finish_it(conte
     brain = UtilityBrain()
     args = lambda: (context["you"], target, 2.0, 2.0, 1.3, 0.0, False, True, False, None,  # noqa: E731
                     {"kind": "conquest", "target": None}, {})
-    context["you"]["points"] = {"held": 5, "needed": 20, "regions_needed": 8, "share": 0.25}
+    context["you"]["victory"] = {"regions": 5, "regions_needed": 20, "seats": [0, 3], "missing_seats": [], "share": 0.25}
     before, _ = brain._attack(*args())
-    context["you"]["points"]["share"] = 0.85
+    context["you"]["victory"]["share"] = 0.85
     after, why = brain._attack(*args())
-    assert after == pytest.approx(before + brain.p.LAST_PUSH)
+    assert after == pytest.approx(before + brain.p.LAST_PUSH + brain.p.FINISH_PUSH)
     assert "Goldcrown" in why
 
 
@@ -222,3 +222,16 @@ def test_it_judges_a_war_by_how_it_is_going(context):
     assert decide(context)[enemy["name"]]["stance"] == "aggression", "nor while it is being won"
     enemy.update(war_ticks=100, war_course=course | {"castles_lost": 2})
     assert decide(context)[enemy["name"]]["stance"] == "ignore", "a war being lost is ended, though the odds look fair"
+
+
+def test_unrest_from_a_long_endgame_peace_pushes_toward_war_not_away(context):
+    target = context["neighbors"][0]
+    brain = UtilityBrain()
+    args = lambda: (context["you"], target, 2.0, 2.0, 1.3, 0.0, False, True, False, None,  # noqa: E731
+                    {"kind": "conquest", "target": None}, {})
+    calm, _ = brain._attack(*args())
+    context["you"]["unrest"] = True
+    assert brain._attack(*args())[0] == 0.0, "a new reign's unrest starts no war"
+    context["you"]["idle_realm"] = True
+    restless, _ = brain._attack(*args())
+    assert restless == pytest.approx(calm + brain.p.IDLE_REALM)

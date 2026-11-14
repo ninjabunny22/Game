@@ -264,7 +264,8 @@ def test_an_army_falls_back_from_a_fight_it_cannot_win():
     sim.diplomacy._start_war(a, b, 0, {a.id})
     spot = next(t for t in sorted(b.territory) if not world.is_water(t) and t not in world.capital_tiles)
     beside = next(t for t in world.neighbors(spot) if not world.is_open_water(t))
-    mine = Army(military.next_id(), a.id, spot, "field", target_civ=b.id, units={"spearman": 20.0}, state="marching")
+    mine = Army(military.next_id(), a.id, spot, "field", target_civ=b.id, units={"spearman": 20.0}, state="marching",
+                commander=military._new_commander(a, 0))
     theirs = Army(military.next_id(), b.id, beside, "field", target_civ=a.id, units={"spearman": 200.0}, state="marching")
     a.armies.append(mine)
     b.armies.append(theirs)
@@ -311,3 +312,50 @@ def test_an_attacking_army_musters_at_home_and_keeps_to_its_castle():
     army.tile = army.path[len(army.path) // 2] if army.path else army.tile
     military._plan(a, army, 200)
     assert army.objective == target, "on the way, it does not turn to another castle"
+
+
+def test_columns_against_one_army_fight_as_one_side():
+    def battle(columns):
+        sim = Simulation(SimConfig(seed=3))
+        a, b = sim.civs[0], sim.civs[1]
+        military, world = sim.military, sim.world
+        sim.diplomacy._start_war(a, b, 0, {a.id})
+        spot, beside = next((t, n) for t in range(len(world.owner)) if world.owner[t] < 0 and world.walkable(t)
+                            for n in world.neighbors(t) if world.owner[n] < 0 and world.walkable(n))  # open ground
+        mine = [Army(military.next_id(), a.id, spot, "field", target_civ=b.id, units={"spearman": 30.0},
+                     state="marching") for _ in range(columns)]
+        theirs = Army(military.next_id(), b.id, beside, "field", target_civ=a.id, units={"spearman": 100.0},
+                      state="marching")
+        a.armies += mine
+        b.armies.append(theirs)
+        a.soldiers, b.soldiers = 30.0 * columns, 100.0  # what is on the field, and nobody else
+        military._sync(a)
+        military._sync(b)
+        for tick in range(1, 4):
+            military._fight(tick, [])
+        return [x.state for x in mine]
+    assert battle(1) == ["retreating"], "one column of 30 breaks at once against 100"
+    assert "retreating" not in battle(3), "three of them stand together"
+
+
+def test_a_castle_held_under_siege_starves_until_it_can_be_taken():
+    sim = Simulation(SimConfig(seed=3))
+    a, b = sim.civs[0], sim.civs[1]
+    military, world = sim.military, sim.world
+    sim.diplomacy._start_war(a, b, 0, {a.id})
+    target = b.capital.tile
+    b.population = 2000.0  # a strong militia: far more than the besiegers at first
+    a.soldiers, b.soldiers = 30.0, 0.0
+    military._sync(a)
+    military._sync(b)
+    army = Army(military.next_id(), a.id, next(iter(world.neighbors(target))), "field", target_civ=b.id,
+                units={"spearman": 30.0}, state="marching", path=[target])
+    a.armies.append(army)
+    events: list = []
+    military._besiege(a, army, 1, events)
+    assert army.state == "besieging" and army.siege_progress == 0.0, "too strongly held at first"
+    for day in range(2, 100):
+        army.path = [target]
+        military._besiege(a, army, day, events)
+    assert army.siege_progress > 0.0, "but hunger tells in the end"
+    assert any("are starving" in e["text"] for e in events)

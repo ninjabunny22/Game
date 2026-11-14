@@ -216,7 +216,7 @@ def test_civs_build_stables_and_use_horses_in_play():
                 continue
             assert civ.horses >= -1e-6
             riders = civ.unit_counts().get("cavalry", 0.0)
-            assert civ.herd <= HERD_PER_STABLE * 2 + 1e-6, "never more than two stables can keep"
+            assert civ.herd <= HERD_PER_STABLE * 2 * 3 + 1e-6, "never more than two stables (at level 3) can keep"
             built = max(built, civ.count("stables"))
             mounted = max(mounted, sum(v.mounted for v in civ.villagers))
             cavalry = max(cavalry, riders)

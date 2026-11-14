@@ -37,9 +37,16 @@ style). Balance and timing have not had their dedicated pass yet.
   knows Mining).
 - **Research:** 42 techs in 7 eras, including soldier-cost efficiency, troop tiers (1–4) and
   castle hospital beds.
+- **Victory:** 90% of the regions and every rival's home seat (or last standing; score on the
+  last day as a fallback).
+- **Against stalemates:** castles starve under siege, columns fight as one side and gather at
+  one wall (across enemies), a castle seen strongly held is passed over, besiegers at one wall fight as one, columns march on one castle and
+  answer a stuck siege; a still map (no castle taken for 300 days) pushes the stronger side to
+  finish its war; rival home seats are prizes; in the endgame a long peace breeds unrest and
+  governors who rise against a weak king.
 - **Military:** attacks seen through (an army musters before it marches, keeps to its
   castle, counts friendly armies before falling back; the strategist weighs castles won and
-  lost, the dead and sieges nearly through), trained and paid soldiers, up to 5 field armies per civ under commanders with
+  lost, the dead and sieges nearly through), trained and paid soldiers, up to 8 field armies per civ under commanders with
   limited capacity, garrisons, unit counters, battles, routs, pursuit, captured commanders,
   sieges (a castle taken is its region won at once), rallies between allies, reinforcing an ally's
   capital, generals leaving part of their army to hold a threatened castle of their own,

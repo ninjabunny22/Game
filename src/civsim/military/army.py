@@ -100,6 +100,7 @@ class Army:
     refit: bool = False  # on its way to one of its civ's capitals to fill its ranks
     wing: int = 0  # among the armies sent against one enemy: the main body, or a second column
     muster_since: int | None = None  # day it began gathering its ranks at home before setting out
+    stuck_since: int | None = None  # day its siege stopped making headway (too strongly held)
     objective: int | None = None  # the enemy castle it has set out to take, kept until it falls or the army falls back
     boat: bool = False  # aboard ship on open water, having put out from near one of its civ's harbours
 

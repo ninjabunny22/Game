@@ -29,44 +29,40 @@ def test_the_last_civ_standing_wins_by_conquest():
     assert sim.victory["tick"] == 1, "decided once"
 
 
-def test_holding_most_of_the_map_wins_by_domination():
-    sim = Simulation(SimConfig(seed=3))  # a generated map: every region worth one point
+def test_ninety_percent_of_the_regions_and_every_rival_seat_win_by_domination():
+    sim = Simulation(SimConfig(seed=3))
     regions = sim.world.regions
-    need, _ = sim.domination_target()
-    assert need == math.ceil(0.8 * len(regions))
-    others = [region for region in regions if region.owner != 2]  # civ 2 keeps the ones it starts with
-    short = need - 1 - (len(regions) - len(others))
-    for i, region in enumerate(others):
-        region.owner = 2 if i < short else None
+    need = sim.domination_target()
+    assert need == math.ceil(0.9 * len(regions))
+    winner = sim.civs[2]
+    seats = {r.id for r in sim.rival_seats(winner)}
+    assert len(seats) == len(sim.civs) - 1 and winner.home_region not in seats
+    # Every region but the ones it needs least: one short of the target, every seat held.
+    order = sorted(regions, key=lambda r: (r.id not in seats and r.id != winner.home_region, r.id))
+    for i, region in enumerate(order):
+        region.owner = winner.id if i < need - 1 else None
+    assert sim.seats_held(winner) == (len(seats), len(seats))
     sim.step()
     assert sim.victory is None, "one region short"
-    others[short].owner = 2
+    order[need - 1].owner = winner.id
     sim.step()
-    assert sim.victory["civ"] == 2 and sim.victory["kind"] == "domination"
+    assert sim.victory["civ"] == winner.id and sim.victory["kind"] == "domination"
 
 
-def test_domination_counts_region_points_and_needs_half_the_regions():
-    sim = Simulation(game_config("small", 2, seed=3, map="gilded_isle"))
-    world = sim.world
-    total = sum(r.points for r in world.regions)
-    need_points, need_regions = sim.domination_target()
-    assert need_points == math.ceil(0.8 * total) and need_regions == math.ceil(0.5 * len(world.regions))
-    # Points alone are not enough: give civ 0 the richest regions up to the points but too few regions.
-    rich = sorted(world.regions, key=lambda r: -r.points)
-    for r in world.regions:
-        r.owner = None
-    got = 0
-    for r in rich:
-        if got >= need_points:
-            break
-        r.owner, got = 0, got + r.points
-    held = sum(1 for r in world.regions if r.owner == 0)
+def test_the_land_alone_is_not_enough_without_every_rival_seat():
+    sim = Simulation(SimConfig(seed=3))
+    winner, rival = sim.civs[0], sim.civs[1]
+    seat = sim.world.regions[rival.home_region]
+    for region in sim.world.regions:
+        region.owner = winner.id
+    seat.owner = rival.id
+    assert sim.regions_held(winner) >= sim.domination_target()
+    assert sim.victory_share(winner) < 1.0
     sim.step()
-    if held < need_regions:
-        assert sim.victory is None, "too few regions, however rich"
-    else:
-        assert sim.victory["kind"] == "domination"
-    assert sim.points_held(sim.civs[0]) == got
+    assert sim.victory is None, "a rival still holds its home seat"
+    seat.owner = winner.id
+    sim.step()
+    assert sim.victory["kind"] in ("domination", "conquest")
 
 
 def test_the_highest_score_wins_on_the_last_day():
@@ -81,3 +77,16 @@ def test_the_highest_score_wins_on_the_last_day():
     sim.step()
     assert sim.victory == {"civ": 3, "kind": "score", "tick": 6}
     assert Simulation(SimConfig(seed=3, end_tick=0)).config.end_tick == 0
+
+
+def test_every_rival_home_seat_is_a_prize_worth_more_as_the_map_is_won():
+    sim = Simulation(SimConfig(seed=3))
+    civ, rival = sim.civs[0], sim.civs[1]
+    seat = rival.home_region
+    value = sim.geography.value(civ, seat, sim.tick)
+    assert "home seat" in value.reasons[0]
+    others = [r for r in sim.world.regions if r.owner is None][:4]
+    for region in others:
+        region.owner = civ.id  # more of the map held: the race is closer
+    later = sim.geography.value(civ, seat, sim.tick + 100)
+    assert later.strategic > value.strategic

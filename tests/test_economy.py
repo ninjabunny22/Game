@@ -1,3 +1,5 @@
+import pytest
+
 from civsim.civ import Building
 from civsim.config import SimConfig
 from civsim.economy import compute_modifiers, food_need, produce
@@ -66,3 +68,17 @@ def test_science_never_piles_up_once_the_tree_is_finished():
         assert all(civ.science <= SCIENCE_BANK_CAP for civ in sim.civs)
     assert all(civ.research is None for civ in sim.civs), "nothing is left to research"
     assert len(sim.tech_tree.techs) == 42, "and nobody adds to the tree"
+
+
+def test_captured_barracks_beyond_the_few_a_civ_can_use_add_nothing_and_the_army_bonus_has_a_ceiling():
+    from civsim.economy.modifiers import BUILDING_MILITARY_CAP
+    sim = Simulation(SimConfig(seed=3))
+    civ = sim.civs[0]
+    tiles = sorted(civ.territory)
+    civ.buildings = [Building("barracks", tiles[i], 1.0, True) for i in range(4)]
+    four = compute_modifiers(civ, sim.building_defs, sim.tech_tree).military
+    civ.buildings += [Building("barracks", tiles[i], 1.0, True) for i in range(4, 8)]
+    assert compute_modifiers(civ, sim.building_defs, sim.tech_tree).military == pytest.approx(four)
+    for b in civ.buildings:
+        b.level = 3
+    assert compute_modifiers(civ, sim.building_defs, sim.tech_tree).military == pytest.approx(BUILDING_MILITARY_CAP)

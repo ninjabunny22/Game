@@ -92,7 +92,9 @@ def test_an_army_fills_its_ranks_only_in_one_of_its_capitals(sim):
     sim.diplomacy._start_war(a, b, 0, {a.id})
     a.soldiers = a.population = 0.0
     a.garrison.units = {}
+    a.commanders, a.resources["gold"] = [], 0.0  # no general for a new column: this is about refilling
     army = field_army(sim, a, 5, away(sim, a))
+    army.commander = sim.military._new_commander(a, 0)
     a.garrison.add({"spearman": 60.0})
     a.soldiers += 60
     a.population += 200

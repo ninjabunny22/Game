@@ -72,6 +72,11 @@ MARRY_HEIR = 0.35
 MATCH_ROYAL = 0.3  # of a marriage, the chance it is with another ruling house (if one will have it)
 MATCH_POOL = 0.5  # else with a house that does not rule (a portrait from the boards), else minor nobility
 UNREST_DAYS = 60
+# The endgame (no free land left, or half the age gone): a long peace makes a realm restless.
+ENDGAME_PEACE = 300  # days at peace after which the people grow restless and governors look up
+RESTLESS_MONTHLY = 0.04  # monthly chance the people fall into unrest, more with every further year of peace
+GOVERNOR_TURN = 0.006  # monthly chance a royal governor rises with his castle, the same, and more under a weak king
+QUIET_CONQUEST = 1000  # days without taking a castle after which a king looks weak
 ROYAL_STANDING = 1.0  # how much better two ruling houses think of each other once joined by marriage
 
 # Plots, rebellion, regency, claims, traits.
@@ -228,6 +233,7 @@ class Families:
         self.changed = 0  # the last day anything about a family changed (the viewer is sent them then)
         self.unrest_until: dict[int, int] = {}  # civ id -> the day its unrest ends
         self.spawn = None  # set by the simulation: makes a rebel's new civ (or None if it cannot)
+        self.endgame = lambda tick: False  # set by the simulation: whether the age has reached its endgame
         self.rebellions: dict[int, int] = {}  # civ id -> the rebel civ that broke away from it
         self.claims: dict[tuple[int, int], dict] = {}  # (claiming civ, claimed civ) -> {"by", "since"}
         self.betrayals: dict[tuple[int, int], int] = {}  # (patron, rebel civ) -> the day it turns on the rebel
@@ -399,6 +405,10 @@ class Families:
         if tick % 30 == 0:
             self._captives_month(tick, events)
             self._govern(tick)
+            if self.endgame(tick):
+                for house in list(self.by_civ.values()):
+                    if self.civs[house.civ].alive:
+                        self._long_peace(house, self.civs[house.civ], tick, events)
         for house in list(self.by_civ.values()):
             civ = self.civs[house.civ]
             if not civ.alive:
@@ -737,6 +747,43 @@ class Families:
                     trouble += 0.3  # losing a war
                     break
         return min(1.0, trouble)
+
+    def _weakness(self, civ, tick: int) -> float:
+        """How weak the king looks, 0 to 1: a child or a regent on the throne, a small army for
+        the land it holds, no castle taken in a long while."""
+        house = self.by_civ[civ.id]
+        king = self.people[house.ruler]
+        weak = 0.35 if house.regent is not None or king.age(tick) < ADULT else 0.0
+        others = [c for c in self.civs.values() if c.alive and c.id != civ.id and c.settlements]
+        if others and civ.settlements:
+            mine = civ.soldiers / len(civ.settlements)
+            usual = sum(c.soldiers / len(c.settlements) for c in others) / len(others)
+            weak += 0.35 if mine < 0.7 * usual else 0.0
+        taken = self.diplomacy.last_taken.get(civ.id, 0) if self.diplomacy is not None else tick
+        weak += 0.3 if tick - taken >= QUIET_CONQUEST else 0.0
+        return min(1.0, weak)
+
+    def _long_peace(self, house: House, civ, tick: int, events: list) -> None:
+        """Monthly, in the endgame: a realm long at peace grows restless, and its royal governors,
+        seeing a king who no longer fights, may rise with the castles they hold."""
+        peace = tick - civ.last_war
+        if peace < ENDGAME_PEACE or self.intrigue <= 0:
+            return
+        years = (peace - ENDGAME_PEACE) / YEAR
+        if not self.unrest(civ.id, tick) and self.rng.random() < RESTLESS_MONTHLY * (1 + years):
+            self.unrest_until[civ.id] = tick + UNREST_DAYS
+            self._log(events, civ, "unrest", self.people[house.ruler],
+                      f"After {peace // YEAR or 1} years of peace the people of {civ.name} grow restless",
+                      banner=True, line="Idle swords and idle hands: the realm wants a war.")
+        weakness = self._weakness(civ, tick)
+        for member_id in list(house.members):
+            person = self.people[member_id]
+            if (person.alive and person.governs is not None and person.id != house.ruler
+                    and person.captive_of is None and person.house == house.key
+                    and self.rng.random() < GOVERNOR_TURN * self.intrigue * (1 + years) * (0.5 + weakness)):
+                self._rebel(person, house, civ, tick, events,
+                            f"tired of a king who will not fight, after {peace // YEAR or 1} years of peace")
+                return  # one rising a month at most
 
     def _plot_chance(self, person: Character, house: House, civ, tick: int) -> float:
         ambition = person.ambition
