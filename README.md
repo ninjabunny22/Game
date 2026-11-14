@@ -277,6 +277,9 @@ The overlay is built for watching:
   let go after 100 days in which neither ally is at war.
 - **Judgement.** Civs reconsider every day, and keep their word to themselves: a war is
   fought for 50 days before peace is sought, an alliance kept for 100, a goal held for 200.
+  After that a war is judged by how it goes: a siege 40% through is seen to the end, a war
+  being won (more castles taken, or under 60% of the enemy's dead) is kept up down to 0.6 of
+  their strength, and one being lost is given up below 1.1, however long it has run.
   A war is forecast before it is started (the march, the walls, who would join, what must
   stay home), prepared against one target (the army is raised first, shown on the civ's
   card), and where the gap is wide tribute is demanded first; the weak and peaceable pay.
@@ -329,6 +332,10 @@ The overlay is built for watching:
   every army gets a home force raised against it, which never leaves its own land. Allies
   at war with the same enemy make for the same capital, and a second army in the breach
   brings a held capital down half as fast again.
+- **Seeing an attack through.** An attacking army waits at home until it is 90% of what its
+  general can lead (at most 45 days), then keeps to the castle it set out for until it falls,
+  the war ends or the army is beaten. It falls back from enemies within 3 tiles 1.8 times
+  stronger than itself and the friendly armies beside it (2.5 times, at the walls).
 - **Generals and garrisons.** A general leads only so many (30 units at level 1, 8 more a
   level; every head count shown is four to the unit), and a civ has at most five armies
   out. The rest of its soldiers wait in its capitals, defend them, and fill the ranks of

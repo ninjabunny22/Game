@@ -6,6 +6,7 @@ import pytest
 from civsim.config import SimConfig, game_config
 from civsim.diplomacy import Intent, Stance, rules
 from civsim.military import Army
+from civsim.military import warfare as military_rules
 from civsim.simulation import Simulation
 from civsim.strategy import CheckinRequest, parse_stances, stance_context
 from civsim.strategy.utility import DEFAULT, UtilityBrain
@@ -270,3 +271,43 @@ def test_an_army_falls_back_from_a_fight_it_cannot_win():
     assert military._outmatched(a, mine) and not military._outmatched(b, theirs)
     military._plan(a, mine, 10)
     assert mine.state == "retreating"
+
+
+def test_friends_beside_an_army_count_and_a_siege_is_not_lightly_given_up():
+    sim = Simulation(SimConfig(seed=3))
+    a, b = sim.civs[0], sim.civs[1]
+    military, world = sim.military, sim.world
+    sim.diplomacy._start_war(a, b, 0, {a.id})
+    spot = next(t for t in sorted(b.territory) if not world.is_water(t) and t not in world.capital_tiles)
+    beside = next(t for t in world.neighbors(spot) if not world.is_open_water(t))
+    mine = Army(military.next_id(), a.id, spot, "field", target_civ=b.id, units={"spearman": 20.0}, state="marching")
+    theirs = Army(military.next_id(), b.id, beside, "field", target_civ=a.id, units={"spearman": 45.0}, state="marching")
+    a.armies.append(mine)
+    b.armies.append(theirs)
+    assert military._outmatched(a, mine)
+    mine.state = "besieging"
+    assert not military._outmatched(a, mine), "at the walls it takes a greater threat"
+    mine.state = "marching"
+    a.armies.append(Army(military.next_id(), a.id, spot, "field", target_civ=b.id, units={"spearman": 20.0}, state="marching"))
+    assert not military._outmatched(a, mine), "a second column beside it counts on its side"
+
+
+def test_an_attacking_army_musters_at_home_and_keeps_to_its_castle():
+    sim = Simulation(SimConfig(seed=3))
+    a, b = sim.civs[0], sim.civs[1]
+    military = sim.military
+    sim.diplomacy._start_war(a, b, 0, {a.id})
+    army = Army(military.next_id(), a.id, a.capital.tile, "field", target_civ=b.id, units={"spearman": 5.0},
+                commander=military._new_commander(a, 0))
+    a.armies.append(army)
+    a.soldiers = 5.0
+    military._sync(a)  # its garrison, empty: nobody waiting at home to fill the ranks
+    military._plan(a, army, 100)
+    assert army.state == "idle" and army.muster_since == 100, "a few soldiers wait for the rest"
+    military._plan(a, army, 100 + military_rules.MUSTER_DAYS)
+    assert army.state == "marching", "but not for ever"
+    target = army.objective
+    assert target in {s.tile for s in b.settlements}
+    army.tile = army.path[len(army.path) // 2] if army.path else army.tile
+    military._plan(a, army, 200)
+    assert army.objective == target, "on the way, it does not turn to another castle"

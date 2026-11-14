@@ -55,6 +55,10 @@ class Params:
     STRATEGY_STICKINESS: float = 1.3  # a strategy already in hand counts for this much more than a new one
     # Keeping its word to itself.
     WAR_MIN: int = 50  # ticks a war is fought before peace is sought, unless it is going disastrously
+    SIEGE_THROUGH: float = 0.4  # a siege of theirs this far through is seen to the end, whatever else
+    WINNING_EDGE: float = 0.6  # a war we are winning (castles, or far fewer dead) is kept up down to this edge
+    LOSING_EDGE: float = 1.1  # one we are losing is given up below this edge, weary or not
+    LOSS_RATIO: float = 0.6  # our dead under this share of theirs counts as winning
     ALLIANCE_MIN: int = 100  # ticks an alliance is kept, whatever else comes up
     ALLIANCE_REST: int = 300  # ticks before two civs whose alliance ended form another, unless they share a war
     STRATEGY_MIN: int = 200  # ticks a long-term goal is held before another may replace it
@@ -228,6 +232,22 @@ class UtilityBrain:
         if n.get("victory_share", 0.0) >= p.NEAR_VICTORY and edge >= p.HOLD_THE_LEADER and not disaster:
             entry.update(stance="aggression", troop_commitment=self._commitment(edge, wars, zeal))
             notes.append((3, f"{n['name']} is close to ruling the map: the war goes on"))
+            return
+        course = n.get("war_course") or {}
+        won, lost = course.get("castles_won", 0), course.get("castles_lost", 0)
+        ours, theirs = course.get("our_losses", 0), course.get("their_losses", 0)
+        winning = won > lost or (theirs >= 10 and ours < p.LOSS_RATIO * theirs and won >= lost)
+        losing = lost > won or (ours >= 10 and theirs < p.LOSS_RATIO * ours and won <= lost)
+        if course.get("siege", 0.0) >= p.SIEGE_THROUGH and not n.get("holds_your_capital"):
+            entry.update(stance="aggression", troop_commitment=self._commitment(edge, wars, zeal))
+            notes.append((3, f"one of {n['name']}'s castles is nearly taken: the siege goes on"))
+            return
+        if winning and edge >= p.WINNING_EDGE and not committed:
+            entry.update(stance="aggression", troop_commitment=self._commitment(edge, wars, zeal))
+            notes.append((2, f"winning the war on {n['name']}: pressing on"))
+            return
+        if losing and edge < p.LOSING_EDGE and not committed and not n.get("you_hold_their_capital"):
+            notes.append((3, f"the war with {n['name']} is being lost: seeking peace"))
             return
         if n.get("you_hold_their_capital") or committed or edge >= 1.3 or (edge >= 0.85 and not weary):
             entry.update(stance="aggression", troop_commitment=self._commitment(edge, wars, zeal))

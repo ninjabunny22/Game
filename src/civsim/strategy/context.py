@@ -121,6 +121,9 @@ def stance_context(sim, civ) -> dict:
             "distrusted_ticks_left": max(0, diplomacy.distrust_until.get(other_id, 0) - sim.tick),
             "relation": relation.status,
             "war_ticks": sim.tick - relation.war.start if relation.war else None,
+            # How the war is going, if there is one: castles each side has taken, soldiers each
+            # has lost, and how far our nearest siege of theirs is through (1: about to fall).
+            "war_course": _war_course(sim, civ, other, relation.war) if relation.war else None,
             # How long the two have been at peace, if they are: a long peace makes the restless bold.
             "peace_ticks": sim.tick - relation.since if relation.status == "peace" else None,
             "alliance_ticks": sim.tick - relation.since if relation.status == "alliance" else None,
@@ -360,3 +363,13 @@ def _surplus_and_lacking(civ, mods) -> tuple[list[str], list[str]]:
             or (res == "water" and mods.income["water"] < civ.upkeep["water"]))
     ]
     return surplus, lacking
+
+
+def _war_course(sim, civ, other, war) -> dict:
+    siege = 0.0
+    for army in civ.armies:
+        if army.state == "besieging" and army.path and sim.world.owner[army.path[0]] == other.id:
+            siege = max(siege, army.siege_progress / max(sim.military.tile_price(civ, army.path[0]), 1e-6))
+    return {"castles_won": war.regions_taken.get(civ.id, 0), "castles_lost": war.regions_taken.get(other.id, 0),
+            "our_losses": round(war.casualties.get(civ.id, 0.0)), "their_losses": round(war.casualties.get(other.id, 0.0)),
+            "siege": round(min(1.0, siege), 2)}

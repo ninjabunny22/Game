@@ -45,7 +45,8 @@ from .units import BASE_UNIT, MAX_TIER, UNIT_TYPES, tier_strength, unit_strength
 GARRISON_KEEP = 0.2  # share of the soldiers that always stays to hold the capitals, at the least
 WALL_DETOUR = 4  # tiles further an army will go for a capital one point less strongly held
 MAX_ARMIES = 5  # field armies a civ can have out at once; the rest of its soldiers hold its capitals
-FULL = 0.9  # share of what its commander can lead at which an army counts as full
+FULL = 0.9  # share of what its commander can lead at which an army counts as full (and sets out)
+MUSTER_DAYS = 45  # days an attacking army waits at home for its ranks to fill before going with what it has
 EXPEDITION_CAPACITY = 2.0  # an expedition against natives takes levies along: this many times the usual
 # Rallies: allies gather in one city and march on an enemy city as a single army.
 RALLY_GATHER = 40  # ticks the armies have to reach the city
@@ -55,7 +56,8 @@ RALLY_SPOILS = 0.15  # share of the leader's gold divided among those who helped
 HOME_CALL = 8  # tiles: an intruder further than this from every army gets a force of its own raised against it
 JOINT_PULL = 10  # tiles further an army will go to attack the capital an ally is already attacking
 OUTMATCHED = 1.8  # an army falls back from enemies within reach this many times its strength
-DANGER_RADIUS = 3  # ... counted this many tiles around it
+DANGER_RADIUS = 3  # ... counted this many tiles around it (friendly armies there count on its side)
+SIEGE_NERVE = 1.4  # ... and from this many times more when it is at the walls
 # An army fills its ranks only in one of its civ's capitals: one worn down in the field goes home for more.
 REFIT_BELOW = 0.5  # share of what its commander can lead below which an army goes home to refill ...
 REFIT_WAITING = 0.25  # ... if at least this share of that is waiting in the garrison
@@ -662,9 +664,13 @@ class Military:
                 # Too few left to go on, and more waiting at home: back to fill the ranks.
                 army.refit = True
                 goal = self._refuge(civ, army.tile)
-                army.siege_progress = 0.0
+                army.siege_progress, army.objective = 0.0, None
                 army.state = "marching" if army.tile != goal else "idle"
+            elif (war and civ.id in war.aggressors and army.duty == "attack" and army.state == "idle"
+                  and self._at_home(civ, army.tile) and not self._mustered(civ, army, tick)):
+                goal = army.tile  # gathering its full strength first, not setting out a few at a time
             elif war and civ.id in war.aggressors and rested and army.size >= MIN_FIELD_ARMY:
+                army.muster_since = None
                 # Make for the nearest capital the enemy holds: taking it takes its region.
                 # Make for the capital that is cheapest to take: near, and not too strongly held.
                 joint = self._allied_targets(civ, enemy)  # where an ally is already attacking: join it there
@@ -673,14 +679,17 @@ class Military:
                                 key=lambda t: (self._gap(army.tile, t) + WALL_DETOUR * self.tile_price(civ, t)
                                                - (JOINT_PULL if t in joint else 0)
                                                - VALUE_PULL * self._worth(worth, t), t))
-                # Each column takes the next capital along, so the enemy has several to save.
-                goal = others[army.wing % len(others)]
+                if army.objective not in others or army.no_route == army.objective:
+                    # Each column takes the next capital along, so the enemy has several to save;
+                    # chosen once, so a column does not turn from one castle to another on the way.
+                    army.objective = others[army.wing % len(others)]
+                goal = army.objective
                 others = [goal] + [t for t in others if t != goal]
                 if army.state == "idle":
                     army.state = "marching"
                 if self._outmatched(civ, army):
                     # No sense in being cut to pieces: fall back, rest, and come again stronger.
-                    army.state, army.path, army.siege_progress = "retreating", [], 0.0
+                    army.state, army.path, army.siege_progress, army.objective = "retreating", [], 0.0, None
                     goal = self._refuge(civ, army.tile)
             else:
                 intruder = self._nearest_intruder(civ, army, enemy)
@@ -1148,21 +1157,40 @@ class Military:
         waiting = civ.garrison.size - GARRISON_KEEP * civ.soldiers
         return waiting >= max(MIN_FIELD_ARMY, REFIT_WAITING * capacity)
 
+    def _mustered(self, civ, army: Army, tick: int) -> bool:
+        """Whether an attacking army at home is ready to set out: nearly as large as its
+        commander can lead, or it has waited MUSTER_DAYS for soldiers and goes with what it has."""
+        if army.size >= FULL * self.capacity(army):
+            return True
+        if army.muster_since is None:
+            army.muster_since = tick
+        return tick - army.muster_since >= MUSTER_DAYS and army.size >= MIN_FIELD_ARMY
+
     def _outmatched(self, civ, army: Army) -> bool:
-        """Whether enemy armies close by are far too strong for this one to face. An army that
-        is holding a capital stays to see it through."""
+        """Whether enemy armies close by are far too strong for this one and the friendly armies
+        beside it (its own civ's and its war allies') to face. An army at the walls needs a
+        greater threat to give up a siege; one holding a capital stays to see it through."""
         if self._holding(army):
             return False
         x, y = self.world.xy(army.tile)
-        against = 0.0
-        for enemy_id in self.diplomacy.enemies(civ.id):
-            for other in self.civs[enemy_id].armies:
-                if other.role != "field" or other.size < 0.5 or other.state in ("retreating", "returning"):
-                    continue
-                ox, oy = self.world.xy(other.tile)
-                if max(abs(ox - x), abs(oy - y)) <= DANGER_RADIUS:
-                    against += self.army_strength(other)
-        return against > OUTMATCHED * self.army_strength(army)
+
+        def near(other: Army) -> bool:
+            if other.role != "field" or other.size < 0.5 or other.state in ("retreating", "returning"):
+                return False
+            ox, oy = self.world.xy(other.tile)
+            return max(abs(ox - x), abs(oy - y)) <= DANGER_RADIUS
+
+        enemies = self.diplomacy.enemies(civ.id)
+        against = sum(self.army_strength(other) for enemy_id in enemies
+                      for other in self.civs[enemy_id].armies if near(other))
+        if against <= 0.0:
+            return False
+        friends = {civ.id} | {ally.id for enemy_id in enemies for ally in self._war_allies(civ, enemy_id)}
+        ours = self.army_strength(army) + sum(
+            self.army_strength(other) for friend in friends if friend in self.civs
+            for other in self.civs[friend].armies if other is not army and near(other))
+        nerve = SIEGE_NERVE if army.state == "besieging" else 1.0
+        return against > OUTMATCHED * nerve * ours
 
     def _route(self, civ, start: int, goal: int, max_nodes: int | None = None) -> list[int] | None:
         """The way an army of this civ would go. Open water needs boats, and can only be put out

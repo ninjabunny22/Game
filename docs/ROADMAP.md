@@ -11,7 +11,9 @@ state is in CIVSIM_STATUS.md.
 
 ## Immediate priorities (agreed)
 
-- **Next: an AI that sees its attacks through and understands the game.** Armies often
+- ~~**Next: an AI that sees its attacks through.**~~ Done 2026-11-14 (mustering, a fixed
+  castle per column, friends counted, war judged by its course). Still open: deeper values.
+- **An AI that understands the game.** Armies often
   attack a castle, then give up mid-fight though they have the troops: find why (campaign or
   siege abandonment, intent flips, home-guard recalls) and fix it. Then rework what the
   strategist values (`Params`, context, region values) so its choices follow the game's real

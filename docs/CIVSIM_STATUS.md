@@ -37,7 +37,9 @@ style). Balance and timing have not had their dedicated pass yet.
   knows Mining).
 - **Research:** 42 techs in 7 eras, including soldier-cost efficiency, troop tiers (1–4) and
   castle hospital beds.
-- **Military:** trained and paid soldiers, up to 5 field armies per civ under commanders with
+- **Military:** attacks seen through (an army musters before it marches, keeps to its
+  castle, counts friendly armies before falling back; the strategist weighs castles won and
+  lost, the dead and sieges nearly through), trained and paid soldiers, up to 5 field armies per civ under commanders with
   limited capacity, garrisons, unit counters, battles, routs, pursuit, captured commanders,
   sieges (a castle taken is its region won at once), rallies between allies, reinforcing an ally's
   capital, generals leaving part of their army to hold a threatened castle of their own,

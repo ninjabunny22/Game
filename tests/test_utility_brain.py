@@ -209,3 +209,16 @@ def test_a_civ_close_to_winning_pushes_for_the_prizes_that_would_finish_it(conte
     after, why = brain._attack(*args())
     assert after == pytest.approx(before + brain.p.LAST_PUSH)
     assert "Goldcrown" in why
+
+
+def test_it_judges_a_war_by_how_it_is_going(context):
+    enemy = context["neighbors"][0]
+    course = {"castles_won": 0, "castles_lost": 0, "our_losses": 0, "their_losses": 0, "siege": 0.0}
+    enemy.update(relation="war", war_ticks=400, army_vs_yours="comparable", war_course=dict(course))
+    assert decide(context)[enemy["name"]]["stance"] == "ignore", "an even war that drags on is given up"
+    enemy["war_course"] = course | {"siege": 0.6}
+    assert decide(context)[enemy["name"]]["stance"] == "aggression", "but not with a castle nearly taken"
+    enemy["war_course"] = course | {"castles_won": 2}
+    assert decide(context)[enemy["name"]]["stance"] == "aggression", "nor while it is being won"
+    enemy.update(war_ticks=100, war_course=course | {"castles_lost": 2})
+    assert decide(context)[enemy["name"]]["stance"] == "ignore", "a war being lost is ended, though the odds look fair"
